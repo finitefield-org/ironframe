@@ -337,11 +337,13 @@ fn run_build(
     let mut source_directives = SourceDirectives::default();
     let mut stylesheet_dir = None;
     if let Some(path) = input_css_path.as_ref() {
-        let template = fs::read_to_string(path).map_err(|err| CliError {
+        let raw_template = fs::read_to_string(path).map_err(|err| CliError {
             message: format!("failed to read input css {}: {}", path, err),
         })?;
+        let style_dir = resolve_stylesheet_dir(path);
+        let template = inline_css_imports(&raw_template, &style_dir)?;
         source_directives = parse_source_directives(&template);
-        stylesheet_dir = Some(resolve_stylesheet_dir(path));
+        stylesheet_dir = Some(style_dir);
         parsed_theme = Some(parse_theme(&template));
         let stripped = strip_tailwind_custom_directives(&template);
         let variant_overrides = parsed_theme
@@ -455,6 +457,13 @@ fn run_build(
         minify,
         colors: config.theme.colors.clone(),
     };
+    if let Some(stripped) = stripped_template_css.take() {
+        stripped_template_css = Some(expand_apply_directives(
+            &stripped,
+            &generator_config,
+            parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
+        )?);
+    }
     let generation = ironframe_generator::generate_with_overrides(
         &scan_result.classes,
         &generator_config,
@@ -496,6 +505,7 @@ fn run_build(
             ),
         })?;
     }
+    css = expand_build_time_functions(&css);
 
     if let Some(out_path) = out {
         fs::write(&out_path, css).map_err(|err| CliError {
@@ -713,6 +723,270 @@ fn parse_u64_arg(value: &str, flag: &str) -> Result<u64, CliError> {
     value.parse::<u64>().map_err(|_| CliError {
         message: format!("{} requires a positive integer, got '{}'", flag, value),
     })
+}
+
+fn expand_build_time_functions(css: &str) -> String {
+    let spacing_expanded = expand_spacing_function(css);
+    expand_alpha_function(&spacing_expanded)
+}
+
+fn expand_spacing_function(css: &str) -> String {
+    expand_named_function_calls(css, "--spacing(", &|args| {
+        let value = args.trim();
+        if value.is_empty() {
+            return None;
+        }
+        Some(format!("calc(var(--spacing) * {})", value))
+    })
+}
+
+fn expand_alpha_function(css: &str) -> String {
+    expand_named_function_calls(css, "--alpha(", &|args| {
+        let (color, alpha) = split_alpha_args(args)?;
+        Some(format!(
+            "color-mix(in oklab, {} {}, transparent)",
+            color, alpha
+        ))
+    })
+}
+
+fn expand_named_function_calls(
+    input: &str,
+    marker: &str,
+    transform: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+    let marker_len = marker.len();
+    let open_offset = marker_len.saturating_sub(1);
+
+    while let Some(rel_start) = input[cursor..].find(marker) {
+        let start = cursor + rel_start;
+        let open_idx = start + open_offset;
+        out.push_str(&input[cursor..start]);
+
+        let Some(close_idx) = find_matching_paren(input, open_idx) else {
+            out.push_str(&input[start..]);
+            return out;
+        };
+        let args = &input[open_idx + 1..close_idx];
+        let expanded_args = expand_build_time_functions(args);
+        if let Some(replacement) = transform(&expanded_args) {
+            out.push_str(&replacement);
+        } else {
+            out.push_str(&input[start..=close_idx]);
+        }
+        cursor = close_idx + 1;
+    }
+    out.push_str(&input[cursor..]);
+    out
+}
+
+fn split_alpha_args(args: &str) -> Option<(String, String)> {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut slash_idx = None;
+
+    for (idx, ch) in args.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' => quote = Some(ch),
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            '/' if depth == 0 => {
+                slash_idx = Some(idx);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    let idx = slash_idx?;
+    let color = args[..idx].trim();
+    let alpha = args[idx + 1..].trim();
+    if color.is_empty() || alpha.is_empty() {
+        return None;
+    }
+    Some((color.to_string(), alpha.to_string()))
+}
+
+fn inline_css_imports(template_css: &str, base_dir: &Path) -> Result<String, CliError> {
+    let mut visited = std::collections::BTreeSet::<PathBuf>::new();
+    inline_css_imports_recursive(template_css, base_dir, &mut visited)
+}
+
+fn inline_css_imports_recursive(
+    css: &str,
+    base_dir: &Path,
+    visited: &mut std::collections::BTreeSet<PathBuf>,
+) -> Result<String, CliError> {
+    let mut rendered_lines = Vec::new();
+    for line in css.lines() {
+        let trimmed = line.trim();
+        if parse_framework_import_directives(trimmed).is_some() || !trimmed.starts_with("@import") {
+            rendered_lines.push(line.to_string());
+            continue;
+        }
+
+        let Some(path) = parse_plain_css_import_path(trimmed) else {
+            rendered_lines.push(line.to_string());
+            continue;
+        };
+        if path.starts_with("http://")
+            || path.starts_with("https://")
+            || path.starts_with("data:")
+        {
+            rendered_lines.push(line.to_string());
+            continue;
+        }
+        let resolved = resolve_source_path(base_dir, &path);
+        if visited.contains(&resolved) {
+            continue;
+        }
+        let imported = fs::read_to_string(&resolved).map_err(|err| CliError {
+            message: format!("failed to read imported css {}: {}", resolved.display(), err),
+        })?;
+        visited.insert(resolved.clone());
+        let next_base = resolved.parent().unwrap_or(base_dir);
+        let expanded = inline_css_imports_recursive(&imported, next_base, visited)?;
+        rendered_lines.push(expanded);
+    }
+
+    let mut rendered = rendered_lines.join("\n");
+    if css.ends_with('\n') && !rendered.ends_with('\n') {
+        rendered.push('\n');
+    }
+    Ok(rendered)
+}
+
+fn parse_plain_css_import_path(trimmed_line: &str) -> Option<String> {
+    let line = trimmed_line.trim_end_matches(';').trim();
+    let body = line.strip_prefix("@import")?.trim();
+    if let Some(rest) = body.strip_prefix('"') {
+        let end = rest.find('"')?;
+        if rest[end + 1..].trim().is_empty() {
+            return Some(rest[..end].to_string());
+        }
+    }
+    if let Some(rest) = body.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        if rest[end + 1..].trim().is_empty() {
+            return Some(rest[..end].to_string());
+        }
+    }
+    if let Some(rest) = body.strip_prefix("url(") {
+        let close = rest.find(')')?;
+        let inside = rest[..close].trim();
+        let path = inside
+            .strip_prefix('"')
+            .and_then(|raw| raw.strip_suffix('"'))
+            .or_else(|| inside.strip_prefix('\'').and_then(|raw| raw.strip_suffix('\'')))
+            .unwrap_or(inside)
+            .to_string();
+        if rest[close + 1..].trim().is_empty() {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn expand_apply_directives(
+    css: &str,
+    config: &ironframe_generator::GeneratorConfig,
+    overrides: Option<&ironframe_generator::VariantOverrides>,
+) -> Result<String, CliError> {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+    while let Some(rel_start) = css[cursor..].find("@apply") {
+        let apply_idx = cursor + rel_start;
+        out.push_str(&css[cursor..apply_idx]);
+
+        let mut pos = apply_idx + "@apply".len();
+        while let Some(ch) = css[pos..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        let value_start = pos;
+        while let Some(ch) = css[pos..].chars().next() {
+            if ch == ';' {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        if pos >= css.len() {
+            return Err(CliError {
+                message: "@apply must end with ';'".to_string(),
+            });
+        }
+        let class_list = css[value_start..pos].trim();
+        if class_list.is_empty() {
+            return Err(CliError {
+                message: "@apply requires at least one utility class".to_string(),
+            });
+        }
+
+        let mut declarations = Vec::new();
+        for class in class_list.split_whitespace() {
+            if class.contains(':') {
+                return Err(CliError {
+                    message: format!("@apply does not support variant classes: {}", class),
+                });
+            }
+            let utility_css = ironframe_generator::generate_with_overrides(
+                &[class.to_string()],
+                config,
+                overrides,
+            );
+            if utility_css.class_count == 0 {
+                return Err(CliError {
+                    message: format!("unknown utility in @apply: {}", class),
+                });
+            }
+            let generated = ironframe_generator::emit_css(&utility_css);
+            let Some(open_idx) = generated.find('{') else {
+                return Err(CliError {
+                    message: format!("failed to parse generated utility for @apply: {}", class),
+                });
+            };
+            let Some(close_idx) = find_matching_brace(&generated, open_idx) else {
+                return Err(CliError {
+                    message: format!("failed to parse generated utility for @apply: {}", class),
+                });
+            };
+            let body = generated[open_idx + 1..close_idx].trim().trim_end_matches(';');
+            if body.is_empty() {
+                return Err(CliError {
+                    message: format!("utility in @apply has no declarations: {}", class),
+                });
+            }
+            declarations.push(body.to_string());
+        }
+
+        let merged = declarations.join("; ");
+        out.push_str(&merged);
+        out.push(';');
+        cursor = pos + 1;
+    }
+
+    out.push_str(&css[cursor..]);
+    Ok(out)
 }
 
 fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Option<String> {
@@ -2193,7 +2467,9 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        emit_parsed_theme_css, expand_braces, expand_variant_directives, normalize_source_pattern,
+        emit_parsed_theme_css, expand_apply_directives, expand_braces,
+        expand_build_time_functions, expand_variant_directives, inline_css_imports,
+        normalize_source_pattern,
         parse_args,
         parse_framework_import_directives, parse_source_directives, parse_theme,
         strip_tailwind_custom_directives, Command,
@@ -2345,6 +2621,28 @@ mod tests {
             apply_framework_import_alias("@import url('ironframe') prefix(tw);\n", generated)
                 .expect("url import should be recognized");
         assert!(rendered.contains(".tw\\:p-2"));
+    }
+
+    #[test]
+    fn inlines_regular_css_imports() {
+        let base = temp_dir("cli_css_import");
+        let nested = base.join("nested.css");
+        let imported = base.join("imported.css");
+        let _ = fs::create_dir_all(&base);
+        fs::write(&nested, ".nested { color: red; }\n").expect("should write nested.css");
+        fs::write(
+            &imported,
+            "@import \"./nested.css\";\n.imported { color: blue; }\n",
+        )
+        .expect("should write imported.css");
+        let css = "@import \"tailwindcss\";\n@import \"./imported.css\";\n.main { color: black; }\n";
+        let inlined = inline_css_imports(css, &base).expect("should inline imports");
+
+        assert!(inlined.contains("@import \"tailwindcss\";"));
+        assert!(inlined.contains(".nested { color: red; }"));
+        assert!(inlined.contains(".imported { color: blue; }"));
+        assert!(inlined.contains(".main { color: black; }"));
+        let _ = fs::remove_dir_all(base);
     }
 
     #[test]
@@ -2712,6 +3010,58 @@ body { margin: 0; }
         assert!(expanded.contains("@media (prefers-color-scheme: dark)"));
         assert!(expanded.contains("background: black;"));
         assert!(!expanded.contains("@variant dark"));
+    }
+
+    #[test]
+    fn expands_apply_directive_with_known_utilities() {
+        let css = r#"
+.card {
+  @apply rounded-b-lg shadow-md;
+}
+"#;
+        let config = ironframe_generator::GeneratorConfig {
+            minify: false,
+            colors: std::collections::BTreeMap::new(),
+        };
+        let expanded = expand_apply_directives(css, &config, None).expect("apply should expand");
+        assert!(!expanded.contains("@apply"));
+        assert!(expanded.contains("border-bottom-right-radius"));
+        assert!(expanded.contains("var(--radius-lg)"));
+        assert!(expanded.contains("box-shadow"));
+    }
+
+    #[test]
+    fn apply_rejects_unknown_utility() {
+        let css = ".x { @apply definitely-not-a-real-utility; }";
+        let config = ironframe_generator::GeneratorConfig {
+            minify: false,
+            colors: std::collections::BTreeMap::new(),
+        };
+        let err = expand_apply_directives(css, &config, None).expect_err("should fail");
+        assert!(err.message.contains("unknown utility in @apply"));
+    }
+
+    #[test]
+    fn expands_spacing_function_in_css() {
+        let css = ".my-element { margin: --spacing(4); }";
+        let compiled = expand_build_time_functions(css);
+        assert!(compiled.contains("margin: calc(var(--spacing) * 4);"));
+    }
+
+    #[test]
+    fn expands_alpha_function_in_css() {
+        let css = ".my-element { color: --alpha(var(--color-lime-300) / 50%); }";
+        let compiled = expand_build_time_functions(css);
+        assert!(
+            compiled.contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);")
+        );
+    }
+
+    #[test]
+    fn expands_spacing_function_inside_calc_arbitrary_value() {
+        let css = ".x { padding-top: calc(--spacing(4)-1px); }";
+        let compiled = expand_build_time_functions(css);
+        assert!(compiled.contains("padding-top: calc(calc(var(--spacing) * 4)-1px);"));
     }
 
     #[test]

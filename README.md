@@ -81,6 +81,13 @@ This repository references Tailwind CSS v4.1 for behavior and ideas but is not a
 - base path override (`@import "tailwindcss" source("../src")`)
 - inline safelist / blocklist via brace expansion (`@source inline(...)`, `@source not inline(...)`)
 
+`ironframe_cli build --input-css` also supports:
+- local CSS import inlining (`@import "./tokens.css";`)
+- utility inlining with `@apply` for known utilities (`@apply rounded-b-lg shadow-md;`)
+- build-time functions in CSS:
+  - `--alpha(var(--color-lime-300) / 50%)` -> `color-mix(in oklab, var(--color-lime-300) 50%, transparent)`
+  - `--spacing(4)` -> `calc(var(--spacing) * 4)`
+
 ## Example Config
 
 `tailwind.toml`:
