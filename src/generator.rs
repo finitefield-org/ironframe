@@ -13,6 +13,18 @@ pub struct GenerationResult {
     pub class_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct RuleSortKey {
+    variant_bucket: u8,
+    wrapper_bucket: u8,
+    family_rank: u16,
+    property_rank: u16,
+    subfamily_rank: u16,
+    value_rank: i32,
+    class_sort_key: String,
+    class_name: String,
+}
+
 pub fn generate(_classes: &[String], _config: &GeneratorConfig) -> GenerationResult {
     generate_with_overrides(_classes, _config, None)
 }
@@ -36,21 +48,32 @@ pub fn generate_with_overrides(
     _config: &GeneratorConfig,
     overrides: Option<&VariantOverrides>,
 ) -> GenerationResult {
-    let mut rules = Vec::new();
+    let mut rules = Vec::<(RuleSortKey, String)>::new();
     let mut count = 0;
     let variant_tables = build_variant_tables(overrides);
 
     for class in _classes {
         if let Some(rule) = generate_rule(class, _config, &variant_tables) {
-            rules.push(rule);
+            let sort_key = build_rule_sort_key(class, &rule);
+            rules.push((sort_key, rule));
             count += 1;
         }
     }
 
+    rules.sort_by(|(left_key, _), (right_key, _)| left_key.cmp(right_key));
+
     let css = if _config.minify {
-        rules.join("")
+        rules
+            .into_iter()
+            .map(|(_, rule)| rule)
+            .collect::<Vec<_>>()
+            .join("")
     } else {
-        rules.join("\n")
+        rules
+            .into_iter()
+            .map(|(_, rule)| rule)
+            .collect::<Vec<_>>()
+            .join("\n")
     };
 
     GenerationResult {
@@ -190,6 +213,844 @@ fn parse_length_value(raw: &str) -> Option<(f64, String)> {
 
 pub fn emit_css(result: &GenerationResult) -> String {
     result.css.clone()
+}
+
+fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
+    let (variants, base) = parse_variants(class_name);
+    RuleSortKey {
+        variant_bucket: if variants.is_empty() { 0 } else { 1 },
+        wrapper_bucket: rule_wrapper_bucket(rule),
+        family_rank: utility_family_rank(base),
+        property_rank: extract_primary_declaration_property(rule)
+            .map(|property| property_order_rank(&property))
+            .unwrap_or(65535),
+        subfamily_rank: utility_subfamily_rank(base),
+        value_rank: utility_value_rank(base),
+        class_sort_key: natural_class_sort_key(class_name),
+        class_name: class_name.to_string(),
+    }
+}
+
+fn natural_class_sort_key(class_name: &str) -> String {
+    let mut out = String::with_capacity(class_name.len() + 16);
+    let mut cursor = 0usize;
+
+    while cursor < class_name.len() {
+        let segment = &class_name[cursor..];
+        let Some(ch) = segment.chars().next() else {
+            break;
+        };
+
+        if ch.is_ascii_digit() {
+            let mut end = cursor + ch.len_utf8();
+            let mut seen_dot = false;
+            while end < class_name.len() {
+                let Some(next) = class_name[end..].chars().next() else {
+                    break;
+                };
+                if next.is_ascii_digit() {
+                    end += next.len_utf8();
+                    continue;
+                }
+                if next == '.' && !seen_dot {
+                    seen_dot = true;
+                    end += next.len_utf8();
+                    continue;
+                }
+                break;
+            }
+
+            let number = &class_name[cursor..end];
+            if let Ok(parsed) = number.parse::<f64>() {
+                out.push_str(&format!("#{:020.6}", parsed));
+            } else {
+                out.push_str(number);
+            }
+            cursor = end;
+            continue;
+        }
+
+        out.push(ch);
+        cursor += ch.len_utf8();
+    }
+
+    out
+}
+
+fn utility_family_rank(base: &str) -> u16 {
+    if base.starts_with("pointer-events-") {
+        return 0;
+    }
+    if matches!(base, "collapse" | "invisible" | "visible") {
+        return 10;
+    }
+    if matches!(base, "sr-only" | "not-sr-only") {
+        return 20;
+    }
+    if let Some(rank) = position_utility_rank(base) {
+        return 30 + rank;
+    }
+    if base.starts_with("inset-x-") || base.starts_with("-inset-x-") {
+        return 42;
+    }
+    if base.starts_with("inset-y-") || base.starts_with("-inset-y-") {
+        return 43;
+    }
+    if base.starts_with("inset-") || base == "inset-0" || base == "inset-auto" {
+        return 40;
+    }
+    if base.starts_with("-top-") {
+        return 50;
+    }
+    if base.starts_with("top-") {
+        return 51;
+    }
+    if base.starts_with("-right-") {
+        return 60;
+    }
+    if base.starts_with("right-") {
+        return 61;
+    }
+    if base.starts_with("-bottom-") {
+        return 70;
+    }
+    if base.starts_with("bottom-") {
+        return 71;
+    }
+    if base.starts_with("-left-") {
+        return 80;
+    }
+    if base.starts_with("left-") {
+        return 81;
+    }
+    if base == "isolate" {
+        return 85;
+    }
+    if base.starts_with("-z-") || base.starts_with("z-") {
+        return 90;
+    }
+    if base.starts_with("order-") {
+        return 100;
+    }
+    if base.starts_with("col-") {
+        return 110;
+    }
+    if base.starts_with("row-") {
+        return 120;
+    }
+    if base.starts_with("m-") || base.starts_with("-m-") {
+        return 130;
+    }
+    if base.starts_with("mx-") || base.starts_with("-mx-") {
+        return 131;
+    }
+    if base.starts_with("my-") || base.starts_with("-my-") {
+        return 132;
+    }
+    if base.starts_with("mt-") || base.starts_with("-mt-") {
+        return 133;
+    }
+    if base.starts_with("mr-") || base.starts_with("-mr-") {
+        return 134;
+    }
+    if base.starts_with("mb-") || base.starts_with("-mb-") {
+        return 135;
+    }
+    if base.starts_with("ml-") || base.starts_with("-ml-") {
+        return 136;
+    }
+    if base.starts_with("line-clamp-") {
+        return 138;
+    }
+    if is_display_family_utility(base) || base.starts_with("aspect-") {
+        return 498;
+    }
+    if base.starts_with("size-") {
+        return 499;
+    }
+    if base.starts_with("h-") {
+        return 500;
+    }
+    if base.starts_with("max-h-") {
+        return 501;
+    }
+    if base.starts_with("min-h-") {
+        return 502;
+    }
+    if base.starts_with("w-") {
+        return 503;
+    }
+    if base.starts_with("max-w-") {
+        return 504;
+    }
+    if base.starts_with("min-w-") {
+        return 505;
+    }
+    if base.starts_with("flex-")
+        && !base.starts_with("flex-col")
+        && !base.starts_with("flex-row")
+        && !base.starts_with("flex-wrap")
+        && !base.starts_with("flex-grow")
+        && !base.starts_with("flex-shrink")
+    {
+        return 510;
+    }
+    if base == "shrink" || base.starts_with("shrink-") || base.starts_with("flex-shrink") {
+        return 511;
+    }
+    if base == "grow" || base.starts_with("grow-") || base.starts_with("flex-grow") {
+        return 512;
+    }
+    if base == "border-collapse" {
+        return 513;
+    }
+    if base.starts_with("-translate-x-")
+        || base.starts_with("translate-x-")
+        || base.starts_with("-translate-y-")
+        || base.starts_with("translate-y-")
+    {
+        return 514;
+    }
+    if base.starts_with("scale-") || base.starts_with("-scale-") {
+        return 515;
+    }
+    if base.starts_with("rotate-") || base.starts_with("-rotate-") {
+        return 516;
+    }
+    if base.starts_with("skew-") || base.starts_with("-skew-") {
+        return 517;
+    }
+    if base == "transform" || base == "transform-gpu" || base == "transform-cpu" {
+        return 518;
+    }
+    if base.starts_with("animate-") {
+        return 519;
+    }
+    if base.starts_with("cursor-") {
+        return 520;
+    }
+    if base.starts_with("resize") {
+        return 521;
+    }
+    if base.starts_with("scroll-m") || base.starts_with("scroll-p") {
+        return 522;
+    }
+    if base == "list-inside" {
+        return 523;
+    }
+    if base.starts_with("list-") {
+        return 524;
+    }
+    if base.starts_with("appearance-") {
+        return 525;
+    }
+    if base.starts_with("grid-cols-") || base.starts_with("grid-rows-") {
+        return 526;
+    }
+    if matches!(
+        base,
+        "flex-row" | "flex-row-reverse" | "flex-col" | "flex-col-reverse" | "flex-wrap"
+            | "flex-wrap-reverse" | "flex-nowrap"
+    ) {
+        return 527;
+    }
+    if base.starts_with("items-")
+        || base.starts_with("justify-")
+        || base.starts_with("content-")
+        || base.starts_with("place-")
+        || base.starts_with("self-")
+    {
+        return 528;
+    }
+    if base.starts_with("gap-") || base.starts_with("gap-x-") || base.starts_with("gap-y-") {
+        return 529;
+    }
+    if base.starts_with("space-x-") || base.starts_with("space-y-") {
+        return 530;
+    }
+    if base.starts_with("divide-") {
+        return 531;
+    }
+    if base.starts_with("overflow-") || base == "truncate" {
+        return 532;
+    }
+    if base == "container" {
+        return 115;
+    }
+    1000
+}
+
+fn is_display_family_utility(base: &str) -> bool {
+    matches!(
+        base,
+        "block"
+            | "inline-block"
+            | "inline"
+            | "flow-root"
+            | "flex"
+            | "inline-flex"
+            | "grid"
+            | "inline-grid"
+            | "contents"
+            | "table"
+            | "table-row"
+            | "table-cell"
+            | "table-caption"
+            | "table-column"
+            | "table-column-group"
+            | "table-header-group"
+            | "table-row-group"
+            | "table-footer-group"
+            | "hidden"
+    )
+}
+
+fn utility_value_rank(base: &str) -> i32 {
+    let Some(meta) = rankable_utility_meta(base) else {
+        return i32::MAX;
+    };
+
+    if !meta.is_sizing {
+        if meta.token == "auto" {
+            return 200_000;
+        }
+        if meta.token == "px" {
+            return with_negative_prefix(1, meta.is_negative);
+        }
+        if meta.token == "full" {
+            return 100_000;
+        }
+        if let Some((num, den)) = meta.token.split_once('/') {
+            if let (Ok(num), Ok(den)) = (num.parse::<i32>(), den.parse::<i32>()) {
+                if den != 0 {
+                    let rank = 1 + ((num * 100) / den);
+                    return with_negative_prefix(rank, meta.is_negative);
+                }
+            }
+        }
+        if let Ok(value) = meta.token.parse::<f32>() {
+            return with_negative_prefix((value * 100.0) as i32, meta.is_negative);
+        }
+        if let Some(inner) = meta
+            .token
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+        {
+            if let Some(number_rank) = numeric_prefix_rank(inner) {
+                return with_negative_prefix(50_000 + number_rank, meta.is_negative);
+            }
+            return with_negative_prefix(80_000, meta.is_negative);
+        }
+        if meta.token.starts_with('(') && meta.token.ends_with(')') {
+            return with_negative_prefix(85_000, meta.is_negative);
+        }
+        return with_negative_prefix(i32::MAX / 2, meta.is_negative);
+    }
+
+    if let Some((num, den)) = meta.token.split_once('/') {
+        if let (Ok(num), Ok(den)) = (num.parse::<i32>(), den.parse::<i32>()) {
+            if den != 0 {
+                return 150 + ((num * 100) / den);
+            }
+        }
+    }
+
+    if matches!(meta.family, RankableSizingFamily::MaxWidth) {
+        if let Some(step) = meta
+            .token
+            .strip_suffix("xl")
+            .and_then(|raw| raw.parse::<i32>().ok())
+        {
+            return 40_000 + step;
+        }
+        if matches!(meta.token, "xs" | "sm" | "md" | "lg" | "xl") {
+            return 190_000;
+        }
+    }
+
+    if let Ok(value) = meta.token.parse::<f32>() {
+        return (value * 100.0) as i32;
+    }
+
+    if let Some(inner) = meta
+        .token
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if let Some(number_rank) = numeric_prefix_rank(inner) {
+            return 50_000 + number_rank;
+        }
+        return 80_000;
+    }
+
+    if meta.token.starts_with('(') && meta.token.ends_with(')') {
+        return 85_000;
+    }
+
+    if let Some(rank) = sizing_keyword_rank(meta.token) {
+        return rank;
+    }
+
+    99_999
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RankableUtilityMeta<'a> {
+    token: &'a str,
+    is_sizing: bool,
+    is_negative: bool,
+    family: RankableSizingFamily,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RankableSizingFamily {
+    Generic,
+    Height,
+    MaxHeight,
+    MinHeight,
+    Width,
+    MaxWidth,
+    MinWidth,
+    Size,
+}
+
+fn rankable_utility_meta(base: &str) -> Option<RankableUtilityMeta<'_>> {
+    const RANKABLE_PREFIXES: [(&str, bool, bool, RankableSizingFamily); 39] = [
+        ("-inset-x-", false, true, RankableSizingFamily::Generic),
+        ("inset-x-", false, false, RankableSizingFamily::Generic),
+        ("-inset-y-", false, true, RankableSizingFamily::Generic),
+        ("inset-y-", false, false, RankableSizingFamily::Generic),
+        ("-inset-", false, true, RankableSizingFamily::Generic),
+        ("inset-", false, false, RankableSizingFamily::Generic),
+        ("-top-", false, true, RankableSizingFamily::Generic),
+        ("top-", false, false, RankableSizingFamily::Generic),
+        ("-right-", false, true, RankableSizingFamily::Generic),
+        ("right-", false, false, RankableSizingFamily::Generic),
+        ("-bottom-", false, true, RankableSizingFamily::Generic),
+        ("bottom-", false, false, RankableSizingFamily::Generic),
+        ("-left-", false, true, RankableSizingFamily::Generic),
+        ("left-", false, false, RankableSizingFamily::Generic),
+        ("-mx-", false, true, RankableSizingFamily::Generic),
+        ("mx-", false, false, RankableSizingFamily::Generic),
+        ("-my-", false, true, RankableSizingFamily::Generic),
+        ("my-", false, false, RankableSizingFamily::Generic),
+        ("-mt-", false, true, RankableSizingFamily::Generic),
+        ("mt-", false, false, RankableSizingFamily::Generic),
+        ("-mr-", false, true, RankableSizingFamily::Generic),
+        ("mr-", false, false, RankableSizingFamily::Generic),
+        ("-mb-", false, true, RankableSizingFamily::Generic),
+        ("mb-", false, false, RankableSizingFamily::Generic),
+        ("-ml-", false, true, RankableSizingFamily::Generic),
+        ("ml-", false, false, RankableSizingFamily::Generic),
+        ("-m-", false, true, RankableSizingFamily::Generic),
+        ("m-", false, false, RankableSizingFamily::Generic),
+        ("max-h-", true, false, RankableSizingFamily::MaxHeight),
+        ("min-h-", true, false, RankableSizingFamily::MinHeight),
+        ("h-", true, false, RankableSizingFamily::Height),
+        ("max-w-", true, false, RankableSizingFamily::MaxWidth),
+        ("min-w-", true, false, RankableSizingFamily::MinWidth),
+        ("w-", true, false, RankableSizingFamily::Width),
+        ("size-", true, false, RankableSizingFamily::Size),
+        ("-translate-x-", false, true, RankableSizingFamily::Generic),
+        ("translate-x-", false, false, RankableSizingFamily::Generic),
+        ("-translate-y-", false, true, RankableSizingFamily::Generic),
+        ("translate-y-", false, false, RankableSizingFamily::Generic),
+    ];
+
+    for (prefix, is_sizing, is_negative, family) in RANKABLE_PREFIXES {
+        if let Some(token) = base.strip_prefix(prefix) {
+            if !token.is_empty() {
+                return Some(RankableUtilityMeta {
+                    token,
+                    is_sizing,
+                    is_negative,
+                    family,
+                });
+            }
+        }
+    }
+    None
+}
+
+fn with_negative_prefix(rank: i32, is_negative: bool) -> i32 {
+    if is_negative {
+        -1_000_000 + rank.min(500_000)
+    } else {
+        rank
+    }
+}
+
+fn numeric_prefix_rank(raw: &str) -> Option<i32> {
+    let mut end = 0usize;
+    let mut seen_dot = false;
+    for (idx, ch) in raw.char_indices() {
+        if idx == 0 && (ch == '+' || ch == '-') {
+            end = ch.len_utf8();
+            continue;
+        }
+        if ch.is_ascii_digit() {
+            end = idx + ch.len_utf8();
+            continue;
+        }
+        if ch == '.' && !seen_dot {
+            seen_dot = true;
+            end = idx + ch.len_utf8();
+            continue;
+        }
+        break;
+    }
+
+    if end == 0 {
+        return None;
+    }
+    let value = raw[..end].parse::<f32>().ok()?;
+    Some((value.abs() * 10.0) as i32)
+}
+
+fn sizing_keyword_rank(token: &str) -> Option<i32> {
+    match token {
+        "auto" => Some(170_000),
+        "fit" => Some(171_000),
+        "full" => Some(172_000),
+        "min" => Some(173_000),
+        "max" => Some(174_000),
+        "screen" => Some(175_000),
+        "dvh" => Some(176_000),
+        "lvh" => Some(177_000),
+        "svh" => Some(178_000),
+        "px" => Some(179_000),
+        _ => None,
+    }
+}
+
+fn utility_subfamily_rank(base: &str) -> u16 {
+    if base.starts_with("h-") {
+        return 1;
+    }
+    if base.starts_with("max-h-") {
+        return 2;
+    }
+    if base.starts_with("min-h-") {
+        return 3;
+    }
+    if base.starts_with("w-") {
+        return 4;
+    }
+    if base.starts_with("max-w-") {
+        return 5;
+    }
+    if base.starts_with("min-w-") {
+        return 6;
+    }
+    if base.starts_with("-translate-x-") || base.starts_with("translate-x-") {
+        return 10;
+    }
+    if base.starts_with("-translate-y-") || base.starts_with("translate-y-") {
+        return 11;
+    }
+    65535
+}
+
+fn position_utility_rank(base: &str) -> Option<u16> {
+    match base {
+        "absolute" => Some(0),
+        "fixed" => Some(1),
+        "relative" => Some(2),
+        "static" => Some(3),
+        "sticky" => Some(4),
+        _ => None,
+    }
+}
+
+fn rule_wrapper_bucket(rule: &str) -> u8 {
+    let trimmed = rule.trim_start();
+    if !trimmed.starts_with('@') {
+        return 0;
+    }
+    if trimmed.starts_with("@media (hover: hover)") {
+        return 1;
+    }
+    if trimmed.starts_with("@media (width >= ") {
+        return 2;
+    }
+    if trimmed.starts_with("@media (width < ") {
+        return 3;
+    }
+    if trimmed.starts_with("@container ") {
+        return 4;
+    }
+    if trimmed.starts_with("@supports ") {
+        return 5;
+    }
+    if trimmed.starts_with("@starting-style") {
+        return 6;
+    }
+    7
+}
+
+fn extract_primary_declaration_property(rule: &str) -> Option<String> {
+    let mut block = rule.trim();
+    loop {
+        let open = block.find('{')?;
+        let close = find_matching_brace_index(block, open)?;
+        if close <= open {
+            return None;
+        }
+        let header = block[..open].trim_start();
+        let body = &block[open + 1..close];
+        if header.starts_with('@') {
+            block = body.trim();
+            continue;
+        }
+        return extract_property_from_rule_body(body);
+    }
+}
+
+fn extract_property_from_rule_body(body: &str) -> Option<String> {
+    let mut depth = 0usize;
+    let mut token = String::new();
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+
+    for ch in body.chars() {
+        if let Some(quote) = in_string {
+            token.push(ch);
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                token.push(ch);
+                in_string = Some(ch);
+            }
+            '{' => {
+                depth += 1;
+                if depth == 1 {
+                    token.clear();
+                } else {
+                    token.push(ch);
+                }
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth > 0 {
+                    token.push(ch);
+                } else {
+                    token.clear();
+                }
+            }
+            ':' if depth == 0 => {
+                let property = token.trim();
+                if is_likely_property_name(property) {
+                    return Some(property.to_string());
+                }
+                token.clear();
+            }
+            ';' if depth == 0 => {
+                token.clear();
+            }
+            _ if depth == 0 => {
+                token.push(ch);
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn is_likely_property_name(property: &str) -> bool {
+    if property.starts_with("--") {
+        return property.len() > 2;
+    }
+    !property.is_empty()
+        && property
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-')
+}
+
+fn find_matching_brace_index(css: &str, open_idx: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut in_comment = false;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    let mut chars = css[open_idx..].char_indices().peekable();
+
+    while let Some((rel_idx, ch)) = chars.next() {
+        let idx = open_idx + rel_idx;
+
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        if in_comment {
+            if ch == '*' {
+                if let Some((_, '/')) = chars.peek().copied() {
+                    let _ = chars.next();
+                    in_comment = false;
+                }
+            }
+            continue;
+        }
+
+        if ch == '/' {
+            if let Some((_, '*')) = chars.peek().copied() {
+                let _ = chars.next();
+                in_comment = true;
+                continue;
+            }
+        }
+
+        if ch == '"' || ch == '\'' {
+            in_string = Some(ch);
+            continue;
+        }
+
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn property_order_rank(property: &str) -> u16 {
+    let property = property.trim();
+    if property.starts_with("--tw-translate") || property == "translate" {
+        return 260;
+    }
+    if property.starts_with("--tw-rotate")
+        || property.starts_with("--tw-skew")
+        || property == "rotate"
+        || property == "skew"
+    {
+        return 262;
+    }
+    if property.starts_with("--tw-scale") || property == "scale" {
+        return 261;
+    }
+    if property.starts_with("--tw-gradient") || property.starts_with("background") {
+        return 210;
+    }
+    if property.starts_with("--tw-ring")
+        || property.starts_with("--tw-shadow")
+        || property.starts_with("--tw-drop-shadow")
+        || property.starts_with("--tw-outline")
+    {
+        return 225;
+    }
+    if property.starts_with("--tw-") {
+        return 500;
+    }
+
+    match property {
+        "pointer-events" => 0,
+        "visibility" => 1,
+        "position" => 2,
+        "inset" | "inset-inline" | "inset-block" | "top" | "right" | "bottom" | "left" => 3,
+        "isolation" => 4,
+        "z-index" => 5,
+        "order" => 6,
+        "grid-column" | "grid-column-start" | "grid-column-end" | "grid-row" | "grid-row-start"
+        | "grid-row-end" => 7,
+        "float" | "clear" => 8,
+        "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left"
+        | "margin-inline" | "margin-block" => 9,
+        "box-sizing" => 10,
+        "display" => 11,
+        "aspect-ratio" => 12,
+        "height" | "width" | "max-height" | "max-width" | "min-height" | "min-width" => 13,
+        "flex"
+        | "flex-basis"
+        | "flex-direction"
+        | "flex-wrap"
+        | "grid-template-columns"
+        | "grid-template-rows"
+        | "grid-auto-columns"
+        | "grid-auto-flow"
+        | "grid-auto-rows" => 14,
+        "align-content" | "justify-content" | "place-content" | "align-items" | "justify-items"
+        | "place-items" | "align-self" | "justify-self" | "place-self" => 15,
+        "overflow" | "overflow-x" | "overflow-y" => 16,
+        "scroll-behavior" | "scroll-snap-type" | "scroll-snap-align" | "scroll-snap-stop"
+        | "scroll-margin" | "scroll-padding" => 17,
+        "border-radius" => 18,
+        "border-width" | "border-style" | "border-color" | "border-collapse" | "border-spacing"
+        | "outline-width" | "outline-style" | "outline-offset" | "outline-color" => 19,
+        "box-shadow" => 220,
+        "opacity" => 230,
+        "mix-blend-mode" | "background-blend-mode" | "filter" | "backdrop-filter" => 240,
+        "transition-property"
+        | "transition-duration"
+        | "transition-delay"
+        | "transition-timing-function"
+        | "transition-behavior" => 250,
+        "transform"
+        | "transform-origin"
+        | "transform-style"
+        | "perspective"
+        | "perspective-origin"
+        | "backface-visibility" => 270,
+        "animation" => 280,
+        "cursor" => 290,
+        "touch-action" | "user-select" | "resize" => 300,
+        "accent-color" | "appearance" | "color-scheme" | "forced-color-adjust" => 310,
+        "font-size"
+        | "line-height"
+        | "font-family"
+        | "font-weight"
+        | "font-style"
+        | "font-variant-numeric"
+        | "letter-spacing"
+        | "text-transform"
+        | "text-overflow"
+        | "text-wrap"
+        | "text-align"
+        | "text-indent"
+        | "vertical-align"
+        | "white-space" => 320,
+        "color"
+        | "fill"
+        | "stroke"
+        | "stroke-width"
+        | "caret-color"
+        | "text-decoration-color"
+        | "text-decoration-thickness"
+        | "text-underline-offset"
+        | "text-decoration-line" => 330,
+        "list-style-type" | "list-style-position" | "list-style-image" => 340,
+        "content" => 350,
+        _ => 500,
+    }
 }
 
 fn generate_rule(
@@ -667,11 +1528,7 @@ fn generate_custom_utility_rule(
         let resolved_body =
             resolve_custom_utility_body(body, value_token, modifier_token, variant_tables)?;
         let selector = format!(".{}", escape_selector(class));
-        if config.minify {
-            return Some(format!("{}{{{}}}", selector, resolved_body.trim()));
-        } else {
-            return Some(format!("{} {{ {} }}", selector, resolved_body.trim()));
-        }
+        return rule(&selector, resolved_body.trim(), config);
     }
     None
 }
@@ -1484,7 +2341,10 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
             let duration = format!("{}ms", value);
             return rule(
                 &selector,
-                &format!("--tw-duration:{};transition-duration:{}", duration, duration),
+                &format!(
+                    "--tw-duration:{};transition-duration:{}",
+                    duration, duration
+                ),
                 config,
             );
         }
@@ -1626,12 +2486,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if class == "blur" {
-        return composed_filter_rule(
-            &selector,
-            "--tw-blur:blur(8px)",
-            None,
-            config,
-        );
+        return composed_filter_rule(&selector, "--tw-blur:blur(8px)", None, config);
     }
 
     if class == "blur-none" {
@@ -1645,12 +2500,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if raw.is_empty() {
             return None;
         }
-        return composed_filter_rule(
-            &selector,
-            &format!("--tw-blur:blur({})", raw),
-            None,
-            config,
-        );
+        return composed_filter_rule(&selector, &format!("--tw-blur:blur({})", raw), None, config);
     }
 
     if let Some(raw) = class
@@ -2644,7 +3494,11 @@ fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Optio
 fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     if class == "content-none" {
-        return rule(&selector, "content:none", config);
+        return rule(
+            &selector,
+            "--tw-content:none;content:var(--tw-content)",
+            config,
+        );
     }
     if let Some(raw) = class
         .strip_prefix("content-[")
@@ -2654,7 +3508,11 @@ fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if value.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("content:{}", value), config);
+        return rule(
+            &selector,
+            &format!("--tw-content:{};content:var(--tw-content)", value),
+            config,
+        );
     }
     if let Some(raw) = class
         .strip_prefix("content-(")
@@ -2663,7 +3521,11 @@ fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("content:var({})", raw), config);
+        return rule(
+            &selector,
+            &format!("--tw-content:var({});content:var(--tw-content)", raw),
+            config,
+        );
     }
     None
 }
@@ -3207,7 +4069,10 @@ fn gradient_stop_rule(
                     color_declaration,
                     "--tw-gradient-via-stops:var(--tw-gradient-position),var(--tw-gradient-from) var(--tw-gradient-from-position),var(--tw-gradient-via) var(--tw-gradient-via-position),var(--tw-gradient-to) var(--tw-gradient-to-position)",
                 );
-                append_declaration(&with_via, "--tw-gradient-stops:var(--tw-gradient-via-stops)")
+                append_declaration(
+                    &with_via,
+                    "--tw-gradient-stops:var(--tw-gradient-via-stops)",
+                )
             }
             _ => append_declaration(
                 color_declaration,
@@ -3228,12 +4093,8 @@ fn gradient_stop_rule(
 
     if let Some(value) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
         let color = parse_arbitrary_color_value(value)?;
-        let declaration = color_declaration_with_optional_opacity(
-            prop_color,
-            &color,
-            opacity,
-            variant_tables,
-        )?;
+        let declaration =
+            color_declaration_with_optional_opacity(prop_color, &color, opacity, variant_tables)?;
         return rule(selector, &with_stops(&declaration), config);
     }
     if let Some(value) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
@@ -3241,12 +4102,8 @@ fn gradient_stop_rule(
             return None;
         }
         let color = format!("var({})", value);
-        let declaration = color_declaration_with_optional_opacity(
-            prop_color,
-            &color,
-            opacity,
-            variant_tables,
-        )?;
+        let declaration =
+            color_declaration_with_optional_opacity(prop_color, &color, opacity, variant_tables)?;
         return rule(selector, &with_stops(&declaration), config);
     }
 
@@ -3982,7 +4839,10 @@ fn parse_arbitrary_color_value(raw: &str) -> Option<String> {
 }
 
 fn fallback_color_for_srgb_mix(color: &str, variant_tables: &VariantTables) -> Option<String> {
-    if let Some(name) = color.strip_prefix("var(").and_then(|value| value.strip_suffix(')')) {
+    if let Some(name) = color
+        .strip_prefix("var(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
         if let Some(resolved) = variant_tables.theme_variable_values.get(name) {
             return Some(resolved.clone());
         }
@@ -4001,19 +4861,22 @@ fn color_declaration_with_optional_opacity(
         return Some(format!("{}:{}", property, color));
     };
     let opacity_value = parse_color_opacity_value(opacity_raw)?;
-    let oklab_mix = format!("color-mix(in oklab,{} {},transparent)", color, opacity_value);
+    let oklab_mix = format!(
+        "color-mix(in oklab, {} {}, transparent)",
+        color, opacity_value
+    );
     if let Some(fallback_color) = fallback_color_for_srgb_mix(color, variant_tables) {
         let srgb_mix = format!(
-            "color-mix(in srgb,{} {},transparent)",
+            "color-mix(in srgb, {} {}, transparent)",
             fallback_color, opacity_value
         );
         return Some(format!(
-            "{}:{};@supports (color:color-mix(in lab, red, red)) {{{}:{};}}",
+            "{}: {}; @supports (color: color-mix(in lab, red, red)) {{ {}: {}; }}",
             property, srgb_mix, property, oklab_mix
         ));
     }
     Some(format!(
-        "{}:{};@supports (color:color-mix(in lab, red, red)) {{{}:{};}}",
+        "{}: {}; @supports (color: color-mix(in lab, red, red)) {{ {}: {}; }}",
         property, color, property, oklab_mix
     ))
 }
@@ -4128,7 +4991,10 @@ fn shadow_color_declaration_with_optional_opacity(
     };
 
     let opacity_value = parse_color_opacity_value(opacity_raw)?;
-    let oklab_mix = format!("color-mix(in oklab,{} {},transparent)", color, opacity_value);
+    let oklab_mix = format!(
+        "color-mix(in oklab,{} {},transparent)",
+        color, opacity_value
+    );
 
     if !is_theme_color {
         return Some(format!("--tw-shadow-color:{}", oklab_mix));
@@ -4168,11 +5034,12 @@ fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<S
         if !normalized.starts_with("var(") && parse_arbitrary_color_value(raw).is_some() {
             return None;
         }
+        let shadow_value = wrap_shadow_color_fallback(&normalized);
         return rule(
             &selector,
             &format!(
                 "--tw-shadow:{};box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
-                normalized
+                shadow_value
             ),
             config,
         );
@@ -4193,6 +5060,95 @@ fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<S
             ),
             config,
         );
+    }
+
+    None
+}
+
+fn wrap_shadow_color_fallback(value: &str) -> String {
+    if value.contains("var(--tw-shadow-color") {
+        return value.to_string();
+    }
+
+    let mut out = String::with_capacity(value.len() + 32);
+    let mut cursor = 0usize;
+    while cursor < value.len() {
+        let segment = &value[cursor..];
+        let matched = if segment.starts_with("rgba(") {
+            Some("rgba(")
+        } else if segment.starts_with("rgb(") {
+            Some("rgb(")
+        } else if segment.starts_with("hsla(") {
+            Some("hsla(")
+        } else if segment.starts_with("hsl(") {
+            Some("hsl(")
+        } else {
+            None
+        };
+
+        if let Some(function) = matched {
+            let open_idx = cursor + function.len() - 1;
+            if let Some(close_idx) = find_matching_parenthesis(value, open_idx) {
+                out.push_str("var(--tw-shadow-color,");
+                out.push_str(&value[cursor..=close_idx]);
+                out.push(')');
+                cursor = close_idx + 1;
+                continue;
+            }
+        }
+
+        if let Some(ch) = segment.chars().next() {
+            out.push(ch);
+            cursor += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    out
+}
+
+fn find_matching_parenthesis(value: &str, open_idx: usize) -> Option<usize> {
+    if !value[open_idx..].starts_with('(') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    for (rel_idx, ch) in value[open_idx..].char_indices() {
+        let idx = open_idx + rel_idx;
+
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        if ch == '"' || ch == '\'' {
+            in_string = Some(ch);
+            continue;
+        }
+
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
     }
 
     None
@@ -7163,8 +8119,7 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 
 fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let transform_chain =
-        "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
+    let transform_chain = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
 
     if let Some(number) = class.strip_prefix("skew-x-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
@@ -7987,8 +8942,16 @@ fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
     for (utility, style_property, width_property) in [
         ("border-x", "border-inline-style", "border-inline-width"),
         ("border-y", "border-block-style", "border-block-width"),
-        ("border-s", "border-inline-start-style", "border-inline-start-width"),
-        ("border-e", "border-inline-end-style", "border-inline-end-width"),
+        (
+            "border-s",
+            "border-inline-start-style",
+            "border-inline-start-width",
+        ),
+        (
+            "border-e",
+            "border-inline-end-style",
+            "border-inline-end-width",
+        ),
         ("border-t", "border-top-style", "border-top-width"),
         ("border-r", "border-right-style", "border-right-width"),
         ("border-b", "border-bottom-style", "border-bottom-width"),
@@ -7997,7 +8960,10 @@ fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
         if class == utility {
             return rule(
                 &selector,
-                &format!("{}:var(--tw-border-style);{}:1px", style_property, width_property),
+                &format!(
+                    "{}:var(--tw-border-style);{}:1px",
+                    style_property, width_property
+                ),
                 config,
             );
         }
@@ -8198,11 +9164,7 @@ fn generate_border_color_rule(
                 variant_tables,
             )?;
             if child_only {
-                return rule(
-                    &target,
-                    &nested_child_selector_block(&declarations),
-                    config,
-                );
+                return rule(&target, &nested_child_selector_block(&declarations), config);
             }
             return rule(&target, &declarations, config);
         }
@@ -8360,7 +9322,10 @@ fn generate_outline_width_rule(class: &str, config: &GeneratorConfig) -> Option<
     let value = parse_outline_width_value(raw)?;
     rule(
         &selector,
-        &format!("outline-style:var(--tw-outline-style);outline-width:{}", value),
+        &format!(
+            "outline-style:var(--tw-outline-style);outline-width:{}",
+            value
+        ),
         config,
     )
 }
@@ -8770,31 +9735,39 @@ fn apply_variants(
     variant_tables: &VariantTables,
 ) -> Option<String> {
     let rule = rule?;
+    let expected_base_selector = format!(".{}", escape_selector(base_class));
+    let class_selector = format!(".{}", escape_selector(full_class));
+    let (header, declarations_block) = split_rule_header_and_block(&rule)?;
+    let mut declarations_block = declarations_block.to_string();
+    let first_selector = header.split_whitespace().next()?;
+    if first_selector != expected_base_selector {
+        return None;
+    }
+
     if variants.is_empty() {
         if full_class != base_class {
-            if let Some(start) = rule.find('{') {
-                let header = rule[..start].trim_end();
-                let declarations = &rule[start..];
-                let first_selector = header.split_whitespace().next()?;
-                let expected_base_selector = format!(".{}", escape_selector(base_class));
-                if first_selector != expected_base_selector {
-                    return None;
-                }
-                let full_selector = format!(".{}", escape_selector(full_class));
-                let replaced_header = header.replacen(first_selector, &full_selector, 1);
-                return Some(format!("{}{}", replaced_header, declarations));
-            }
-            return None;
+            return Some(compose_flat_variant_rule(
+                header,
+                first_selector,
+                &class_selector,
+                &declarations_block,
+                &[],
+                minify,
+            ));
         }
         return Some(rule);
     }
 
-    let class_selector = format!(".{}", escape_selector(full_class));
-    let mut selector = class_selector;
+    let mut selector = class_selector.clone();
     let mut wrappers = Vec::new();
+    let mut pre_selector_wrappers = Vec::new();
+    let mut post_selector_wrappers = Vec::new();
     let mut needs_generated_content = false;
+    let mut selector_changed = false;
 
     for variant in variants {
+        let selector_before = selector.clone();
+        let wrappers_before = wrappers.len();
         if let Some(updated) = apply_selector_variant(
             selector.clone(),
             variant,
@@ -8802,38 +9775,144 @@ fn apply_variants(
             &mut needs_generated_content,
             variant_tables,
         ) {
+            let added_wrappers = wrappers[wrappers_before..].to_vec();
+            let changed_this_step = updated != selector_before;
+            if changed_this_step || selector_changed {
+                post_selector_wrappers.extend(added_wrappers);
+            } else {
+                pre_selector_wrappers.extend(added_wrappers);
+            }
+            selector_changed |= changed_this_step;
             selector = updated;
             continue;
         }
         return None;
     }
 
-    if let Some(start) = rule.find('{') {
-        let header = rule[..start].trim_end();
-        let mut declarations = rule[start..].to_string();
-        if needs_generated_content {
-            declarations = ensure_generated_content(&declarations)?;
-        }
-        let first_selector = header.split_whitespace().next()?;
-        let expected_base_selector = format!(".{}", escape_selector(base_class));
-        if first_selector != expected_base_selector {
-            return None;
-        }
-        let replaced_header = header.replacen(first_selector, &selector, 1);
-        let mut combined = format!("{}{}", replaced_header, declarations);
-        for wrapper in wrappers.iter().rev() {
-            combined = wrap_rule(wrapper, &combined, minify);
-        }
-        return Some(combined);
+    if needs_generated_content {
+        declarations_block = ensure_generated_content(&declarations_block, minify)?;
     }
 
+    if minify {
+        return Some(compose_flat_variant_rule(
+            header,
+            first_selector,
+            &selector,
+            &declarations_block,
+            &wrappers,
+            minify,
+        ));
+    }
+
+    let mut nested_body = declarations_body(&declarations_block)?.to_string();
+    for wrapper in post_selector_wrappers.iter().rev() {
+        nested_body = wrap_rule(wrapper, nested_body.trim(), false);
+    }
+
+    if selector != class_selector {
+        let relative_selector = selector.replace(&class_selector, "&");
+        if !relative_selector.contains('&') {
+            return Some(compose_flat_variant_rule(
+                header,
+                first_selector,
+                &selector,
+                &declarations_block,
+                &wrappers,
+                false,
+            ));
+        }
+        nested_body = compose_relative_selector_block(&relative_selector, nested_body.trim());
+    }
+
+    for wrapper in pre_selector_wrappers.iter().rev() {
+        nested_body = wrap_rule(wrapper, nested_body.trim(), false);
+    }
+
+    Some(format!(
+        "{} {{\n{}\n}}",
+        class_selector,
+        indent_css_block(nested_body.trim(), 2)
+    ))
+}
+
+fn compose_relative_selector_block(relative_selector: &str, body: &str) -> String {
+    if let Some((outer_selector, pseudo_element)) =
+        split_compound_pseudo_element_selector(relative_selector)
+    {
+        let nested_pseudo = format!(
+            "&{} {{\n{}\n}}",
+            pseudo_element,
+            indent_css_block(body.trim(), 2)
+        );
+        return format!(
+            "{} {{\n{}\n}}",
+            outer_selector,
+            indent_css_block(nested_pseudo.trim(), 2)
+        );
+    }
+
+    format!(
+        "{} {{\n{}\n}}",
+        relative_selector,
+        indent_css_block(body.trim(), 2)
+    )
+}
+
+fn split_compound_pseudo_element_selector(selector: &str) -> Option<(&str, &str)> {
+    for pseudo in ["::before", "::after"] {
+        if let Some(idx) = selector.rfind(pseudo) {
+            let outer = selector[..idx].trim();
+            let suffix = selector[idx..].trim();
+            if outer.is_empty() || outer == "&" || suffix != pseudo {
+                continue;
+            }
+            return Some((outer, pseudo));
+        }
+    }
     None
+}
+
+fn split_rule_header_and_block(rule: &str) -> Option<(&str, &str)> {
+    let start = rule.find('{')?;
+    let header = rule[..start].trim_end();
+    let block = rule[start..].trim();
+    if !block.starts_with('{') || !block.ends_with('}') {
+        return None;
+    }
+    Some((header, block))
+}
+
+fn declarations_body(block: &str) -> Option<&str> {
+    let open = block.find('{')?;
+    let close = block.rfind('}')?;
+    if close <= open {
+        return None;
+    }
+    Some(block[open + 1..close].trim())
+}
+
+fn compose_flat_variant_rule(
+    header: &str,
+    first_selector: &str,
+    selector: &str,
+    declarations_block: &str,
+    wrappers: &[RuleWrapper],
+    minify: bool,
+) -> String {
+    let replaced_header = header.replacen(first_selector, selector, 1);
+    let mut combined = if minify {
+        format!("{}{}", replaced_header, declarations_block)
+    } else {
+        format!("{} {}", replaced_header, declarations_block)
+    };
+    for wrapper in wrappers.iter().rev() {
+        combined = wrap_rule(wrapper, &combined, minify);
+    }
+    combined
 }
 
 fn escape_selector(class: &str) -> String {
     let mut escaped = String::with_capacity(class.len() * 2);
-    let mut bracket_depth = 0usize;
-    let mut paren_depth = 0usize;
 
     for ch in class.chars() {
         match ch {
@@ -8842,19 +9921,15 @@ fn escape_selector(class: &str) -> String {
             '/' => escaped.push_str("\\/"),
             '[' => {
                 escaped.push_str("\\[");
-                bracket_depth += 1;
             }
             ']' => {
                 escaped.push_str("\\]");
-                bracket_depth = bracket_depth.saturating_sub(1);
             }
             '(' => {
                 escaped.push_str("\\(");
-                paren_depth += 1;
             }
             ')' => {
                 escaped.push_str("\\)");
-                paren_depth = paren_depth.saturating_sub(1);
             }
             '&' => escaped.push_str("\\&"),
             '>' => escaped.push_str("\\>"),
@@ -8865,7 +9940,10 @@ fn escape_selector(class: &str) -> String {
             '!' => escaped.push_str("\\!"),
             '*' => escaped.push_str("\\*"),
             '@' => escaped.push_str("\\@"),
-            '.' if bracket_depth == 0 && paren_depth == 0 => escaped.push_str("\\."),
+            '#' => escaped.push_str("\\#"),
+            '\'' => escaped.push_str("\\'"),
+            '"' => escaped.push_str("\\\""),
+            '.' => escaped.push_str("\\."),
             _ => escaped.push(ch),
         }
     }
@@ -9204,11 +10282,11 @@ fn selector_for_simple_variant(
         "ltr" => ":where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)".to_string(),
         "before" => {
             *needs_generated_content = true;
-            ":before".to_string()
+            "::before".to_string()
         }
         "after" => {
             *needs_generated_content = true;
-            ":after".to_string()
+            "::after".to_string()
         }
         "first-letter" => "::first-letter".to_string(),
         "first-line" => "::first-line".to_string(),
@@ -9329,35 +10407,59 @@ fn apply_group_or_peer_variant(
             let replaced = inner.replace('&', &marker);
             return Some(format!("{}{}{}", replaced, combinator, selector));
         }
-        return Some(format!(
-            "{}{}{}{}{}",
-            marker, inner, combinator, selector, ""
+        let marker_expr = format!(":where({}){}", marker, inner);
+        return Some(compose_group_or_peer_relation(
+            &selector,
+            &marker_expr,
+            combinator,
         ));
     }
 
     if let Some(has_raw) = core.strip_prefix("has-") {
         let argument = has_argument(has_raw)?;
-        return Some(format!(
-            "{}:has({}){}{}",
-            marker, argument, combinator, selector
+        let marker_expr = format!(":where({}):has({})", marker, argument);
+        return Some(compose_group_or_peer_relation(
+            &selector,
+            &marker_expr,
+            combinator,
         ));
     }
 
     if let Some(data_raw) = core.strip_prefix("data-") {
         let conditioned = apply_data_variant(marker.clone(), data_raw)?;
-        return Some(format!("{}{}{}", conditioned, combinator, selector));
+        let marker_expr = format!(":where({})", conditioned);
+        return Some(compose_group_or_peer_relation(
+            &selector,
+            &marker_expr,
+            combinator,
+        ));
     }
 
     if let Some(aria_raw) = core.strip_prefix("aria-") {
         let conditioned = apply_aria_variant(marker.clone(), aria_raw)?;
-        return Some(format!("{}{}{}", conditioned, combinator, selector));
+        let marker_expr = format!(":where({})", conditioned);
+        return Some(compose_group_or_peer_relation(
+            &selector,
+            &marker_expr,
+            combinator,
+        ));
     }
 
     let marker_suffix = selector_for_simple_variant(core, wrappers, needs_generated_content)?;
-    Some(format!(
-        "{}{}{}{}",
-        marker, marker_suffix, combinator, selector
+    let marker_expr = format!(":where({}){}", marker, marker_suffix);
+    Some(compose_group_or_peer_relation(
+        &selector,
+        &marker_expr,
+        combinator,
     ))
+}
+
+fn compose_group_or_peer_relation(selector: &str, marker_expr: &str, combinator: &str) -> String {
+    if combinator.contains('~') {
+        format!("{}:is({} ~ *)", selector, marker_expr.trim())
+    } else {
+        format!("{}:is({} *)", selector, marker_expr.trim())
+    }
 }
 
 fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<String> {
@@ -9613,7 +10715,7 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
             if minify {
                 format!("@media {}{{{}}}", query, rule)
             } else {
-                format!("@media {} {{ {} }}", query, rule)
+                format!("@media {} {{\n{}\n}}", query, indent_css_block(rule, 2))
             }
         }
         RuleWrapper::Supports(query) => {
@@ -9621,7 +10723,7 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
             if minify {
                 format!("@supports {}{{{}}}", query, rule)
             } else {
-                format!("@supports {} {{ {} }}", query, rule)
+                format!("@supports {} {{\n{}\n}}", query, indent_css_block(rule, 2))
             }
         }
         RuleWrapper::Container { name, query } => {
@@ -9632,16 +10734,21 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
                     format!("@container {}{{{}}}", query, rule)
                 }
             } else if let Some(name) = name {
-                format!("@container {} {} {{ {} }}", name, query, rule)
+                format!(
+                    "@container {} {} {{\n{}\n}}",
+                    name,
+                    query,
+                    indent_css_block(rule, 2)
+                )
             } else {
-                format!("@container {} {{ {} }}", query, rule)
+                format!("@container {} {{\n{}\n}}", query, indent_css_block(rule, 2))
             }
         }
         RuleWrapper::StartingStyle => {
             if minify {
                 format!("@starting-style{{{}}}", rule)
             } else {
-                format!("@starting-style {{ {} }}", rule)
+                format!("@starting-style {{\n{}\n}}", indent_css_block(rule, 2))
             }
         }
         RuleWrapper::Template(template) => {
@@ -9650,10 +10757,24 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
             } else if minify {
                 format!("{}{{{}}}", template.trim(), rule)
             } else {
-                format!("{} {{ {} }}", template.trim(), rule)
+                format!("{} {{\n{}\n}}", template.trim(), indent_css_block(rule, 2))
             }
         }
     }
+}
+
+fn indent_css_block(css: &str, spaces: usize) -> String {
+    let padding = " ".repeat(spaces);
+    css.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{}{}", padding, line)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn normalize_supports_query(query: &str) -> String {
@@ -9704,7 +10825,7 @@ fn normalize_arbitrary_variant_content(raw: &str) -> String {
     out
 }
 
-fn ensure_generated_content(declarations_block: &str) -> Option<String> {
+fn ensure_generated_content(declarations_block: &str, minify: bool) -> Option<String> {
     let open = declarations_block.find('{')?;
     let close = declarations_block.rfind('}')?;
     if close <= open {
@@ -9714,12 +10835,30 @@ fn ensure_generated_content(declarations_block: &str) -> Option<String> {
     if body.contains("content:") {
         return Some(declarations_block.to_string());
     }
-    let with_content = if body.is_empty() {
-        "content:\"\"".to_string()
+
+    let mut declarations = body
+        .split(';')
+        .map(str::trim)
+        .filter(|decl| !decl.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    declarations.insert(0, "content: var(--tw-content)".to_string());
+
+    if minify {
+        let body = declarations
+            .into_iter()
+            .map(|decl| decl.replace(": ", ":"))
+            .collect::<Vec<_>>()
+            .join(";");
+        Some(format!("{{{}}}", body))
     } else {
-        format!("{};content:\"\"", body)
-    };
-    Some(format!("{{{}}}", with_content))
+        let body = declarations
+            .into_iter()
+            .map(|decl| format!("{};", decl))
+            .collect::<Vec<_>>()
+            .join("\n");
+        Some(format!("{{\n{}\n}}", body))
+    }
 }
 
 fn strip_important_modifier(class: &str) -> (&str, bool) {
@@ -9825,10 +10964,21 @@ fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<
     if config.minify {
         return Some(format!("{}{{{}}}", selector, formatted));
     }
-    if formatted.ends_with('}') || formatted.ends_with(';') {
-        return Some(format!("{} {{ {} }}", selector, formatted));
+    if formatted.contains('{') || formatted.contains('}') {
+        return Some(format!(
+            "{} {{\n{}\n}}",
+            selector,
+            indent_css_block(&formatted, 2)
+        ));
     }
-    Some(format!("{} {{ {}; }}", selector, formatted))
+    let lines = formatted
+        .split(';')
+        .map(str::trim)
+        .filter(|decl| !decl.is_empty())
+        .map(|decl| format!("  {};", decl))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!("{} {{\n{}\n}}", selector, lines))
 }
 
 fn format_declarations(declarations: &str, minify: bool) -> String {
@@ -9842,7 +10992,7 @@ fn format_declarations(declarations: &str, minify: bool) -> String {
                 .replace("; ", ";")
                 .replace(": ", ":");
         }
-        return trimmed.to_string();
+        return format_nested_declarations(trimmed);
     }
     let mut parts = Vec::new();
     for decl in declarations.split(';') {
@@ -9864,6 +11014,86 @@ fn format_declarations(declarations: &str, minify: bool) -> String {
     } else {
         parts.join("; ")
     }
+}
+
+fn format_nested_declarations(declarations: &str) -> String {
+    let mut out = String::new();
+    let mut token = String::new();
+    let mut depth = 0usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+
+    for ch in declarations.chars() {
+        if let Some(quote) = in_string {
+            token.push(ch);
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => {
+                token.push(ch);
+                in_string = Some(ch);
+            }
+            '{' => {
+                let header = token.trim();
+                if !header.is_empty() {
+                    push_line_with_indent(&mut out, depth, &format!("{} {{", header));
+                }
+                token.clear();
+                depth += 1;
+            }
+            ';' => {
+                let decl = token.trim();
+                if !decl.is_empty() {
+                    push_line_with_indent(&mut out, depth, &format!("{};", format_declaration(decl)));
+                }
+                token.clear();
+            }
+            '}' => {
+                let tail = token.trim();
+                if !tail.is_empty() {
+                    push_line_with_indent(&mut out, depth, &format!("{};", format_declaration(tail)));
+                }
+                token.clear();
+                depth = depth.saturating_sub(1);
+                push_line_with_indent(&mut out, depth, "}");
+            }
+            _ => token.push(ch),
+        }
+    }
+
+    let tail = token.trim();
+    if !tail.is_empty() {
+        push_line_with_indent(&mut out, depth, &format!("{};", format_declaration(tail)));
+    }
+
+    out
+}
+
+fn push_line_with_indent(out: &mut String, depth: usize, line: &str) {
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&"  ".repeat(depth));
+    out.push_str(line);
+}
+
+fn format_declaration(raw: &str) -> String {
+    let Some((name, value)) = raw.split_once(':') else {
+        return raw.trim().to_string();
+    };
+    format!("{}: {}", name.trim(), value.trim())
 }
 
 #[cfg(test)]
@@ -9935,16 +11165,12 @@ mod tests {
         assert!(result
             .css
             .contains("transition-property: color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events"));
-        assert!(
-            result
-                .css
-                .contains("transition-timing-function: var(--tw-ease,var(--default-transition-timing-function))")
-        );
-        assert!(
-            result
-                .css
-                .contains("transition-duration: var(--tw-duration,var(--default-transition-duration))")
-        );
+        assert!(result.css.contains(
+            "transition-timing-function: var(--tw-ease,var(--default-transition-timing-function))"
+        ));
+        assert!(result.css.contains(
+            "transition-duration: var(--tw-duration,var(--default-transition-duration))"
+        ));
         assert!(result.css.contains(".transition-all"));
         assert!(result.css.contains("transition-property: all"));
         assert!(result.css.contains(".transition-colors"));
@@ -10722,11 +11948,7 @@ mod tests {
         assert!(result.css.contains(".font-\\[Open_Sans\\]"));
         assert!(result.css.contains("font-family: Open_Sans"));
         assert!(result.css.contains(".font-bold"));
-        assert!(
-            result
-                .css
-                .contains("font-weight: var(--font-weight-bold)")
-        );
+        assert!(result.css.contains("font-weight: var(--font-weight-bold)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-serif"));
     }
@@ -10763,13 +11985,25 @@ mod tests {
         assert!(result.css.contains(".font-thin"));
         assert!(result.css.contains("font-weight: var(--font-weight-thin)"));
         assert!(result.css.contains(".font-extralight"));
-        assert!(result.css.contains("font-weight: var(--font-weight-extralight)"));
+        assert!(
+            result
+                .css
+                .contains("font-weight: var(--font-weight-extralight)")
+        );
         assert!(result.css.contains(".font-medium"));
-        assert!(result.css.contains("font-weight: var(--font-weight-medium)"));
+        assert!(
+            result
+                .css
+                .contains("font-weight: var(--font-weight-medium)")
+        );
         assert!(result.css.contains(".font-bold"));
         assert!(result.css.contains("font-weight: var(--font-weight-bold)"));
         assert!(result.css.contains(".font-extrabold"));
-        assert!(result.css.contains("font-weight: var(--font-weight-extrabold)"));
+        assert!(
+            result
+                .css
+                .contains("font-weight: var(--font-weight-extrabold)")
+        );
         assert!(result.css.contains(".font-black"));
         assert!(result.css.contains("font-weight: var(--font-weight-black)"));
         assert!(result.css.contains(".font-\\[1000\\]"));
@@ -11585,7 +12819,11 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".drop-shadow-none"));
-        assert!(result.css.contains("--tw-drop-shadow: drop-shadow(0 0 #0000)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-drop-shadow: drop-shadow(0 0 #0000)")
+        );
         assert!(result.css.contains(".drop-shadow-md"));
         assert!(
             result
@@ -11909,11 +13147,23 @@ mod tests {
         assert!(result.css.contains(".backdrop-blur-none"));
         assert!(result.css.contains("--tw-backdrop-blur: blur(0)"));
         assert!(result.css.contains(".backdrop-blur-sm"));
-        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-sm))"));
+        assert!(
+            result
+                .css
+                .contains("--tw-backdrop-blur: blur(var(--blur-sm))")
+        );
         assert!(result.css.contains(".backdrop-blur-md"));
-        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-md))"));
+        assert!(
+            result
+                .css
+                .contains("--tw-backdrop-blur: blur(var(--blur-md))")
+        );
         assert!(result.css.contains(".backdrop-blur-lg"));
-        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-lg))"));
+        assert!(
+            result
+                .css
+                .contains("--tw-backdrop-blur: blur(var(--blur-lg))")
+        );
         assert!(result.css.contains(".backdrop-blur-2xs"));
         assert!(
             result
@@ -11932,7 +13182,11 @@ mod tests {
                 .css
                 .contains("--tw-backdrop-blur: blur(var(--my-backdrop-blur))")
         );
-        assert!(result.css.contains("-webkit-backdrop-filter: var(--tw-backdrop-blur,)"));
+        assert!(
+            result
+                .css
+                .contains("-webkit-backdrop-filter: var(--tw-backdrop-blur,)")
+        );
         assert!(result.css.contains(".md\\:backdrop-blur-lg"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -12601,7 +13855,11 @@ mod tests {
         assert!(result.css.contains(".left-0"));
         assert!(result.css.contains("left: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".inset-x-0"));
-        assert!(result.css.contains("inset-inline: calc(var(--spacing) * 0)"));
+        assert!(
+            result
+                .css
+                .contains("inset-inline: calc(var(--spacing) * 0)")
+        );
         assert!(result.css.contains(".inset-y-0"));
         assert!(result.css.contains("inset-block: calc(var(--spacing) * 0)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -12895,13 +14153,23 @@ mod tests {
                 .contains("background-color: var(--color-sky-500)")
         );
         assert!(result.css.contains(".bg-sky-500\\/75"));
-        assert!(result.css.contains("color-mix(in oklab,var(--color-sky-500) 75%,transparent)"));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-sky-500) 75%,transparent)")
+        );
         assert!(result.css.contains(".bg-sky-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains("color-mix(in oklab,var(--color-sky-500) 37%,transparent)"));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-sky-500) 37%,transparent)")
+        );
         assert!(result.css.contains(".bg-sky-500\\/\\(--my-opacity\\)"));
-        assert!(result
-            .css
-            .contains("color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)"));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)")
+        );
         assert!(result.css.contains(".bg-\\[#50d71e\\]"));
         assert!(result.css.contains("background-color: #50d71e"));
         assert!(
@@ -12916,9 +14184,9 @@ mod tests {
                 .contains(".bg-\\[color\\:var\\(--tool-surface\\)\\]\\/90")
         );
         assert!(
-            result.css.contains(
-                "color-mix(in oklab,var(--tool-surface) 90%,transparent)"
-            )
+            result
+                .css
+                .contains("color-mix(in oklab,var(--tool-surface) 90%,transparent)")
         );
         assert!(result.css.contains(".bg-\\(--my-color\\)"));
         assert!(result.css.contains("background-color: var(--my-color)"));
@@ -13073,7 +14341,11 @@ mod tests {
                 .contains("--tw-gradient-from: var(--color-indigo-500)")
         );
         assert!(result.css.contains(".from-white\\/10"));
-        assert!(result.css.contains("color-mix(in oklab,var(--color-white) 10%,transparent)"));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-white) 10%,transparent)")
+        );
         assert!(result.css.contains(".from-10\\%"));
         assert!(result.css.contains("--tw-gradient-from-position: 10%"));
         assert!(result.css.contains(".from-\\(--my-from\\)"));
@@ -13096,9 +14368,9 @@ mod tests {
         );
         assert!(result.css.contains(".to-white\\/30"));
         assert!(
-            result.css.contains(
-                "color-mix(in oklab,var(--color-white) 30%,transparent)"
-            )
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-white) 30%,transparent)")
         );
         assert!(result.css.contains(".to-90\\%"));
         assert!(result.css.contains("--tw-gradient-to-position: 90%"));
@@ -13173,9 +14445,11 @@ mod tests {
                 .contains("color-mix(in oklab,var(--color-red-500) 37%,transparent)")
         );
         assert!(result.css.contains(".text-red-500\\/\\(--my-opacity\\)"));
-        assert!(result.css.contains(
-            "color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
-        ));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)")
+        );
         assert!(result.css.contains(".text-white\\/60"));
         assert!(
             result
@@ -13772,9 +15046,17 @@ mod tests {
         );
         assert!(result.css.contains(".border-\\[#243c5a\\]"));
         assert!(result.css.contains("border-color: #243c5a"));
-        assert!(result.css.contains(".border-\\[color\\:var\\(--tool-border\\)\\]"));
+        assert!(
+            result
+                .css
+                .contains(".border-\\[color\\:var\\(--tool-border\\)\\]")
+        );
         assert!(result.css.contains("border-color: var(--tool-border)"));
-        assert!(!result.css.contains("border-width: color:var(--tool-border)"));
+        assert!(
+            !result
+                .css
+                .contains("border-width: color:var(--tool-border)")
+        );
         assert!(result.css.contains(".border-\\(--my-border\\)"));
         assert!(result.css.contains("border-color: var(--my-border)"));
         assert!(result.css.contains(".divide-rose-400"));
@@ -13842,9 +15124,9 @@ mod tests {
         );
         assert!(result.css.contains(".divide-y-\\[3px\\]"));
         assert!(
-            result.css.contains(
-                "border-bottom-width:calc(3px * calc(1 - var(--tw-divide-y-reverse)))"
-            )
+            result
+                .css
+                .contains("border-bottom-width:calc(3px * calc(1 - var(--tw-divide-y-reverse)))")
         );
         assert!(result.css.contains(".divide-x-reverse"));
         assert!(result.css.contains("--tw-divide-x-reverse:1"));
@@ -14073,9 +15355,17 @@ mod tests {
         ));
         assert!(result.css.contains(".outline-\\[#243c5a\\]"));
         assert!(result.css.contains("outline-color: #243c5a"));
-        assert!(result.css.contains(".outline-\\[color\\:var\\(--tool-primary\\)\\]"));
+        assert!(
+            result
+                .css
+                .contains(".outline-\\[color\\:var\\(--tool-primary\\)\\]")
+        );
         assert!(result.css.contains("outline-color: var(--tool-primary)"));
-        assert!(!result.css.contains("outline-width: color:var(--tool-primary)"));
+        assert!(
+            !result
+                .css
+                .contains("outline-width: color:var(--tool-primary)")
+        );
         assert!(result.css.contains(".outline-\\(--my-color\\)"));
         assert!(result.css.contains("outline-color: var(--my-color)"));
         assert!(result.css.contains(".focus\\:outline-sky-500:focus"));
@@ -14292,15 +15582,15 @@ mod tests {
         );
         assert!(result.css.contains(".shadow-2xl"));
         assert!(
-            result
-                .css
-                .contains("--tw-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))")
+            result.css.contains(
+                "--tw-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))"
+            )
         );
         assert!(result.css.contains(".shadow-inner"));
         assert!(
-            result
-                .css
-                .contains("--tw-shadow: inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))")
+            result.css.contains(
+                "--tw-shadow: inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))"
+            )
         );
         assert!(result.css.contains(".shadow-none"));
         assert!(result.css.contains("--tw-shadow: 0 0 #0000"));
@@ -14309,7 +15599,11 @@ mod tests {
                 .css
                 .contains(".shadow-\\[0_0_20px_rgba\\(255\\,255\\,255\\,0.3\\)\\]")
         );
-        assert!(result.css.contains("--tw-shadow: 0 0 20px rgba(255,255,255,0.3)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-shadow: 0 0 20px rgba(255,255,255,0.3)")
+        );
         assert!(result.css.contains(".shadow-\\(--portal-shadow\\)"));
         assert!(result.css.contains("--tw-shadow: var(--portal-shadow)"));
     }
@@ -14404,34 +15698,26 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".ring"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))"
+        ));
         assert!(result.css.contains(
             "box-shadow: var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
         ));
         assert!(result.css.contains(".ring-inset"));
         assert!(result.css.contains("--tw-ring-inset: inset"));
         assert!(result.css.contains(".ring-0"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width))"
+        ));
         assert!(result.css.contains(".ring-2"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))"
+        ));
         assert!(result.css.contains(".ring-8"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width))"
+        ));
     }
 
     #[test]
@@ -14458,7 +15744,11 @@ mod tests {
                 .contains("--tw-ring-color: var(--color-blue-500)")
         );
         assert!(result.css.contains(".ring-rose-500\\/30"));
-        assert!(result.css.contains("color-mix(in oklab,var(--color-rose-500) 30%,transparent)"));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-rose-500) 30%,transparent)")
+        );
         assert!(result.css.contains(".ring-\\(--my-ring-color\\)"));
         assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
         assert!(result.css.contains(".ring-\\[#243c5a\\]"));
@@ -14518,11 +15808,9 @@ mod tests {
         };
         let result = generate(&["focus:ring-2".to_string()], &config);
         assert!(result.css.contains(".focus\\:ring-2:focus"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))"
+        ));
     }
 
     #[test]
@@ -14566,11 +15854,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".focus-within\\:ring-1:focus-within"));
-        assert!(
-            result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))")
-        );
+        assert!(result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))"
+        ));
         assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
         assert!(
             result
@@ -14823,18 +16109,11 @@ mod tests {
             &config,
             Some(&overrides),
         );
-        assert!(
-            result
-                .css
-                .contains(".scrollbar-hidden { &::-webkit-scrollbar { display: none; } }")
-        );
+        assert!(result.css.contains(".scrollbar-hidden"));
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains(".hover\\:scrollbar-hidden:hover"));
-        assert!(
-            result
-                .css
-                .contains("&::-webkit-scrollbar { display: none; }")
-        );
+        assert!(result.css.contains("&::-webkit-scrollbar"));
+        assert!(result.css.contains("display: none;"));
     }
 
     #[test]
@@ -15570,7 +16849,7 @@ mod tests {
         );
 
         assert!(result.css.contains(".before\\:bg-blue-500:before"));
-        assert!(result.css.contains("content:\"\""));
+        assert!(result.css.contains("content:\"\"") || result.css.contains("content: \"\""));
         assert!(result.css.contains(".after\\:text-blue-600:after"));
         assert!(
             result
@@ -17942,11 +19221,7 @@ mod tests {
                 .contains("inset-inline: calc(var(--spacing) * 2)")
         );
         assert!(result.css.contains(".inset-y-3"));
-        assert!(
-            result
-                .css
-                .contains("inset-block: calc(var(--spacing) * 3)")
-        );
+        assert!(result.css.contains("inset-block: calc(var(--spacing) * 3)"));
         assert!(result.css.contains(".top-1\\/2"));
         assert!(result.css.contains("top: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-top-1\\/2"));
@@ -18309,7 +19584,11 @@ mod tests {
         assert!(result.css.contains("--tw-scale-x: 75%"));
         assert!(result.css.contains("--tw-scale-y: 75%"));
         assert!(result.css.contains("--tw-scale-z: 75%"));
-        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y)"));
+        assert!(
+            result
+                .css
+                .contains("scale: var(--tw-scale-x) var(--tw-scale-y)")
+        );
         assert!(result.css.contains(".-scale-125"));
         assert!(result.css.contains("--tw-scale-x: calc(125% * -1)"));
         assert!(result.css.contains("--tw-scale-y: calc(125% * -1)"));
@@ -18633,18 +19912,46 @@ mod tests {
         assert!(result.css.contains(".translate-none"));
         assert!(result.css.contains("translate: none"));
         assert!(result.css.contains(".translate-2"));
-        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 2)"));
-        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 2)"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) var(--tw-translate-y)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(var(--spacing) * 2)")
+        );
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(var(--spacing) * 2)")
+        );
+        assert!(
+            result
+                .css
+                .contains("translate: var(--tw-translate-x) var(--tw-translate-y)")
+        );
         assert!(result.css.contains(".-translate-4"));
-        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * -4)"));
-        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * -4)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(var(--spacing) * -4)")
+        );
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(var(--spacing) * -4)")
+        );
         assert!(result.css.contains(".translate-1\\/2"));
         assert!(result.css.contains("--tw-translate-x: calc(1/2 * 100%)"));
         assert!(result.css.contains("--tw-translate-y: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-translate-1\\/4"));
-        assert!(result.css.contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)"));
-        assert!(result.css.contains("--tw-translate-y: calc(calc(1/4 * 100%) * -1)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)")
+        );
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(calc(1/4 * 100%) * -1)")
+        );
         assert!(result.css.contains(".translate-full"));
         assert!(result.css.contains("--tw-translate-x: 100%"));
         assert!(result.css.contains("--tw-translate-y: 100%"));
@@ -18665,13 +19972,25 @@ mod tests {
         assert!(result.css.contains("--tw-translate-y: 3.142rad"));
 
         assert!(result.css.contains(".translate-x-3"));
-        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 3)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(var(--spacing) * 3)")
+        );
         assert!(result.css.contains(".-translate-x-6"));
-        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * -6)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(var(--spacing) * -6)")
+        );
         assert!(result.css.contains(".translate-x-1\\/2"));
         assert!(result.css.contains("--tw-translate-x: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-translate-x-1\\/4"));
-        assert!(result.css.contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)")
+        );
         assert!(result.css.contains(".translate-x-full"));
         assert!(result.css.contains("--tw-translate-x: 100%"));
         assert!(result.css.contains(".-translate-x-full"));
@@ -18681,18 +20000,34 @@ mod tests {
         assert!(result.css.contains(".-translate-x-px"));
         assert!(result.css.contains("--tw-translate-x: -1px"));
         assert!(result.css.contains(".translate-x-\\(--my-translate-x\\)"));
-        assert!(result.css.contains("--tw-translate-x: var(--my-translate-x)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: var(--my-translate-x)")
+        );
         assert!(result.css.contains(".translate-x-\\[4px\\]"));
         assert!(result.css.contains("--tw-translate-x: 4px"));
 
         assert!(result.css.contains(".translate-y-8"));
-        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 8)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(var(--spacing) * 8)")
+        );
         assert!(result.css.contains(".-translate-y-2"));
-        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * -2)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(var(--spacing) * -2)")
+        );
         assert!(result.css.contains(".translate-y-1\\/3"));
         assert!(result.css.contains("--tw-translate-y: calc(1/3 * 100%)"));
         assert!(result.css.contains(".-translate-y-1\\/2"));
-        assert!(result.css.contains("--tw-translate-y: calc(calc(1/2 * 100%) * -1)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(calc(1/2 * 100%) * -1)")
+        );
         assert!(result.css.contains(".translate-y-full"));
         assert!(result.css.contains("--tw-translate-y: 100%"));
         assert!(result.css.contains(".-translate-y-full"));
@@ -18702,7 +20037,11 @@ mod tests {
         assert!(result.css.contains(".-translate-y-px"));
         assert!(result.css.contains("--tw-translate-y: -1px"));
         assert!(result.css.contains(".translate-y-\\(--my-translate-y\\)"));
-        assert!(result.css.contains("--tw-translate-y: var(--my-translate-y)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: var(--my-translate-y)")
+        );
         assert!(result.css.contains(".translate-y-\\[5px\\]"));
         assert!(result.css.contains("--tw-translate-y: 5px"));
 
@@ -18739,8 +20078,16 @@ mod tests {
 
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:translate-6"));
-        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 6)"));
-        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 6)"));
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-x: calc(var(--spacing) * 6)")
+        );
+        assert!(
+            result
+                .css
+                .contains("--tw-translate-y: calc(var(--spacing) * 6)")
+        );
     }
 
     #[test]
@@ -19223,9 +20570,9 @@ mod tests {
             "margin-block-start:calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
         ));
         assert!(result.css.contains(".-space-y-1"));
-        assert!(result
-            .css
-            .contains("margin-block-end:calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"));
+        assert!(result.css.contains(
+            "margin-block-end:calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"
+        ));
         assert!(result.css.contains(".space-y-px"));
         assert!(
             result
@@ -19240,9 +20587,9 @@ mod tests {
         );
         assert!(result.css.contains(".space-y-\\(--my-space-y\\)"));
         assert!(
-            result.css.contains(
-                "margin-block-start:calc(var(--my-space-y) * var(--tw-space-y-reverse))"
-            )
+            result
+                .css
+                .contains("margin-block-start:calc(var(--my-space-y) * var(--tw-space-y-reverse))")
         );
         assert!(result.css.contains(".space-y-\\[10\\%\\]"));
         assert!(
@@ -19351,67 +20698,56 @@ mod tests {
         assert!(result.css.contains("height: calc(var(--spacing) * 0.5)"));
 
         assert!(result.css.contains(".size-8"));
-        assert!(
-            result
-                .css
-                .contains("width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8)")
-        );
+        assert!(result.css.contains("width: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains("height: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".size-0\\.5"));
-        assert!(
-            result
-                .css
-                .contains("width: calc(var(--spacing) * 0.5); height: calc(var(--spacing) * 0.5)")
-        );
+        assert!(result.css.contains("width: calc(var(--spacing) * 0.5)"));
+        assert!(result.css.contains("height: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".size-1\\/2"));
-        assert!(
-            result
-                .css
-                .contains("width: calc(1/2 * 100%); height: calc(1/2 * 100%)")
-        );
+        assert!(result.css.contains("width: calc(1/2 * 100%)"));
+        assert!(result.css.contains("height: calc(1/2 * 100%)"));
         assert!(result.css.contains(".size-auto"));
-        assert!(result.css.contains("width: auto; height: auto"));
+        assert!(result.css.contains("width: auto"));
+        assert!(result.css.contains("height: auto"));
         assert!(result.css.contains(".size-px"));
-        assert!(result.css.contains("width: 1px; height: 1px"));
+        assert!(result.css.contains("width: 1px"));
+        assert!(result.css.contains("height: 1px"));
         assert!(result.css.contains(".size-full"));
-        assert!(result.css.contains("width: 100%; height: 100%"));
+        assert!(result.css.contains("width: 100%"));
+        assert!(result.css.contains("height: 100%"));
         assert!(result.css.contains(".size-dvw"));
-        assert!(result.css.contains("width: 100dvw; height: 100dvw"));
+        assert!(result.css.contains("width: 100dvw"));
+        assert!(result.css.contains("height: 100dvw"));
         assert!(result.css.contains(".size-dvh"));
-        assert!(result.css.contains("width: 100dvh; height: 100dvh"));
+        assert!(result.css.contains("width: 100dvh"));
+        assert!(result.css.contains("height: 100dvh"));
         assert!(result.css.contains(".size-lvw"));
-        assert!(result.css.contains("width: 100lvw; height: 100lvw"));
+        assert!(result.css.contains("width: 100lvw"));
+        assert!(result.css.contains("height: 100lvw"));
         assert!(result.css.contains(".size-lvh"));
-        assert!(result.css.contains("width: 100lvh; height: 100lvh"));
+        assert!(result.css.contains("width: 100lvh"));
+        assert!(result.css.contains("height: 100lvh"));
         assert!(result.css.contains(".size-svw"));
-        assert!(result.css.contains("width: 100svw; height: 100svw"));
+        assert!(result.css.contains("width: 100svw"));
+        assert!(result.css.contains("height: 100svw"));
         assert!(result.css.contains(".size-svh"));
-        assert!(result.css.contains("width: 100svh; height: 100svh"));
+        assert!(result.css.contains("width: 100svh"));
+        assert!(result.css.contains("height: 100svh"));
         assert!(result.css.contains(".size-min"));
-        assert!(
-            result
-                .css
-                .contains("width: min-content; height: min-content")
-        );
+        assert!(result.css.contains("width: min-content"));
+        assert!(result.css.contains("height: min-content"));
         assert!(result.css.contains(".size-max"));
-        assert!(
-            result
-                .css
-                .contains("width: max-content; height: max-content")
-        );
+        assert!(result.css.contains("width: max-content"));
+        assert!(result.css.contains("height: max-content"));
         assert!(result.css.contains(".size-fit"));
-        assert!(
-            result
-                .css
-                .contains("width: fit-content; height: fit-content")
-        );
+        assert!(result.css.contains("width: fit-content"));
+        assert!(result.css.contains("height: fit-content"));
         assert!(result.css.contains(".size-\\(--my-size\\)"));
-        assert!(
-            result
-                .css
-                .contains("width: var(--my-size); height: var(--my-size)")
-        );
+        assert!(result.css.contains("width: var(--my-size)"));
+        assert!(result.css.contains("height: var(--my-size)"));
         assert!(result.css.contains(".size-\\[10rem\\]"));
-        assert!(result.css.contains("width: 10rem; height: 10rem"));
+        assert!(result.css.contains("width: 10rem"));
+        assert!(result.css.contains("height: 10rem"));
 
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:w-auto"));

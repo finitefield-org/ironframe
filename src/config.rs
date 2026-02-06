@@ -50,7 +50,7 @@ impl Default for Theme {
 
 #[cfg(test)]
 mod tests {
-    use super::{load, Config};
+    use super::{Config, load};
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 

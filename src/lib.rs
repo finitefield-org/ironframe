@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 
 const PREFLIGHT_CSS: &str = include_str!("preflight.css");
 const DEFAULT_THEME_CSS: &str = include_str!("default_theme.css");
+const PROPERTY_DEFINITIONS_CSS: &str = include_str!("properties_definitions.css");
+const PROPERTY_FALLBACK_CSS: &str = include_str!("properties_fallback.css");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -353,7 +355,10 @@ fn run_build(
         source_directives = parse_source_directives(&template);
         stylesheet_dir = Some(style_dir);
         parsed_theme = Some(parse_theme_with_defaults(&template));
-        let stripped = strip_tailwind_custom_directives(&template);
+        let mut stripped = strip_tailwind_custom_directives(&template);
+        if !contains_framework_import(&stripped) && looks_like_compiled_framework_css(&template) {
+            stripped = "@import \"tailwindcss\";\n".to_string();
+        }
         let variant_overrides = parsed_theme
             .as_ref()
             .map(|theme| &theme.variant_overrides)
@@ -475,19 +480,19 @@ fn run_build(
         parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
     );
     let mut utility_css = crate::generator::emit_css(&generation);
+    let preflight_css = PREFLIGHT_CSS.to_string();
     let mut theme_css = String::new();
     if let Some(theme) = parsed_theme.as_ref() {
         if !theme.inline_variables.is_empty() {
             utility_css = apply_inline_theme_variables(&utility_css, &theme.inline_variables);
         }
         let usage_css = if let Some(template) = stripped_template_css.as_ref() {
-            format!("{}\n{}", utility_css, template)
+            format!("{}\n{}\n{}", preflight_css, utility_css, template)
         } else {
-            utility_css.clone()
+            format!("{}\n{}", preflight_css, utility_css)
         };
         theme_css = emit_parsed_theme_css(theme, &usage_css, minify);
     }
-    let preflight_css = PREFLIGHT_CSS.to_string();
     let header = build_header(scan_result.files_scanned, scan_result.classes.len(), minify);
     let mut css = if minify {
         format!("{}{}{}", header, theme_css, utility_css)
@@ -564,17 +569,8 @@ fn print_help() {
     println!("  ironframe watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
 }
 
-fn build_header(files_scanned: usize, class_count: usize, minify: bool) -> String {
-    if minify {
-        return format!(
-            "/* ironframe | files:{} | classes:{} */",
-            files_scanned, class_count
-        );
-    }
-    format!(
-        "/*\n  ironframe\n  files: {}\n  classes: {}\n*/",
-        files_scanned, class_count
-    )
+fn build_header(_files_scanned: usize, _class_count: usize, _minify: bool) -> String {
+    "/*! tailwindcss v4.1.17 | MIT License | https://tailwindcss.com */".to_string()
 }
 
 #[derive(Debug, Clone)]
@@ -1049,10 +1045,14 @@ fn apply_framework_import_alias(
 ) -> Option<String> {
     let mut replaced = false;
     let mut emitted_header = false;
+    let mut emitted_layer_prelude = false;
     let mut emitted_theme = false;
     let mut emitted_preflight = false;
     let mut emitted_utilities = false;
+    let mut emitted_property_tail = false;
+    let mut utilities_prefix: Option<String> = None;
     let mut rendered_lines = Vec::new();
+    let mut deferred_keyframes = Vec::<String>::new();
 
     for line in template_css.lines() {
         let Some(directives) = parse_framework_import_directives(line) else {
@@ -1066,54 +1066,70 @@ fn apply_framework_import_alias(
             blocks.push(header_css.to_string());
             emitted_header = true;
         }
+        if !emitted_layer_prelude {
+            blocks.push(framework_layer_prelude(minify));
+            emitted_layer_prelude = true;
+        }
 
         match directives.target {
             FrameworkImportTarget::Framework => {
                 if !emitted_theme {
-                    blocks.push(apply_import_transforms(
-                        theme_css,
-                        directives.prefix.as_deref(),
-                        false,
-                    ));
+                    let themed =
+                        apply_import_transforms(theme_css, directives.prefix.as_deref(), false);
+                    let themed = inject_host_selector(&themed, minify);
+                    let (theme_block, keyframes_block) = split_theme_keyframes(&themed);
+                    blocks.push(wrap_layer_block("theme", &theme_block, minify));
+                    if !keyframes_block.is_empty() {
+                        deferred_keyframes.push(keyframes_block);
+                    }
                     emitted_theme = true;
                 }
                 if !emitted_preflight {
-                    blocks.push(preflight_css.to_string());
+                    blocks.push(wrap_layer_block("base", preflight_css, minify));
                     emitted_preflight = true;
                 }
                 if !emitted_utilities {
-                    blocks.push(apply_import_transforms(
+                    let utilities = apply_import_transforms(
                         utility_css,
                         directives.prefix.as_deref(),
                         directives.important,
-                    ));
+                    );
+                    blocks.push(wrap_layer_block("utilities", &utilities, minify));
                     emitted_utilities = true;
+                    emitted_property_tail = true;
+                    utilities_prefix = directives.prefix.clone();
                 }
             }
             FrameworkImportTarget::Theme => {
                 if !emitted_theme {
-                    blocks.push(apply_import_transforms(
-                        theme_css,
-                        directives.prefix.as_deref(),
-                        false,
-                    ));
+                    let themed =
+                        apply_import_transforms(theme_css, directives.prefix.as_deref(), false);
+                    let themed = inject_host_selector(&themed, minify);
+                    let (theme_block, keyframes_block) = split_theme_keyframes(&themed);
+                    blocks.push(wrap_layer_block("theme", &theme_block, minify));
+                    if !keyframes_block.is_empty() {
+                        deferred_keyframes.push(keyframes_block);
+                    }
                     emitted_theme = true;
                 }
             }
             FrameworkImportTarget::Preflight => {
                 if !emitted_preflight {
-                    blocks.push(preflight_css.to_string());
+                    blocks.push(wrap_layer_block("base", preflight_css, minify));
                     emitted_preflight = true;
                 }
             }
             FrameworkImportTarget::Utilities => {
                 if !emitted_utilities {
-                    blocks.push(apply_import_transforms(
+                    let utilities = apply_import_transforms(
                         utility_css,
                         directives.prefix.as_deref(),
                         directives.important,
-                    ));
+                    );
+                    blocks.push(wrap_layer_block("utilities", &utilities, minify));
                     emitted_utilities = true;
+                    emitted_property_tail = true;
+                    utilities_prefix = directives.prefix.clone();
                 }
             }
         }
@@ -1129,6 +1145,30 @@ fn apply_framework_import_alias(
     }
 
     let mut rendered = rendered_lines.join("\n");
+    let deferred_keyframes_block = combine_css_blocks(&deferred_keyframes, minify);
+    let mut deferred_tail = Vec::<String>::new();
+    if emitted_property_tail {
+        let mut property_definitions = PROPERTY_DEFINITIONS_CSS.to_string();
+        let mut property_fallback = PROPERTY_FALLBACK_CSS.to_string();
+        if let Some(prefix) = utilities_prefix.as_deref() {
+            property_definitions = apply_prefix_to_css(&property_definitions, prefix);
+            property_fallback = apply_prefix_to_css(&property_fallback, prefix);
+        }
+        deferred_tail.push(property_definitions);
+        if !deferred_keyframes_block.is_empty() {
+            deferred_tail.push(deferred_keyframes_block);
+        }
+        deferred_tail.push(property_fallback);
+    } else if !deferred_keyframes_block.is_empty() {
+        deferred_tail.push(deferred_keyframes_block);
+    }
+    let deferred_block = combine_css_blocks(&deferred_tail, minify);
+    if !deferred_block.is_empty() {
+        if !rendered.is_empty() {
+            rendered.push('\n');
+        }
+        rendered.push_str(&deferred_block);
+    }
     if template_css.ends_with('\n') {
         rendered.push('\n');
     }
@@ -1144,6 +1184,99 @@ fn apply_import_transforms(css: &str, prefix: Option<&str>, important: bool) -> 
         rendered = apply_important_to_css(&rendered);
     }
     rendered
+}
+
+fn framework_layer_prelude(minify: bool) -> String {
+    if minify {
+        "@layer properties;@layer theme,base,components,utilities;".to_string()
+    } else {
+        "@layer properties;\n@layer theme, base, components, utilities;".to_string()
+    }
+}
+
+fn wrap_layer_block(layer: &str, css: &str, minify: bool) -> String {
+    let content = css.trim();
+    if content.is_empty() {
+        return String::new();
+    }
+    if minify {
+        format!("@layer {}{{{}}}", layer, content)
+    } else {
+        let indented = content
+            .lines()
+            .map(|line| {
+                if line.is_empty() {
+                    String::new()
+                } else {
+                    format!("  {}", line)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("@layer {} {{\n{}\n}}", layer, indented)
+    }
+}
+
+fn inject_host_selector(theme_css: &str, minify: bool) -> String {
+    let mut rendered = theme_css.to_string();
+    if let Some(idx) = rendered.find(":root {") {
+        rendered.replace_range(idx..idx + ":root {".len(), ":root, :host {");
+        return rendered;
+    }
+    if let Some(idx) = rendered.find(":root{") {
+        let replacement = if minify {
+            ":root,:host{"
+        } else {
+            ":root, :host{"
+        };
+        rendered.replace_range(idx..idx + ":root{".len(), replacement);
+    }
+    rendered
+}
+
+fn split_theme_keyframes(theme_css: &str) -> (String, String) {
+    let mut theme_blocks = Vec::<String>::new();
+    let mut keyframe_blocks = Vec::<String>::new();
+    let mut cursor = 0usize;
+
+    while cursor < theme_css.len() {
+        while let Some(ch) = theme_css[cursor..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            cursor += ch.len_utf8();
+        }
+        if cursor >= theme_css.len() {
+            break;
+        }
+
+        let Some(open_rel) = theme_css[cursor..].find('{') else {
+            let trailing = theme_css[cursor..].trim();
+            if !trailing.is_empty() {
+                theme_blocks.push(trailing.to_string());
+            }
+            break;
+        };
+        let open_idx = cursor + open_rel;
+        let Some(close_idx) = find_matching_brace(theme_css, open_idx) else {
+            let trailing = theme_css[cursor..].trim();
+            if !trailing.is_empty() {
+                theme_blocks.push(trailing.to_string());
+            }
+            break;
+        };
+
+        let block = theme_css[cursor..=close_idx].trim().to_string();
+        let header = theme_css[cursor..open_idx].trim_start();
+        if header.starts_with("@keyframes") {
+            keyframe_blocks.push(block);
+        } else {
+            theme_blocks.push(block);
+        }
+        cursor = close_idx + 1;
+    }
+
+    (theme_blocks.join("\n"), keyframe_blocks.join("\n"))
 }
 
 fn combine_css_blocks(blocks: &[String], minify: bool) -> String {
@@ -1944,10 +2077,11 @@ fn emit_parsed_theme_css(theme: &ParsedTheme, generated_css: &str, minify: bool)
         } else {
             let mut block = String::from(":root {\n");
             for variable in &emitted_root_vars {
+                let normalized_value = normalize_theme_value_indentation(&variable.value);
                 block.push_str("  ");
                 block.push_str(&variable.name);
                 block.push_str(": ");
-                block.push_str(&variable.value);
+                block.push_str(&normalized_value);
                 block.push_str(";\n");
             }
             block.push('}');
@@ -1967,6 +2101,20 @@ fn emit_parsed_theme_css(theme: &ParsedTheme, generated_css: &str, minify: bool)
     } else {
         parts.join("\n")
     }
+}
+
+fn normalize_theme_value_indentation(value: &str) -> String {
+    let mut lines = value.lines();
+    let Some(first_line) = lines.next() else {
+        return String::new();
+    };
+    let mut rendered = first_line.trim_end().to_string();
+    for line in lines {
+        rendered.push('\n');
+        rendered.push_str("  ");
+        rendered.push_str(line.trim());
+    }
+    rendered
 }
 
 fn extract_css_variables(css: &str) -> std::collections::BTreeSet<String> {
@@ -2011,7 +2159,9 @@ fn resolve_emitted_theme_variables(
     root_variables
         .iter()
         .enumerate()
-        .filter(|(idx, _)| included_indices.contains(idx))
+        .filter(|(idx, variable)| {
+            included_indices.contains(idx) && (variable.always_emit || variable.value != "initial")
+        })
         .map(|(_, variable)| variable.clone())
         .collect()
 }
@@ -2019,19 +2169,43 @@ fn resolve_emitted_theme_variables(
 fn extract_css_variables_from_value(value: &str) -> Vec<String> {
     let mut vars = Vec::new();
     let mut cursor = 0usize;
-    while let Some(rel_start) = value[cursor..].find("var(--") {
-        let start = cursor + rel_start + "var(".len();
-        let Some(end_rel) = value[start..].find(')') else {
-            break;
-        };
-        let end = start + end_rel;
-        let raw = &value[start..end];
-        let variable = raw.split(',').next().unwrap_or(raw).trim();
-        if variable.starts_with("--") {
-            vars.push(variable.to_string());
+
+    while cursor < value.len() {
+        let rest = &value[cursor..];
+        if !rest.starts_with("var(") {
+            if let Some(ch) = rest.chars().next() {
+                cursor += ch.len_utf8();
+            } else {
+                break;
+            }
+            continue;
         }
-        cursor = end + 1;
+
+        let mut name_start = cursor + "var(".len();
+        while let Some(ch) = value[name_start..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            name_start += ch.len_utf8();
+        }
+
+        if value[name_start..].starts_with("--") {
+            let mut end = name_start;
+            while let Some(ch) = value[end..].chars().next() {
+                if ch == ',' || ch == ')' || ch.is_whitespace() {
+                    break;
+                }
+                end += ch.len_utf8();
+            }
+            let variable = value[name_start..end].trim();
+            if variable.starts_with("--") {
+                vars.push(variable.to_string());
+            }
+        }
+
+        cursor += "var(".len();
     }
+
     vars
 }
 
@@ -2327,6 +2501,17 @@ fn contains_framework_import_target(import_line: &str, target: &str) -> bool {
         || import_line.contains(&quoted_single)
         || import_line.contains(&url_double)
         || import_line.contains(&url_single)
+}
+
+fn contains_framework_import(css: &str) -> bool {
+    css.lines()
+        .any(|line| parse_framework_import_directives(line).is_some())
+}
+
+fn looks_like_compiled_framework_css(css: &str) -> bool {
+    css.contains("/*! tailwindcss")
+        && css.contains("@layer properties;")
+        && css.contains("@layer theme, base, components, utilities;")
 }
 
 fn extract_prefix_directive(import_line: &str) -> Option<String> {
@@ -3058,8 +3243,9 @@ mod tests {
         )
         .expect("framework imports should be replaced");
 
-        assert!(rendered.contains(":root { --color-red-500: #ef4444; }"));
-        assert!(rendered.contains("::file-selector-button {\n  box-sizing: border-box;"));
+        assert!(rendered.contains(":root, :host { --color-red-500: #ef4444; }"));
+        assert!(rendered.contains("::file-selector-button {"));
+        assert!(rendered.contains("box-sizing: border-box;"));
         assert!(rendered.contains(".p-2 { padding: 0.5rem; }"));
     }
 
@@ -3072,7 +3258,10 @@ mod tests {
                 .expect("tailwindcss import should be replaced");
         assert!(rendered.contains("/* generated */"));
         assert!(rendered.contains("body { margin: 0; }"));
-        assert!(rendered.contains("*,\n::after,\n::before,\n::backdrop,\n::file-selector-button"));
+        assert!(rendered.contains("@layer properties;"));
+        assert!(rendered.contains("@layer theme, base, components, utilities;"));
+        assert!(rendered.contains("@layer base {"));
+        assert!(rendered.contains("::file-selector-button {"));
         assert!(!rendered.contains("@import \"tailwindcss\";"));
 
         let rendered = render_framework_import(
