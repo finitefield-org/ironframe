@@ -1,6 +1,6 @@
 [package]
 name = "ironframe"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Finite Field, K.K."]
 license = "MIT OR Apache-2.0"
