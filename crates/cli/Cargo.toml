@@ -1,5 +1,5 @@
 [package]
-name = "ironframe_cli"
+name = "ironframe-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,6 +7,10 @@ repository.workspace = true
 homepage.workspace = true
 readme.workspace = true
 description.workspace = true
+
+[[bin]]
+name = "ironframe"
+path = "src/main.rs"
 
 [dependencies]
 ironframe_scanner = { path = "../scanner" }

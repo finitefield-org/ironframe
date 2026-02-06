@@ -165,7 +165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ironframe_cli"
+name = "ironframe-cli"
 version = "0.1.0"
 dependencies = [
  "globset",

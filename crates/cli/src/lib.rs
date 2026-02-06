@@ -536,24 +536,24 @@ fn run_build(
 }
 
 fn print_help() {
-    println!("ironframe_cli");
+    println!("ironframe");
     println!();
     println!("USAGE:");
-    println!("  ironframe_cli scan [--ignore <glob>] <glob...>");
-    println!("  ironframe_cli build [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>");
-    println!("  ironframe_cli watch [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
+    println!("  ironframe scan [--ignore <glob>] <glob...>");
+    println!("  ironframe build [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>");
+    println!("  ironframe watch [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
     println!();
     println!("EXAMPLES:");
-    println!("  ironframe_cli scan \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli scan -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli build --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli build --input-css src/app.css --out dist/app.css \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli build -c tailwind.toml \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe scan \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe scan -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build --input-css src/app.css --out dist/app.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build -c tailwind.toml \"src/**/*.{{html,tsx}}\"");
     println!(
-        "  ironframe_cli watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\""
+        "  ironframe watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\""
     );
-    println!("  ironframe_cli build -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
 }
 
 fn build_header(files_scanned: usize, class_count: usize, minify: bool) -> String {

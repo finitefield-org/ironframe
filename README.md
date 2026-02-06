@@ -43,6 +43,63 @@ This repository is for learning and prototyping a Rust implementation that match
 - `crates/config`: configuration, theme, and plugin loading
 - `crates/cli`: CLI entrypoint and build pipeline integration
 
+## CLI Usage
+
+### Run
+
+- Run without installing:
+  - `cargo run -p ironframe-cli --bin ironframe -- <command> [options]`
+- Install to your Cargo bin directory:
+  - `cargo install --path crates/cli`
+  - `ironframe --help`
+- Build release binary:
+  - `cargo build -p ironframe-cli --release`
+  - `./target/release/ironframe --help`
+
+### Commands
+
+```text
+ironframe scan [--ignore <glob>] <glob...>
+ironframe build [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>
+ironframe watch [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>
+```
+
+- `scan`
+  - scans files and prints unique class candidates to stdout
+- `build`
+  - generates CSS once
+  - writes to stdout by default, or to `--out <path>` when specified
+  - `--input-css <path>` enables processing for `@import`, `@source`, `@theme`, and `@apply`
+  - `--config <path>` loads TOML config (default: built-in config)
+  - `--ignore <glob>` can be passed multiple times
+  - `--minify` emits minified output
+- `watch`
+  - runs an initial build, then rebuilds on file changes
+  - supports the same options as `build`
+  - `--poll` enables polling mode (useful where filesystem notifications are unreliable)
+  - `--poll-interval <ms>` sets polling interval (default: `500`)
+
+### Examples
+
+```bash
+# Scan class candidates
+ironframe scan "src/**/*.{html,tsx}"
+
+# Build once to a file
+ironframe build --out dist/tailwind.css "src/**/*.{html,tsx}"
+
+# Build with template CSS and config
+ironframe build --input-css src/app.css -c tailwind.toml --out dist/app.css "src/**/*.{html,tsx}"
+
+# Watch mode (native watcher)
+ironframe watch --out dist/tailwind.css "src/**/*.{html,tsx}"
+
+# Watch mode with polling
+ironframe watch --poll --poll-interval 250 "src/**/*.{html,tsx}"
+```
+
+When using `build --input-css`, the CSS file must include `@import "tailwindcss"` or `@import "ironframe"` (including split imports such as `tailwindcss/theme.css`).
+
 ## Minimal API (Draft)
 
 - `ironframe_core`
@@ -66,7 +123,8 @@ This repository is for learning and prototyping a Rust implementation that match
   - `Config` and `Theme`
   - `load(path: &Path) -> Result<Config, ConfigError>`
   - `resolve_theme(config: &Config) -> Theme`
-- `ironframe_cli`
+- `ironframe_cli` (library crate)
+  - binary command: `ironframe`
   - `main` with subcommands: `scan`, `build`, `watch`
   - `build` wires: `config -> scanner -> generator -> css`
 
@@ -74,14 +132,14 @@ This repository is for learning and prototyping a Rust implementation that match
 
 This repository references Tailwind CSS v4.1 for behavior and ideas but is not affiliated with the official implementation.
 
-`ironframe_cli build --input-css` supports Tailwind-style `@source` directives for:
+`ironframe build --input-css` supports Tailwind-style `@source` directives for:
 - explicit source registration (`@source "../path"`)
 - source exclusion (`@source not "../path"`)
 - disabling auto detection (`@import "tailwindcss" source(none)`)
 - base path override (`@import "tailwindcss" source("../src")`)
 - inline safelist / blocklist via brace expansion (`@source inline(...)`, `@source not inline(...)`)
 
-`ironframe_cli build --input-css` also supports:
+`ironframe build --input-css` also supports:
 - local CSS import inlining (`@import "./tokens.css";`)
 - utility inlining with `@apply` for known utilities (`@apply rounded-b-lg shadow-md;`)
 - Tailwind-style framework import splitting:
