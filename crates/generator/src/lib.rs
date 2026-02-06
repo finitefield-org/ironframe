@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratorConfig {
@@ -20,6 +21,10 @@ pub fn generate(_classes: &[String], _config: &GeneratorConfig) -> GenerationRes
 pub struct VariantOverrides {
     pub responsive_breakpoints: Vec<(String, String)>,
     pub container_breakpoints: Vec<(String, String)>,
+    pub dark_variant_selector: Option<String>,
+    pub global_theme_reset: bool,
+    pub disabled_namespaces: Vec<String>,
+    pub declared_theme_vars: Vec<String>,
 }
 
 pub fn generate_with_overrides(
@@ -54,6 +59,10 @@ pub fn generate_with_overrides(
 struct VariantTables {
     responsive_breakpoints: Vec<(String, String)>,
     container_breakpoints: Vec<(String, String)>,
+    dark_variant_selector: Option<String>,
+    global_theme_reset: bool,
+    disabled_namespaces: BTreeSet<String>,
+    declared_theme_vars: BTreeSet<String>,
 }
 
 impl VariantTables {
@@ -88,6 +97,14 @@ fn build_variant_tables(overrides: Option<&VariantOverrides>) -> VariantTables {
     VariantTables {
         responsive_breakpoints,
         container_breakpoints,
+        dark_variant_selector: overrides.and_then(|v| v.dark_variant_selector.clone()),
+        global_theme_reset: overrides.map(|v| v.global_theme_reset).unwrap_or(false),
+        disabled_namespaces: overrides
+            .map(|v| v.disabled_namespaces.iter().cloned().collect())
+            .unwrap_or_default(),
+        declared_theme_vars: overrides
+            .map(|v| v.declared_theme_vars.iter().cloned().collect())
+            .unwrap_or_default(),
     }
 }
 
@@ -546,9 +563,146 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         variant_tables,
     )?;
     if important_modifier {
-        return add_important_to_rule(&generated, config.minify);
+        let important = add_important_to_rule(&generated, config.minify)?;
+        if !rule_allowed_by_theme(base, &important, variant_tables) {
+            return None;
+        }
+        return Some(important);
+    }
+    if !rule_allowed_by_theme(base, &generated, variant_tables) {
+        return None;
     }
     Some(generated)
+}
+
+fn rule_allowed_by_theme(base_class: &str, rule: &str, tables: &VariantTables) -> bool {
+    if !tables.global_theme_reset && tables.disabled_namespaces.is_empty() {
+        return true;
+    }
+
+    for variable in extract_css_variables_from_rule(rule) {
+        if !is_variable_allowed(variable, tables) {
+            return false;
+        }
+    }
+
+    if class_looks_like_color_utility(base_class) {
+        let namespace_disabled = tables.disabled_namespaces.contains("color");
+        if tables.global_theme_reset || namespace_disabled {
+            if !color_utility_token_is_declared(base_class, &tables.declared_theme_vars) {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn extract_css_variables_from_rule(rule: &str) -> Vec<&str> {
+    let mut vars = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel_start) = rule[cursor..].find("var(--") {
+        let start = cursor + rel_start + "var(".len();
+        let Some(end_rel) = rule[start..].find(')') else {
+            break;
+        };
+        let end = start + end_rel;
+        let raw = &rule[start..end];
+        let variable = raw.split(',').next().unwrap_or(raw).trim();
+        if variable.starts_with("--") {
+            vars.push(variable);
+        }
+        cursor = end + 1;
+    }
+    vars
+}
+
+fn is_variable_allowed(variable: &str, tables: &VariantTables) -> bool {
+    if variable.starts_with("--tw-") || variable.starts_with("--default-") {
+        return true;
+    }
+    if !is_theme_namespace_variable(variable) {
+        return true;
+    }
+    if tables.declared_theme_vars.contains(variable) {
+        return true;
+    }
+
+    let namespace = theme_variable_namespace(variable);
+    if tables.global_theme_reset {
+        return false;
+    }
+    if let Some(namespace) = namespace {
+        if tables.disabled_namespaces.contains(namespace) {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_theme_namespace_variable(variable: &str) -> bool {
+    theme_variable_namespace(variable).is_some()
+}
+
+fn theme_variable_namespace(variable: &str) -> Option<&str> {
+    if variable == "--spacing" {
+        return Some("spacing");
+    }
+    for namespace in [
+        "color",
+        "font",
+        "text",
+        "font-weight",
+        "tracking",
+        "leading",
+        "breakpoint",
+        "container",
+        "radius",
+        "shadow",
+        "inset-shadow",
+        "drop-shadow",
+        "blur",
+        "perspective",
+        "aspect",
+        "ease",
+        "animate",
+    ] {
+        let prefix = format!("--{}-", namespace);
+        if variable.starts_with(&prefix) {
+            return Some(namespace);
+        }
+    }
+    None
+}
+
+fn class_looks_like_color_utility(base_class: &str) -> bool {
+    [
+        "text-",
+        "bg-",
+        "border-",
+        "outline-",
+        "decoration-",
+        "accent-",
+        "caret-",
+        "fill-",
+        "stroke-",
+        "from-",
+        "via-",
+        "to-",
+    ]
+    .iter()
+    .any(|prefix| base_class.starts_with(prefix))
+}
+
+fn color_utility_token_is_declared(base_class: &str, declared: &BTreeSet<String>) -> bool {
+    for variable in declared {
+        if let Some(token) = variable.strip_prefix("--color-") {
+            if base_class.contains(token) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -7298,6 +7452,9 @@ fn apply_selector_variant(
 ) -> Option<String> {
     match variant {
         "dark" => {
+            if let Some(custom_selector) = variant_tables.dark_variant_selector.as_ref() {
+                return apply_custom_variant_selector(selector, custom_selector);
+            }
             wrappers.push(RuleWrapper::Media("(prefers-color-scheme: dark)".to_string()));
             return Some(selector);
         }
@@ -7701,6 +7858,17 @@ fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<S
         return None;
     }
     let normalized = raw.replace('_', " ");
+    if normalized.contains('&') {
+        return Some(normalized.replace('&', &selector));
+    }
+    Some(format!("{} {}", normalized, selector))
+}
+
+fn apply_custom_variant_selector(selector: String, template: &str) -> Option<String> {
+    let normalized = template.trim().replace('_', " ");
+    if normalized.is_empty() {
+        return None;
+    }
     if normalized.contains('&') {
         return Some(normalized.replace('&', &selector));
     }
@@ -11633,6 +11801,31 @@ mod tests {
     }
 
     #[test]
+    fn supports_custom_dark_variant_selector_override() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: Some("&:where(.dark, .dark *)".to_string()),
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["dark:bg-black".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result
+            .css
+            .contains(".dark\\:bg-black:where(.dark, .dark *)"));
+        assert!(!result.css.contains("prefers-color-scheme: dark"));
+    }
+
+    #[test]
     fn generates_responsive_variants() {
         let config = GeneratorConfig {
             minify: false,
@@ -11672,6 +11865,10 @@ mod tests {
                 ("sm".to_string(), "40rem".to_string()),
             ],
             container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec![],
         };
         let result = generate_with_overrides(
             &[
@@ -11701,6 +11898,10 @@ mod tests {
                 ("sm".to_string(), "24rem".to_string()),
                 ("8xl".to_string(), "96rem".to_string()),
             ],
+            dark_variant_selector: None,
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec![],
         };
         let result = generate_with_overrides(
             &["@8xl:flex".to_string(), "@max-sm:hidden".to_string()],
@@ -11711,6 +11912,62 @@ mod tests {
         assert!(result.css.contains(".\\@8xl\\:flex"));
         assert!(result.css.contains("@container (width < 24rem)"));
         assert!(result.css.contains(".\\@max-sm\\:hidden"));
+    }
+
+    #[test]
+    fn respects_global_theme_reset_for_theme_driven_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: true,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec!["--color-brand-500".to_string()],
+        };
+        let result = generate_with_overrides(
+            &[
+                "bg-brand-500".to_string(),
+                "bg-blue-500".to_string(),
+                "p-4".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".bg-brand-500"));
+        assert!(!result.css.contains(".bg-blue-500"));
+        assert!(!result.css.contains(".p-4"));
+    }
+
+    #[test]
+    fn respects_namespace_initial_reset_for_color_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: false,
+            disabled_namespaces: vec!["color".to_string()],
+            declared_theme_vars: vec!["--color-brand-500".to_string()],
+        };
+        let result = generate_with_overrides(
+            &[
+                "bg-brand-500".to_string(),
+                "bg-blue-500".to_string(),
+                "p-4".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".bg-brand-500"));
+        assert!(!result.css.contains(".bg-blue-500"));
+        assert!(result.css.contains(".p-4"));
     }
 
     #[test]

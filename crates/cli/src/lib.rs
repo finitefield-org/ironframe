@@ -330,12 +330,12 @@ fn run_build(
     ignore: Vec<String>,
 ) -> Result<(), CliError> {
     let mut template_css = None;
-    let mut variant_overrides = None;
+    let mut parsed_theme = None;
     if let Some(path) = input_css_path.as_ref() {
         let template = fs::read_to_string(path).map_err(|err| CliError {
             message: format!("failed to read input css {}: {}", path, err),
         })?;
-        variant_overrides = Some(parse_variant_overrides_from_theme(&template));
+        parsed_theme = Some(parse_theme(&template));
         template_css = Some(template);
     }
 
@@ -363,9 +363,22 @@ fn run_build(
     let generation = ironframe_generator::generate_with_overrides(
         &scan_result.classes,
         &generator_config,
-        variant_overrides.as_ref(),
+        parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
     );
     let mut css = ironframe_generator::emit_css(&generation);
+    if let Some(theme) = parsed_theme.as_ref() {
+        if !theme.inline_variables.is_empty() {
+            css = apply_inline_theme_variables(&css, &theme.inline_variables);
+        }
+        let theme_css = emit_parsed_theme_css(theme, minify);
+        if !theme_css.is_empty() {
+            css = if minify {
+                format!("{}{}", theme_css, css)
+            } else {
+                format!("{}\n{}", theme_css, css)
+            };
+        }
+    }
     let header = build_header(
         scan_result.files_scanned,
         scan_result.classes.len(),
@@ -378,7 +391,7 @@ fn run_build(
     }
 
     if let Some(path) = input_css_path {
-        let template = template_css.unwrap_or_default();
+        let template = strip_tailwind_custom_directives(&template_css.unwrap_or_default());
         css = apply_framework_import_alias(&template, &css).ok_or_else(|| CliError {
             message: format!(
                 "input css {} must include @import \"tailwindcss\" or @import \"ironframe\"",
@@ -626,58 +639,126 @@ fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Opti
     Some(rendered)
 }
 
-fn parse_variant_overrides_from_theme(template_css: &str) -> ironframe_generator::VariantOverrides {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedTheme {
+    variant_overrides: ironframe_generator::VariantOverrides,
+    root_variables: Vec<(String, String)>,
+    keyframes: Vec<String>,
+    inline_variables: Vec<(String, String)>,
+}
+
+fn parse_theme(template_css: &str) -> ParsedTheme {
     let mut breakpoint_updates = Vec::<(String, String)>::new();
     let mut container_updates = Vec::<(String, String)>::new();
+    let mut root_variables = Vec::<(String, String)>::new();
+    let mut inline_variables = Vec::<(String, String)>::new();
+    let mut keyframes = Vec::<String>::new();
+    let mut global_theme_reset = false;
+    let mut disabled_namespaces = std::collections::BTreeSet::<String>::new();
+    let mut declared_theme_vars = std::collections::BTreeSet::<String>::new();
 
     for block in extract_theme_blocks(template_css) {
-        for declaration in block.split(';') {
-            let Some((name, value)) = declaration.split_once(':') else {
-                continue;
-            };
-            let name = name.trim();
-            let value = value.trim();
-            if name.is_empty() || value.is_empty() {
-                continue;
-            }
+        keyframes.extend(extract_keyframes(block.body));
+        for (name, value) in extract_theme_variable_declarations(block.body) {
             if let Some(raw) = name.strip_prefix("--breakpoint-") {
                 breakpoint_updates.push((raw.to_string(), value.to_string()));
             } else if let Some(raw) = name.strip_prefix("--container-") {
                 container_updates.push((raw.to_string(), value.to_string()));
             }
+
+            if name == "--*" && value == "initial" {
+                global_theme_reset = true;
+                continue;
+            }
+            if let Some(namespace) = name
+                .strip_prefix("--")
+                .and_then(|raw| raw.strip_suffix("-*"))
+            {
+                if value == "initial" {
+                    disabled_namespaces.insert(namespace.to_string());
+                    continue;
+                }
+            }
+
+            if value != "initial" {
+                declared_theme_vars.insert(name.to_string());
+            }
+
+            if block.inline {
+                inline_variables.push((name.to_string(), value.to_string()));
+            } else {
+                root_variables.push((name.to_string(), value.to_string()));
+            }
         }
     }
 
-    ironframe_generator::VariantOverrides {
-        responsive_breakpoints: resolve_named_sizes(
-            &[
-                ("sm", "40rem"),
-                ("md", "48rem"),
-                ("lg", "64rem"),
-                ("xl", "80rem"),
-                ("2xl", "96rem"),
-            ],
-            &breakpoint_updates,
-        ),
-        container_breakpoints: resolve_named_sizes(
-            &[
-                ("3xs", "16rem"),
-                ("2xs", "18rem"),
-                ("xs", "20rem"),
-                ("sm", "24rem"),
-                ("md", "28rem"),
-                ("lg", "32rem"),
-                ("xl", "36rem"),
-                ("2xl", "42rem"),
-                ("3xl", "48rem"),
-                ("4xl", "56rem"),
-                ("5xl", "64rem"),
-                ("6xl", "72rem"),
-                ("7xl", "80rem"),
-            ],
-            &container_updates,
-        ),
+    ParsedTheme {
+        variant_overrides: ironframe_generator::VariantOverrides {
+            responsive_breakpoints: resolve_named_sizes(
+                &[
+                    ("sm", "40rem"),
+                    ("md", "48rem"),
+                    ("lg", "64rem"),
+                    ("xl", "80rem"),
+                    ("2xl", "96rem"),
+                ],
+                &breakpoint_updates,
+            ),
+            container_breakpoints: resolve_named_sizes(
+                &[
+                    ("3xs", "16rem"),
+                    ("2xs", "18rem"),
+                    ("xs", "20rem"),
+                    ("sm", "24rem"),
+                    ("md", "28rem"),
+                    ("lg", "32rem"),
+                    ("xl", "36rem"),
+                    ("2xl", "42rem"),
+                    ("3xl", "48rem"),
+                    ("4xl", "56rem"),
+                    ("5xl", "64rem"),
+                    ("6xl", "72rem"),
+                    ("7xl", "80rem"),
+                ],
+                &container_updates,
+            ),
+            dark_variant_selector: parse_custom_dark_variant(template_css),
+            global_theme_reset,
+            disabled_namespaces: disabled_namespaces.into_iter().collect(),
+            declared_theme_vars: declared_theme_vars.into_iter().collect(),
+        },
+        root_variables,
+        keyframes,
+        inline_variables,
     }
+}
+
+fn parse_custom_dark_variant(css: &str) -> Option<String> {
+    for line in css.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("@custom-variant") || !trimmed.contains("dark") {
+            continue;
+        }
+        let Some(dark_idx) = trimmed.find("dark") else {
+            continue;
+        };
+        let rest = &trimmed[dark_idx + "dark".len()..];
+        let Some(open_idx_rel) = rest.find('(') else {
+            continue;
+        };
+        let open_idx = dark_idx + "dark".len() + open_idx_rel;
+        let Some(close_idx) = trimmed.rfind(')') else {
+            continue;
+        };
+        if close_idx <= open_idx {
+            continue;
+        }
+        let content = trimmed[open_idx + 1..close_idx].trim();
+        if !content.is_empty() {
+            return Some(content.to_string());
+        }
+    }
+    None
 }
 
 fn resolve_named_sizes(
@@ -705,7 +786,13 @@ fn resolve_named_sizes(
     resolved.into_iter().collect()
 }
 
-fn extract_theme_blocks(css: &str) -> Vec<&str> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ThemeBlock<'a> {
+    inline: bool,
+    body: &'a str,
+}
+
+fn extract_theme_blocks(css: &str) -> Vec<ThemeBlock<'_>> {
     let mut blocks = Vec::new();
     let mut cursor = 0usize;
 
@@ -718,11 +805,144 @@ fn extract_theme_blocks(css: &str) -> Vec<&str> {
         let Some(close_idx) = find_matching_brace(css, open_idx) else {
             break;
         };
-        blocks.push(&css[open_idx + 1..close_idx]);
+        let header = css[theme_idx..open_idx].trim();
+        blocks.push(ThemeBlock {
+            inline: header.contains("inline"),
+            body: &css[open_idx + 1..close_idx],
+        });
         cursor = close_idx + 1;
     }
 
     blocks
+}
+
+fn extract_theme_variable_declarations(body: &str) -> Vec<(&str, &str)> {
+    let mut declarations = Vec::new();
+    let mut depth = 0usize;
+    let mut segment_start = 0usize;
+
+    for (idx, ch) in body.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ';' if depth == 0 => {
+                let segment = body[segment_start..idx].trim();
+                segment_start = idx + 1;
+                let Some((name, value)) = segment.split_once(':') else {
+                    continue;
+                };
+                let name = name.trim();
+                let value = value.trim();
+                if !name.starts_with("--") || name.is_empty() || value.is_empty() {
+                    continue;
+                }
+                declarations.push((name, value));
+            }
+            _ => {}
+        }
+    }
+
+    declarations
+}
+
+fn extract_keyframes(body: &str) -> Vec<String> {
+    let mut keyframes = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = body[cursor..].find("@keyframes") {
+        let start = cursor + rel_start;
+        let Some(open_rel) = body[start..].find('{') else {
+            break;
+        };
+        let open_idx = start + open_rel;
+        let Some(close_idx) = find_matching_brace(body, open_idx) else {
+            break;
+        };
+        keyframes.push(body[start..=close_idx].trim().to_string());
+        cursor = close_idx + 1;
+    }
+
+    keyframes
+}
+
+fn emit_parsed_theme_css(theme: &ParsedTheme, minify: bool) -> String {
+    let mut parts = Vec::<String>::new();
+
+    if !theme.root_variables.is_empty() {
+        if minify {
+            let mut body = String::new();
+            for (name, value) in &theme.root_variables {
+                body.push_str(name);
+                body.push(':');
+                body.push_str(value);
+                body.push(';');
+            }
+            parts.push(format!(":root{{{}}}", body));
+        } else {
+            let mut block = String::from(":root {\n");
+            for (name, value) in &theme.root_variables {
+                block.push_str("  ");
+                block.push_str(name);
+                block.push_str(": ");
+                block.push_str(value);
+                block.push_str(";\n");
+            }
+            block.push('}');
+            parts.push(block);
+        }
+    }
+
+    parts.extend(theme.keyframes.iter().cloned());
+    if minify {
+        parts.join("")
+    } else {
+        parts.join("\n")
+    }
+}
+
+fn apply_inline_theme_variables(css: &str, inline_variables: &[(String, String)]) -> String {
+    let mut out = css.to_string();
+    for (name, value) in inline_variables {
+        let target = format!("var({})", name);
+        out = out.replace(&target, value);
+    }
+    out
+}
+
+fn strip_tailwind_custom_directives(template_css: &str) -> String {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+
+    while cursor < template_css.len() {
+        if let Some(rel_start) = template_css[cursor..].find("@theme") {
+            let start = cursor + rel_start;
+            out.push_str(&template_css[cursor..start]);
+            let Some(open_rel) = template_css[start..].find('{') else {
+                break;
+            };
+            let open_idx = start + open_rel;
+            let Some(close_idx) = find_matching_brace(template_css, open_idx) else {
+                break;
+            };
+            cursor = close_idx + 1;
+            continue;
+        }
+        out.push_str(&template_css[cursor..]);
+        break;
+    }
+
+    let mut lines = Vec::new();
+    for line in out.lines() {
+        if line.trim_start().starts_with("@custom-variant") {
+            continue;
+        }
+        lines.push(line);
+    }
+    let mut rendered = lines.join("\n");
+    if template_css.ends_with('\n') {
+        rendered.push('\n');
+    }
+    rendered
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1029,7 +1249,8 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        parse_args, parse_framework_import_directives, parse_variant_overrides_from_theme, Command,
+        emit_parsed_theme_css, parse_args, parse_framework_import_directives, parse_theme,
+        strip_tailwind_custom_directives, Command,
     };
 
     #[test]
@@ -1209,8 +1430,9 @@ mod tests {
   --container-*: initial;
   --container-sm: 24rem;
 }
+@custom-variant dark (&:where(.dark, .dark *));
 "#;
-        let overrides = parse_variant_overrides_from_theme(css);
+        let overrides = parse_theme(css).variant_overrides;
         assert!(overrides
             .responsive_breakpoints
             .contains(&("xs".to_string(), "30rem".to_string())));
@@ -1222,5 +1444,61 @@ mod tests {
             overrides.container_breakpoints,
             vec![("sm".to_string(), "24rem".to_string())]
         );
+        assert_eq!(
+            overrides.dark_variant_selector,
+            Some("&:where(.dark, .dark *)".to_string())
+        );
+        assert!(!overrides.global_theme_reset);
+        assert!(overrides.disabled_namespaces.contains(&"container".to_string()));
+        assert!(overrides
+            .declared_theme_vars
+            .contains(&"--breakpoint-xs".to_string()));
+    }
+
+    #[test]
+    fn parses_theme_variables_keyframes_and_inline_mode() {
+        let css = r#"
+@import "tailwindcss";
+@theme {
+  --color-brand: #123456;
+  @keyframes wiggle {
+    0% { transform: rotate(-3deg); }
+    100% { transform: rotate(3deg); }
+  }
+}
+@theme inline {
+  --font-sans: var(--font-inter);
+}
+"#;
+        let parsed = parse_theme(css);
+        assert!(parsed
+            .root_variables
+            .contains(&("--color-brand".to_string(), "#123456".to_string())));
+        assert!(parsed
+            .inline_variables
+            .contains(&("--font-sans".to_string(), "var(--font-inter)".to_string())));
+        assert!(parsed
+            .keyframes
+            .iter()
+            .any(|block| block.contains("@keyframes wiggle")));
+        let emitted = emit_parsed_theme_css(&parsed, false);
+        assert!(emitted.contains(":root {"));
+        assert!(emitted.contains("--color-brand: #123456;"));
+        assert!(emitted.contains("@keyframes wiggle"));
+    }
+
+    #[test]
+    fn strips_custom_theme_and_variant_directives_from_template() {
+        let css = r#"
+@import "tailwindcss";
+@theme { --color-brand: #123456; }
+@custom-variant dark (&:where(.dark, .dark *));
+body { margin: 0; }
+"#;
+        let stripped = strip_tailwind_custom_directives(css);
+        assert!(stripped.contains("@import \"tailwindcss\";"));
+        assert!(stripped.contains("body { margin: 0; }"));
+        assert!(!stripped.contains("@theme"));
+        assert!(!stripped.contains("@custom-variant"));
     }
 }
