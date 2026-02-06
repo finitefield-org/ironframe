@@ -266,7 +266,7 @@ fn parse_watch_args(args: Vec<String>) -> Result<Command, CliError> {
 
 fn run_scan(inputs: Vec<String>, ignore: Vec<String>) -> Result<(), CliError> {
     let mut result =
-        tailwind_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
+        ironframe_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
             message: err.message,
         })?;
 
@@ -294,28 +294,28 @@ fn run_build(
     ignore: Vec<String>,
 ) -> Result<(), CliError> {
     let mut scan_result =
-        tailwind_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
+        ironframe_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
             message: err.message,
         })?;
     scan_result.classes.sort();
     scan_result.classes.dedup();
 
     let config = match config_path {
-        Some(path) => tailwind_config::load(std::path::Path::new(&path)).map_err(|err| {
+        Some(path) => ironframe_config::load(std::path::Path::new(&path)).map_err(|err| {
             CliError {
                 message: err.message,
             }
         })?,
-        None => tailwind_config::Config::default(),
+        None => ironframe_config::Config::default(),
     };
-    let _theme = tailwind_config::resolve_theme(&config);
+    let _theme = ironframe_config::resolve_theme(&config);
 
-    let generator_config = tailwind_generator::GeneratorConfig {
+    let generator_config = ironframe_generator::GeneratorConfig {
         minify,
         colors: config.theme.colors.clone(),
     };
-    let generation = tailwind_generator::generate(&scan_result.classes, &generator_config);
-    let mut css = tailwind_generator::emit_css(&generation);
+    let generation = ironframe_generator::generate(&scan_result.classes, &generator_config);
+    let mut css = ironframe_generator::emit_css(&generation);
     let header = build_header(
         scan_result.files_scanned,
         scan_result.classes.len(),
@@ -345,32 +345,32 @@ fn run_build(
 }
 
 fn print_help() {
-    println!("tailwind_cli");
+    println!("ironframe_cli");
     println!();
     println!("USAGE:");
-    println!("  tailwind_cli scan [--ignore <glob>] <glob...>");
-    println!("  tailwind_cli build [--minify] [--out <path>] [--config <path>] [--ignore <glob>] <glob...>");
-    println!("  tailwind_cli watch [--minify] [--out <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
+    println!("  ironframe_cli scan [--ignore <glob>] <glob...>");
+    println!("  ironframe_cli build [--minify] [--out <path>] [--config <path>] [--ignore <glob>] <glob...>");
+    println!("  ironframe_cli watch [--minify] [--out <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
     println!();
     println!("EXAMPLES:");
-    println!("  tailwind_cli scan \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli scan -i \"**/generated/**\" \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli build --out dist/tailwind.css \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli build -c tailwind.toml \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli build -i \"**/generated/**\" \"src/**/*.{html,tsx}\"");
-    println!("  tailwind_cli watch --poll --poll-interval 250 \"src/**/*.{html,tsx}\"");
+    println!("  ironframe_cli scan \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli scan -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli build --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli build -c tailwind.toml \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli build -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe_cli watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
 }
 
 fn build_header(files_scanned: usize, class_count: usize, minify: bool) -> String {
     if minify {
         return format!(
-            "/* tailwind-rust | files:{} | classes:{} */",
+            "/* ironframe | files:{} | classes:{} */",
             files_scanned, class_count
         );
     }
     format!(
-        "/*\n  tailwind-rust\n  files: {}\n  classes: {}\n*/",
+        "/*\n  ironframe\n  files: {}\n  classes: {}\n*/",
         files_scanned, class_count
     )
 }
@@ -387,18 +387,21 @@ fn run_watch(
     run_build(inputs.clone(), out.clone(), minify, config.clone(), ignore.clone())?;
     let (tx, rx) = channel();
     let ignore_set = build_globset(&ignore).ok();
-    let mut watcher = if poll {
-        notify::PollWatcher::new(
-            tx,
-            notify::Config::default().with_poll_interval(Duration::from_millis(poll_interval_ms)),
+    let mut watcher: Box<dyn notify::Watcher> = if poll {
+        Box::new(
+            notify::PollWatcher::new(
+                tx,
+                notify::Config::default()
+                    .with_poll_interval(Duration::from_millis(poll_interval_ms)),
+            )
+            .map_err(|err| CliError {
+                message: format!("failed to start poll watcher: {}", err),
+            })?,
         )
-        .map_err(|err| CliError {
-            message: format!("failed to start poll watcher: {}", err),
-        })?
     } else {
-        notify::recommended_watcher(tx).map_err(|err| CliError {
+        Box::new(notify::recommended_watcher(tx).map_err(|err| CliError {
             message: format!("failed to start watcher: {}", err),
-        })?
+        })?)
     };
 
     let roots = watch_roots(&inputs);
@@ -427,7 +430,14 @@ fn run_watch(
     let mut last_event = Instant::now();
     loop {
         match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(event) => {
+            Ok(event_result) => {
+                let event = match event_result {
+                    Ok(event) => event,
+                    Err(err) => {
+                        eprintln!("watch error: {}", err);
+                        continue;
+                    }
+                };
                 if should_ignore_event(&event, ignore_set.as_ref()) {
                     continue;
                 }

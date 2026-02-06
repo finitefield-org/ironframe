@@ -1,5 +1,5 @@
 [package]
-name = "tailwind_core"
+name = "ironframe_core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

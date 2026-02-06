@@ -165,6 +165,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "ironframe_cli"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ironframe_config",
+ "ironframe_generator",
+ "ironframe_scanner",
+ "notify",
+]
+
+[[package]]
+name = "ironframe_config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "ironframe_core"
+version = "0.1.0"
+
+[[package]]
+name = "ironframe_generator"
+version = "0.1.0"
+
+[[package]]
+name = "ironframe_scanner"
+version = "0.1.0"
+dependencies = [
+ "globset",
+ "ignore",
+]
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -345,41 +380,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "tailwind_cli"
-version = "0.1.0"
-dependencies = [
- "globset",
- "notify",
- "tailwind_config",
- "tailwind_generator",
- "tailwind_scanner",
-]
-
-[[package]]
-name = "tailwind_config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "toml",
-]
-
-[[package]]
-name = "tailwind_core"
-version = "0.1.0"
-
-[[package]]
-name = "tailwind_generator"
-version = "0.1.0"
-
-[[package]]
-name = "tailwind_scanner"
-version = "0.1.0"
-dependencies = [
- "globset",
- "ignore",
 ]
 
 [[package]]

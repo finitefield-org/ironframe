@@ -64,7 +64,7 @@ mod tests {
 
     #[test]
     fn loads_toml_config() {
-        let path = temp_path("tailwind_config");
+        let path = temp_path("ironframe_config");
         let _ = fs::write(&path, "theme = { name = \"custom\" }");
         let config = load(&path).expect("config should parse");
         assert_eq!(config.theme.name, "custom");
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn defaults_when_missing_theme() {
-        let path = temp_path("tailwind_config_default");
+        let path = temp_path("ironframe_config_default");
         let _ = fs::write(&path, "");
         let config = load(&path).expect("config should parse");
         assert_eq!(config.theme.name, "default");
@@ -82,17 +82,17 @@ mod tests {
 
     #[test]
     fn loads_theme_colors() {
-        let path = temp_path("tailwind_config_colors");
+        let path = temp_path("ironframe_config_colors");
         let _ = fs::write(
             &path,
-            r#"
+            r##"
 [theme.colors.gray]
 100 = "#f3f4f6"
 500 = "#6b7280"
 
 [theme.colors.blue]
 500 = "#3b82f6"
-"#,
+"##,
         );
         let config = load(&path).expect("config should parse");
         assert_eq!(config.theme.colors["gray"]["100"], "#f3f4f6");

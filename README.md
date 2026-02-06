@@ -1,4 +1,4 @@
-# minitailwind-rust
+# ironframe
 
 This repository is for learning and prototyping a Rust implementation that matches the feature set of Tailwind CSS v4.1.
 
@@ -45,26 +45,26 @@ This repository is for learning and prototyping a Rust implementation that match
 
 ## Minimal API (Draft)
 
-- `tailwind_core`
+- `ironframe_core`
   - `Token` and `TokenKind` for lexer output
   - `AstNode` for parsed structures
   - `ParseError` and `Diagnostic`
   - `parse(input: &str) -> Result<AstNode, ParseError>`
-- `tailwind_scanner`
+- `ironframe_scanner`
   - `ScanTarget` and `ScanResult`
   - `scan(paths: &[PathBuf]) -> Result<ScanResult, ScanError>`
   - `scan_globs(patterns: &[String]) -> Result<ScanResult, ScanError>`
   - `scan_globs_with_ignore(patterns: &[String], ignore: &[String]) -> Result<ScanResult, ScanError>`
   - `extract_classes(text: &str) -> Vec<String>`
-- `tailwind_generator`
+- `ironframe_generator`
   - `GeneratorConfig` and `GenerationResult`
   - `generate(classes: &[String], config: &GeneratorConfig) -> GenerationResult`
   - `emit_css(result: &GenerationResult) -> String`
-- `tailwind_config`
+- `ironframe_config`
   - `Config` and `Theme`
   - `load(path: &Path) -> Result<Config, ConfigError>`
   - `resolve_theme(config: &Config) -> Theme`
-- `tailwind_cli`
+- `ironframe_cli`
   - `main` with subcommands: `scan`, `build`, `watch`
   - `build` wires: `config -> scanner -> generator -> css`
 

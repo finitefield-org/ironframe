@@ -310,7 +310,7 @@ fn skip_whitespace(text: &str, mut idx: usize) -> usize {
 }
 
 fn extract_parenthesized<'a>(text: &'a str, idx: usize) -> (&'a str, usize) {
-    let mut depth = 0;
+    let mut depth: usize = 0;
     let mut pos = idx;
     let mut start = None;
 
@@ -403,7 +403,7 @@ fn parse_unquoted_value(text: &str, mut idx: usize) -> (Vec<String>, usize) {
 }
 
 fn parse_braced_value(text: &str, idx: usize) -> (Vec<String>, usize) {
-    let mut depth = 0;
+    let mut depth: usize = 0;
     let mut pos = idx;
     let mut start = None;
     while pos < text.len() {
@@ -572,7 +572,7 @@ fn extract_object_keys(text: &str) -> Vec<String> {
 }
 
 fn extract_braced_body<'a>(text: &'a str, idx: usize) -> (&'a str, usize) {
-    let mut depth = 0;
+    let mut depth: usize = 0;
     let mut pos = idx;
     let mut start = None;
 
@@ -739,8 +739,8 @@ fn parse_object_key(segment: &str) -> Option<String> {
 fn tokenize_class_list(input: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
-    let mut bracket_depth = 0;
-    let mut paren_depth = 0;
+    let mut bracket_depth: usize = 0;
+    let mut paren_depth: usize = 0;
     let mut idx = 0;
 
     while idx < input.len() {

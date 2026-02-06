@@ -1,5 +1,5 @@
 [package]
-name = "tailwind_generator"
+name = "ironframe_generator"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

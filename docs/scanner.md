@@ -1,6 +1,6 @@
 # Scanner Design (Draft)
 
-This document describes the initial design for the `tailwind_scanner` crate. The scanner extracts Tailwind-style class candidates from project files for JIT generation.
+This document describes the initial design for the `ironframe_scanner` crate. The scanner extracts Tailwind-style class candidates from project files for JIT generation.
 
 ## Scope
 
@@ -90,7 +90,7 @@ After tokenization, each candidate is validated to reduce false positives.
 - Allow characters: `A-Z a-z 0-9 - _ / : . % # [ ] ( ) !`
 - Reject candidates that are only separators (e.g., `:` or `-`)
 
-In the future, validation should call `tailwind_core::parse` and keep only tokens that parse successfully.
+In the future, validation should call `ironframe_core::parse` and keep only tokens that parse successfully.
 
 ## Data Structures
 
