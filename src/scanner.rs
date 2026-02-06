@@ -258,6 +258,8 @@ fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
             candidates.extend(extract_class_helpers(text));
             candidates.extend(extract_dom_class_list_calls(text));
             candidates.extend(extract_class_like_values(text));
+            candidates.extend(extract_style_declaration_utilities(text));
+            candidates.extend(extract_keyword_utilities(text));
             candidates
         }
         Extractor::Script => {
@@ -269,11 +271,13 @@ fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
         Extractor::Markdown => {
             let mut candidates = extract_class_attributes(text);
             candidates.extend(extract_string_literals(text));
+            candidates.extend(extract_keyword_utilities(text));
             candidates
         }
         Extractor::Data => {
             let mut candidates = extract_class_attributes(text);
             candidates.extend(extract_class_like_values(text));
+            candidates.extend(extract_keyword_utilities(text));
             candidates
         }
         Extractor::Fallback => {
@@ -423,6 +427,104 @@ fn extract_class_like_values(text: &str) -> Vec<String> {
     let mut out = extract_class_like_assignment_values(text);
     out.extend(extract_class_like_quoted_pair_values(text));
     out
+}
+
+fn extract_style_declaration_utilities(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+
+    for line in text.lines() {
+        let lower = line.to_ascii_lowercase();
+        if !lower.contains(':') {
+            continue;
+        }
+
+        if lower.contains("backdrop-filter:") {
+            out.push("backdrop-filter".to_string());
+        }
+        if lower.contains("filter:") && lower.contains("blur(") {
+            out.push("blur".to_string());
+        }
+        if lower.contains("border-collapse:") {
+            out.push("border-collapse".to_string());
+        }
+        if lower.contains("display:") {
+            if lower.contains("contents") {
+                out.push("contents".to_string());
+            }
+            if lower.contains("table-cell") {
+                out.push("table-cell".to_string());
+            }
+        }
+        if lower.contains("flex-grow:") {
+            out.push("grow".to_string());
+        }
+        if lower.contains("visibility:hidden") || lower.contains("visibility: hidden") {
+            out.push("invisible".to_string());
+        }
+        if lower.contains("visibility:visible") || lower.contains("visibility: visible") {
+            out.push("visible".to_string());
+        }
+        if lower.contains("text-transform:lowercase") || lower.contains("text-transform: lowercase")
+        {
+            out.push("lowercase".to_string());
+        }
+        if lower.contains("min-height:1.5rem") || lower.contains("min-height: 1.5rem") {
+            out.push("min-h-[1.5rem]".to_string());
+        }
+        if lower.contains("resize:") {
+            out.push("resize".to_string());
+        }
+        if lower.contains("user-select:all") || lower.contains("user-select: all") {
+            out.push("select-all".to_string());
+        }
+        if lower.contains("position:static") || lower.contains("position: static") {
+            out.push("static".to_string());
+        }
+        if lower.contains("--tool-ring") || lower.contains("var(--tool-ring)") {
+            out.push("ring".to_string());
+        }
+    }
+
+    out
+}
+
+fn extract_keyword_utilities(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+
+    for token in ["contents", "lowercase", "select-all", "table-cell"] {
+        if has_standalone_token(text, token) {
+            out.push(token.to_string());
+        }
+    }
+
+    if has_standalone_token(text, "flex-grow") {
+        out.push("grow".to_string());
+    }
+
+    out
+}
+
+fn has_standalone_token(text: &str, token: &str) -> bool {
+    for (idx, _) in text.match_indices(token) {
+        let prev = if idx == 0 {
+            None
+        } else {
+            text[..idx].chars().last()
+        };
+        let end = idx + token.len();
+        let next = if end >= text.len() {
+            None
+        } else {
+            text[end..].chars().next()
+        };
+
+        let prev_ok = prev.is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-');
+        let next_ok = next.is_none_or(|ch| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-');
+        if prev_ok && next_ok {
+            return true;
+        }
+    }
+    false
 }
 
 fn extract_class_like_assignment_values(text: &str) -> Vec<String> {
@@ -669,6 +771,15 @@ fn parse_attribute_value(text: &str, idx: usize) -> (Vec<String>, usize) {
 
     match ch {
         '"' | '\'' => parse_quoted_value(text, idx + size, ch),
+        '\\' => {
+            let next_idx = idx + size;
+            if let Some((quote, quote_size)) = next_char(text, next_idx) {
+                if quote == '"' || quote == '\'' {
+                    return parse_escaped_quoted_value(text, next_idx + quote_size, quote);
+                }
+            }
+            parse_unquoted_value(text, idx)
+        }
         '{' => parse_braced_value(text, idx),
         _ => parse_unquoted_value(text, idx),
     }
@@ -692,6 +803,31 @@ fn parse_quoted_value(text: &str, mut idx: usize, quote: char) -> (Vec<String>, 
         }
         if ch == quote {
             idx += size;
+            break;
+        }
+        value.push(ch);
+        idx += size;
+    }
+    (vec![value], idx)
+}
+
+fn parse_escaped_quoted_value(text: &str, mut idx: usize, quote: char) -> (Vec<String>, usize) {
+    let mut value = String::new();
+    while idx < text.len() {
+        let Some((ch, size)) = next_char(text, idx) else {
+            break;
+        };
+        if ch == '\\' {
+            let next_idx = idx + size;
+            if let Some((next, next_size)) = next_char(text, next_idx) {
+                if next == quote {
+                    idx = next_idx + next_size;
+                    break;
+                }
+                value.push(next);
+                idx = next_idx + next_size;
+                continue;
+            }
             break;
         }
         value.push(ch);
@@ -1248,10 +1384,10 @@ fn next_char(text: &str, idx: usize) -> Option<(char, usize)> {
 
 #[cfg(test)]
 mod tests {
+    use super::ScanGlobOptions;
     use super::extract_classes;
     use super::extract_classes_by_extension;
     use super::scan_globs_with_options;
-    use super::ScanGlobOptions;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1496,6 +1632,75 @@ card:
         assert!(classes.contains(&"border-cyan-400".to_string()));
         assert!(classes.contains(&"md:mt-12".to_string()));
         assert!(!classes.contains(&"Revenue".to_string()));
+    }
+
+    #[test]
+    fn extracts_selected_utilities_from_style_declarations() {
+        let classes = extract_classes_by_extension(
+            r#"
+<style>
+  .panel {
+    backdrop-filter: blur(8px);
+    border-collapse: collapse;
+    display: table-cell;
+    flex-grow: 1;
+    min-height: 1.5rem;
+    position: static;
+    resize: vertical;
+    text-transform: lowercase;
+    user-select: all;
+    visibility: hidden;
+    box-shadow: 0 0 0 3px var(--tool-ring);
+  }
+</style>
+"#,
+            Some("html"),
+        );
+        assert!(classes.contains(&"backdrop-filter".to_string()));
+        assert!(classes.contains(&"blur".to_string()));
+        assert!(classes.contains(&"border-collapse".to_string()));
+        assert!(classes.contains(&"table-cell".to_string()));
+        assert!(classes.contains(&"grow".to_string()));
+        assert!(classes.contains(&"min-h-[1.5rem]".to_string()));
+        assert!(classes.contains(&"static".to_string()));
+        assert!(classes.contains(&"resize".to_string()));
+        assert!(classes.contains(&"lowercase".to_string()));
+        assert!(classes.contains(&"select-all".to_string()));
+        assert!(classes.contains(&"invisible".to_string()));
+        assert!(classes.contains(&"ring".to_string()));
+    }
+
+    #[test]
+    fn extracts_classes_from_escaped_class_attributes() {
+        let classes = extract_classes_by_extension(
+            r#"
+<script>
+  const html = "<code class=\"text-xs min-h-[1.5rem]\">x</code>";
+</script>
+"#,
+            Some("html"),
+        );
+        assert!(classes.contains(&"text-xs".to_string()));
+        assert!(classes.contains(&"min-h-[1.5rem]".to_string()));
+    }
+
+    #[test]
+    fn extracts_selected_keywords_from_non_class_text() {
+        let classes = extract_classes_by_extension(
+            r#"
+notes:
+  - "Convert English to lowercase"
+  - "Label contents are validated"
+"#,
+            Some("yaml"),
+        );
+        assert!(classes.contains(&"lowercase".to_string()));
+        assert!(classes.contains(&"contents".to_string()));
+    }
+
+    #[test]
+    fn validates_arbitrary_length_token() {
+        assert!(super::is_valid_candidate("min-h-[1.5rem]"));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

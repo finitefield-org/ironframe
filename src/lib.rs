@@ -7,7 +7,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc::channel, OnceLock};
+use std::sync::{OnceLock, mpsc::channel};
 use std::time::{Duration, Instant};
 
 const PREFLIGHT_CSS: &str = include_str!("preflight.css");
@@ -544,8 +544,12 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("  ironframe scan [--ignore <glob>] <glob...>");
-    println!("  ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>");
-    println!("  ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
+    println!(
+        "  ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>"
+    );
+    println!(
+        "  ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>"
+    );
     println!();
     println!("EXAMPLES:");
     println!("  ironframe scan \"src/**/*.{{html,tsx}}\"");
@@ -1324,6 +1328,19 @@ fn parse_theme_with_defaults(template_css: &str) -> ParsedTheme {
         theme_variable_values.insert(name.clone(), value.clone());
     }
     parsed.variant_overrides.theme_variable_values = theme_variable_values.into_iter().collect();
+
+    let mut declared_theme_vars = std::collections::BTreeSet::<String>::new();
+    for variable in &parsed.root_variables {
+        if variable.value != "initial" {
+            declared_theme_vars.insert(variable.name.clone());
+        }
+    }
+    for (name, value) in &parsed.inline_variables {
+        if value != "initial" {
+            declared_theme_vars.insert(name.clone());
+        }
+    }
+    parsed.variant_overrides.declared_theme_vars = declared_theme_vars.into_iter().collect();
 
     parsed
 }
@@ -2854,11 +2871,12 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        emit_parsed_theme_css, expand_apply_directives, expand_braces, expand_build_time_functions,
-        expand_variant_directives, inline_css_imports, normalize_source_pattern, parse_args,
-        parse_framework_import_directives, parse_source_directives, parse_theme,
-        strip_tailwind_custom_directives, watch_roots_for_build, Command, PREFLIGHT_CSS,
+        Command, PREFLIGHT_CSS, apply_framework_import_alias, apply_important_to_css,
+        apply_prefix_to_css, emit_parsed_theme_css, expand_apply_directives, expand_braces,
+        expand_build_time_functions, expand_variant_directives, inline_css_imports,
+        normalize_source_pattern, parse_args, parse_framework_import_directives,
+        parse_source_directives, parse_theme, strip_tailwind_custom_directives,
+        watch_roots_for_build,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -3199,13 +3217,17 @@ mod tests {
 }
 "#;
         let overrides = parse_theme(css).variant_overrides;
-        assert!(overrides
-            .responsive_breakpoints
-            .contains(&("xs".to_string(), "30rem".to_string())));
-        assert!(!overrides
-            .responsive_breakpoints
-            .iter()
-            .any(|(name, _)| name == "2xl"));
+        assert!(
+            overrides
+                .responsive_breakpoints
+                .contains(&("xs".to_string(), "30rem".to_string()))
+        );
+        assert!(
+            !overrides
+                .responsive_breakpoints
+                .iter()
+                .any(|(name, _)| name == "2xl")
+        );
         assert_eq!(
             overrides.container_breakpoints,
             vec![("sm".to_string(), "24rem".to_string())]
@@ -3218,33 +3240,45 @@ mod tests {
             "theme-midnight".to_string(),
             "&:where([data-theme=\"midnight\"] *)".to_string()
         )));
-        assert!(overrides
-            .custom_variant_selectors
-            .iter()
-            .any(|(name, template)| name == "any-hover" && template.contains("@slot")));
+        assert!(
+            overrides
+                .custom_variant_selectors
+                .iter()
+                .any(|(name, template)| name == "any-hover" && template.contains("@slot"))
+        );
         assert!(overrides.custom_utilities.contains(&(
             "content-auto".to_string(),
             "content-visibility: auto;".to_string()
         )));
-        assert!(overrides
-            .theme_variable_values
-            .contains(&("--color-brand-500".to_string(), "#10b981".to_string())));
+        assert!(
+            overrides
+                .theme_variable_values
+                .contains(&("--color-brand-500".to_string(), "#10b981".to_string()))
+        );
         assert!(overrides.custom_utilities.iter().any(
             |(name, body)| name == "scrollbar-hidden" && body.contains("&::-webkit-scrollbar")
         ));
         assert!(!overrides.global_theme_reset);
-        assert!(overrides
-            .disabled_namespaces
-            .contains(&"container".to_string()));
-        assert!(overrides
-            .disabled_color_families
-            .contains(&"lime".to_string()));
-        assert!(overrides
-            .declared_theme_vars
-            .contains(&"--color-brand-500".to_string()));
-        assert!(overrides
-            .declared_theme_vars
-            .contains(&"--breakpoint-xs".to_string()));
+        assert!(
+            overrides
+                .disabled_namespaces
+                .contains(&"container".to_string())
+        );
+        assert!(
+            overrides
+                .disabled_color_families
+                .contains(&"lime".to_string())
+        );
+        assert!(
+            overrides
+                .declared_theme_vars
+                .contains(&"--color-brand-500".to_string())
+        );
+        assert!(
+            overrides
+                .declared_theme_vars
+                .contains(&"--breakpoint-xs".to_string())
+        );
     }
 
     #[test]
@@ -3264,17 +3298,23 @@ mod tests {
 }
 "#;
         let parsed = parse_theme(css);
-        assert!(parsed
-            .root_variables
-            .iter()
-            .any(|entry| entry.name == "--color-brand" && entry.value == "#123456"));
-        assert!(parsed
-            .inline_variables
-            .contains(&("--font-sans".to_string(), "var(--font-inter)".to_string())));
-        assert!(parsed
-            .keyframes
-            .iter()
-            .any(|block| block.css.contains("@keyframes wiggle")));
+        assert!(
+            parsed
+                .root_variables
+                .iter()
+                .any(|entry| entry.name == "--color-brand" && entry.value == "#123456")
+        );
+        assert!(
+            parsed
+                .inline_variables
+                .contains(&("--font-sans".to_string(), "var(--font-inter)".to_string()))
+        );
+        assert!(
+            parsed
+                .keyframes
+                .iter()
+                .any(|block| block.css.contains("@keyframes wiggle"))
+        );
         let emitted = emit_parsed_theme_css(
             &parsed,
             ".animate-wiggle { animation: var(--animate-wiggle); }",
@@ -3344,6 +3384,18 @@ mod tests {
         );
         assert!(emitted.contains("--color-red-500: oklch("));
         assert!(emitted.contains("--spacing: 0.25rem;"));
+        assert!(
+            parsed
+                .variant_overrides
+                .declared_theme_vars
+                .contains(&"--color-red-500".to_string())
+        );
+        assert!(
+            parsed
+                .variant_overrides
+                .declared_theme_vars
+                .contains(&"--font-sans".to_string())
+        );
     }
 
     #[test]
@@ -3401,14 +3453,18 @@ mod tests {
 }
 "#;
         let parsed = parse_theme(css);
-        assert!(parsed
-            .root_variables
-            .iter()
-            .any(|entry| entry.name == "--color-top"));
-        assert!(!parsed
-            .root_variables
-            .iter()
-            .any(|entry| entry.name == "--color-nested"));
+        assert!(
+            parsed
+                .root_variables
+                .iter()
+                .any(|entry| entry.name == "--color-top")
+        );
+        assert!(
+            !parsed
+                .root_variables
+                .iter()
+                .any(|entry| entry.name == "--color-nested")
+        );
     }
 
     #[test]
@@ -3418,14 +3474,18 @@ mod tests {
 @theme { --color-top: #222222; }
 "#;
         let parsed = parse_theme(css);
-        assert!(parsed
-            .root_variables
-            .iter()
-            .any(|entry| entry.name == "--color-top"));
-        assert!(!parsed
-            .root_variables
-            .iter()
-            .any(|entry| entry.name == "--color-comment"));
+        assert!(
+            parsed
+                .root_variables
+                .iter()
+                .any(|entry| entry.name == "--color-top")
+        );
+        assert!(
+            !parsed
+                .root_variables
+                .iter()
+                .any(|entry| entry.name == "--color-comment")
+        );
     }
 
     #[test]
@@ -3479,25 +3539,37 @@ body { margin: 0; }
         let directives = parse_source_directives(css);
         assert!(directives.auto_detection);
         assert_eq!(directives.base_path, Some("../src".to_string()));
-        assert!(directives
-            .include_paths
-            .contains(&"../node_modules/@acmecorp/ui-lib".to_string()));
-        assert!(directives
-            .exclude_paths
-            .contains(&"../src/components/legacy".to_string()));
-        assert!(directives
-            .inline_include
-            .contains(&"hover:underline".to_string()));
-        assert!(directives
-            .inline_include
-            .contains(&"focus:underline".to_string()));
+        assert!(
+            directives
+                .include_paths
+                .contains(&"../node_modules/@acmecorp/ui-lib".to_string())
+        );
+        assert!(
+            directives
+                .exclude_paths
+                .contains(&"../src/components/legacy".to_string())
+        );
+        assert!(
+            directives
+                .inline_include
+                .contains(&"hover:underline".to_string())
+        );
+        assert!(
+            directives
+                .inline_include
+                .contains(&"focus:underline".to_string())
+        );
         assert!(directives.inline_exclude.contains(&"bg-red-50".to_string()));
-        assert!(directives
-            .inline_exclude
-            .contains(&"hover:bg-red-500".to_string()));
-        assert!(directives
-            .inline_exclude
-            .contains(&"focus:bg-red-950".to_string()));
+        assert!(
+            directives
+                .inline_exclude
+                .contains(&"hover:bg-red-500".to_string())
+        );
+        assert!(
+            directives
+                .inline_exclude
+                .contains(&"focus:bg-red-950".to_string())
+        );
     }
 
     #[test]
@@ -3606,8 +3678,10 @@ body { margin: 0; }
     fn expands_alpha_function_in_css() {
         let css = ".my-element { color: --alpha(var(--color-lime-300) / 50%); }";
         let compiled = expand_build_time_functions(css);
-        assert!(compiled
-            .contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);"));
+        assert!(
+            compiled
+                .contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);")
+        );
     }
 
     #[test]
