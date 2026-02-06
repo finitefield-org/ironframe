@@ -287,6 +287,7 @@ fn generate_rule(
         "break-normal" => rule(".break-normal", "word-break:normal", config),
         "break-all" => rule(".break-all", "word-break:break-all", config),
         "break-keep" => rule(".break-keep", "word-break:keep-all", config),
+        "break-words" => rule(".break-words", "overflow-wrap:break-word", config),
         "wrap-break-word" => rule(".wrap-break-word", "overflow-wrap:break-word", config),
         "wrap-anywhere" => rule(".wrap-anywhere", "overflow-wrap:anywhere", config),
         "wrap-normal" => rule(".wrap-normal", "overflow-wrap:normal", config),
@@ -1127,6 +1128,10 @@ fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
 fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
+    if class == "filter" {
+        return rule(&selector, composed_filter_property(), config);
+    }
+
     if class == "filter-none" {
         return rule(&selector, "filter:none", config);
     }
@@ -1498,6 +1503,15 @@ fn generate_transition_timing_function_rule(
 fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
+    if class == "blur" {
+        return composed_filter_rule(
+            &selector,
+            "--tw-blur:blur(var(--blur))",
+            Some("filter:blur(var(--blur))".to_string()),
+            config,
+        );
+    }
+
     if class == "blur-none" {
         return composed_filter_rule(
             &selector,
@@ -1672,6 +1686,10 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
 
 fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-blur" {
+        return rule(&selector, "backdrop-filter:blur(var(--blur))", config);
+    }
 
     if class == "backdrop-blur-none" {
         return rule(&selector, "backdrop-filter:blur(0)", config);
@@ -2433,6 +2451,14 @@ fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 
 fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-filter" {
+        return rule(
+            &selector,
+            "backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
+            config,
+        );
+    }
 
     if class == "backdrop-filter-none" {
         return rule(&selector, "backdrop-filter:none", config);
@@ -4297,7 +4323,7 @@ fn parse_spacing_value(raw: &str) -> Option<String> {
     if raw == "px" {
         return Some("1px".to_string());
     }
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(format!("calc(var(--spacing) * {})", raw));
     }
     if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
@@ -4320,7 +4346,7 @@ fn parse_margin_value(raw: &str, negative: bool) -> Option<String> {
     if raw == "px" {
         return Some(if negative { "-1px" } else { "1px" }.to_string());
     }
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(if negative {
             format!("calc(var(--spacing) * -{})", raw)
         } else {
@@ -4349,7 +4375,7 @@ fn parse_space_value(raw: &str, negative: bool) -> Option<String> {
     if raw == "px" {
         return Some(if negative { "-1px" } else { "1px" }.to_string());
     }
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(if negative {
             format!("calc(var(--spacing) * -{})", raw)
         } else {
@@ -4375,7 +4401,7 @@ fn parse_space_value(raw: &str, negative: bool) -> Option<String> {
 }
 
 fn parse_scroll_margin_value(raw: &str, negative: bool) -> Option<String> {
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(if negative {
             format!("calc(var(--spacing) * -{})", raw)
         } else {
@@ -4438,7 +4464,7 @@ fn generate_scroll_margin_rule(class: &str, config: &GeneratorConfig) -> Option<
 }
 
 fn parse_scroll_padding_value(raw: &str, negative: bool) -> Option<String> {
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(if negative {
             format!("calc(var(--spacing) * -{})", raw)
         } else {
@@ -4720,7 +4746,7 @@ fn generate_sizing_rule(
             "max" => "max-width:max-content".to_string(),
             "fit" => "max-width:fit-content".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("max-width:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("max-width:calc({} * 100%)", raw)
@@ -4756,7 +4782,7 @@ fn generate_sizing_rule(
             "max" => "min-width:max-content".to_string(),
             "fit" => "min-width:fit-content".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("min-width:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("min-width:calc({} * 100%)", raw)
@@ -4793,7 +4819,7 @@ fn generate_sizing_rule(
             "fit" => "min-height:fit-content".to_string(),
             "lh" => "min-height:1lh".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("min-height:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("min-height:calc({} * 100%)", raw)
@@ -4828,7 +4854,7 @@ fn generate_sizing_rule(
             "fit" => "max-height:fit-content".to_string(),
             "lh" => "max-height:1lh".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("max-height:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("max-height:calc({} * 100%)", raw)
@@ -4862,7 +4888,7 @@ fn generate_sizing_rule(
             "max" => "width:max-content".to_string(),
             "fit" => "width:fit-content".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("width:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("width:calc({} * 100%)", raw)
@@ -4899,7 +4925,7 @@ fn generate_sizing_rule(
             "fit" => "height:fit-content".to_string(),
             "lh" => "height:1lh".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("height:calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("height:calc({} * 100%)", raw)
@@ -4932,7 +4958,7 @@ fn generate_sizing_rule(
             "max" => "max-content".to_string(),
             "fit" => "fit-content".to_string(),
             _ => {
-                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                if is_spacing_multiplier(raw) {
                     format!("calc(var(--spacing) * {})", raw)
                 } else if is_fraction(raw) {
                     format!("calc({} * 100%)", raw)
@@ -4961,38 +4987,20 @@ fn generate_gap_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if let Some(raw) = class.strip_prefix("gap-") {
-        if let Some(value) = spacing_scale(raw) {
+        if let Some(value) = parse_spacing_value(raw) {
             return rule(&selector, &format!("gap:{}", value), config);
-        }
-        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-            return rule(&selector, &format!("gap:{}", custom), config);
-        }
-        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
-            return rule(&selector, &format!("gap:var({})", custom), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-x-") {
-        if let Some(value) = spacing_scale(raw) {
+        if let Some(value) = parse_spacing_value(raw) {
             return rule(&selector, &format!("column-gap:{}", value), config);
-        }
-        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-            return rule(&selector, &format!("column-gap:{}", custom), config);
-        }
-        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
-            return rule(&selector, &format!("column-gap:var({})", custom), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-y-") {
-        if let Some(value) = spacing_scale(raw) {
+        if let Some(value) = parse_spacing_value(raw) {
             return rule(&selector, &format!("row-gap:{}", value), config);
-        }
-        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-            return rule(&selector, &format!("row-gap:{}", custom), config);
-        }
-        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
-            return rule(&selector, &format!("row-gap:var({})", custom), config);
         }
     }
 
@@ -7032,7 +7040,7 @@ fn parse_translate_value(
             "100%".to_string()
         });
     }
-    if token.chars().all(|c| c.is_ascii_digit()) && !token.is_empty() {
+    if is_spacing_multiplier(token) {
         return Some(if negative {
             format!("calc(var(--spacing) * -{})", token)
         } else {
@@ -7150,10 +7158,12 @@ fn generate_flex_shorthand_rule(class: &str, config: &GeneratorConfig) -> Option
 
 fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    if class == "grow" {
+    if class == "grow" || class == "flex-grow" {
         return rule(&selector, "flex-grow:1", config);
     }
-    let raw = class.strip_prefix("grow-")?;
+    let raw = class
+        .strip_prefix("grow-")
+        .or_else(|| class.strip_prefix("flex-grow-"))?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return rule(&selector, &format!("flex-grow:{}", raw), config);
     }
@@ -7168,10 +7178,12 @@ fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 
 fn generate_flex_shrink_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    if class == "shrink" {
+    if class == "shrink" || class == "flex-shrink" {
         return rule(&selector, "flex-shrink:1", config);
     }
-    let raw = class.strip_prefix("shrink-")?;
+    let raw = class
+        .strip_prefix("shrink-")
+        .or_else(|| class.strip_prefix("flex-shrink-"))?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return rule(&selector, &format!("flex-shrink:{}", raw), config);
     }
@@ -7348,7 +7360,7 @@ fn parse_border_width_value(raw: &str) -> Option<String> {
 }
 
 fn parse_border_spacing_value(raw: &str) -> Option<String> {
-    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+    if is_spacing_multiplier(raw) {
         return Some(format!("calc(var(--spacing) * {})", raw));
     }
     if let Some(value) = raw
@@ -8011,7 +8023,7 @@ fn parse_inset_value(token: &str, negative: bool) -> Option<String> {
         custom.to_string()
     } else if let Some(custom_prop) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
         format!("var({})", custom_prop)
-    } else if token.chars().all(|c| c.is_ascii_digit()) {
+    } else if is_spacing_multiplier(token) {
         if negative {
             format!("calc(var(--spacing) * -{})", token)
         } else {
@@ -8027,7 +8039,7 @@ fn parse_inset_value(token: &str, negative: bool) -> Option<String> {
         return None;
     };
 
-    if negative && !token.chars().all(|c| c.is_ascii_digit()) && !is_fraction(token) {
+    if negative && !is_spacing_multiplier(token) && !is_fraction(token) {
         return Some(format!("calc({} * -1)", base));
     }
     Some(base)
@@ -8209,23 +8221,46 @@ fn apply_variants(
 }
 
 fn escape_selector(class: &str) -> String {
-    class
-        .replace('\\', "\\\\")
-        .replace(':', "\\:")
-        .replace('/', "\\/")
-        .replace('[', "\\[")
-        .replace(']', "\\]")
-        .replace('(', "\\(")
-        .replace(')', "\\)")
-        .replace('&', "\\&")
-        .replace('>', "\\>")
-        .replace('+', "\\+")
-        .replace(',', "\\,")
-        .replace('%', "\\%")
-        .replace('=', "\\=")
-        .replace('!', "\\!")
-        .replace('*', "\\*")
-        .replace('@', "\\@")
+    let mut escaped = String::with_capacity(class.len() * 2);
+    let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
+
+    for ch in class.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            ':' => escaped.push_str("\\:"),
+            '/' => escaped.push_str("\\/"),
+            '[' => {
+                escaped.push_str("\\[");
+                bracket_depth += 1;
+            }
+            ']' => {
+                escaped.push_str("\\]");
+                bracket_depth = bracket_depth.saturating_sub(1);
+            }
+            '(' => {
+                escaped.push_str("\\(");
+                paren_depth += 1;
+            }
+            ')' => {
+                escaped.push_str("\\)");
+                paren_depth = paren_depth.saturating_sub(1);
+            }
+            '&' => escaped.push_str("\\&"),
+            '>' => escaped.push_str("\\>"),
+            '+' => escaped.push_str("\\+"),
+            ',' => escaped.push_str("\\,"),
+            '%' => escaped.push_str("\\%"),
+            '=' => escaped.push_str("\\="),
+            '!' => escaped.push_str("\\!"),
+            '*' => escaped.push_str("\\*"),
+            '@' => escaped.push_str("\\@"),
+            '.' if bracket_depth == 0 && paren_depth == 0 => escaped.push_str("\\."),
+            _ => escaped.push(ch),
+        }
+    }
+
+    escaped
 }
 
 fn apply_data_variant(selector: String, data_key: &str) -> Option<String> {
@@ -9149,21 +9184,27 @@ fn add_important_to_declarations(declarations: &str, minify: bool) -> Option<Str
     }
 }
 
-fn spacing_scale(key: &str) -> Option<&'static str> {
-    match key {
-        "0" => Some("0rem"),
-        "1" => Some("0.25rem"),
-        "2" => Some("0.5rem"),
-        "3" => Some("0.75rem"),
-        "4" => Some("1rem"),
-        "5" => Some("1.25rem"),
-        "6" => Some("1.5rem"),
-        "8" => Some("2rem"),
-        "10" => Some("2.5rem"),
-        "12" => Some("3rem"),
-        "16" => Some("4rem"),
-        _ => None,
+fn is_spacing_multiplier(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
     }
+    if token.starts_with('.') || token.ends_with('.') {
+        return false;
+    }
+    let mut seen_dot = false;
+    for ch in token.chars() {
+        if ch == '.' {
+            if seen_dot {
+                return false;
+            }
+            seen_dot = true;
+            continue;
+        }
+        if !ch.is_ascii_digit() {
+            return false;
+        }
+    }
+    true
 }
 
 fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<String> {
@@ -9554,6 +9595,7 @@ mod tests {
         let result = generate(
             &[
                 "p-px".to_string(),
+                "p-1.5".to_string(),
                 "p-[5px]".to_string(),
                 "p-(--my-padding)".to_string(),
                 "px-4".to_string(),
@@ -9571,6 +9613,8 @@ mod tests {
 
         assert!(result.css.contains(".p-px"));
         assert!(result.css.contains("padding: 1px"));
+        assert!(result.css.contains(".p-1\\.5"));
+        assert!(result.css.contains("padding: calc(var(--spacing) * 1.5)"));
         assert!(result.css.contains(".p-\\[5px\\]"));
         assert!(result.css.contains("padding: 5px"));
         assert!(result.css.contains(".p-\\(--my-padding\\)"));
@@ -9616,6 +9660,7 @@ mod tests {
                 "-m-px".to_string(),
                 "m-4".to_string(),
                 "-m-4".to_string(),
+                "-m-1.5".to_string(),
                 "m-[5px]".to_string(),
                 "-m-[5px]".to_string(),
                 "m-(--my-margin)".to_string(),
@@ -9645,6 +9690,8 @@ mod tests {
         assert!(result.css.contains("margin: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".-m-4"));
         assert!(result.css.contains("margin: calc(var(--spacing) * -4)"));
+        assert!(result.css.contains(".-m-1\\.5"));
+        assert!(result.css.contains("margin: calc(var(--spacing) * -1.5)"));
         assert!(result.css.contains(".m-\\[5px\\]"));
         assert!(result.css.contains("margin: 5px"));
         assert!(result.css.contains(".-m-\\[5px\\]"));
@@ -10503,6 +10550,7 @@ mod tests {
         let result = generate(
             &[
                 "wrap-break-word".to_string(),
+                "break-words".to_string(),
                 "wrap-anywhere".to_string(),
                 "wrap-normal".to_string(),
                 "md:wrap-break-word".to_string(),
@@ -10510,6 +10558,8 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".wrap-break-word"));
+        assert!(result.css.contains("overflow-wrap: break-word"));
+        assert!(result.css.contains(".break-words"));
         assert!(result.css.contains("overflow-wrap: break-word"));
         assert!(result.css.contains(".wrap-anywhere"));
         assert!(result.css.contains("overflow-wrap: anywhere"));
@@ -10587,6 +10637,7 @@ mod tests {
         };
         let result = generate(
             &[
+                "filter".to_string(),
                 "filter-none".to_string(),
                 "filter-[url('filters.svg#filter-id')]".to_string(),
                 "filter-(--my-filter)".to_string(),
@@ -10595,6 +10646,8 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".filter"));
+        assert!(result.css.contains("filter: var(--tw-blur,)"));
         assert!(result.css.contains(".filter-none"));
         assert!(result.css.contains("filter: none"));
         assert!(result
@@ -10616,6 +10669,7 @@ mod tests {
         };
         let result = generate(
             &[
+                "blur".to_string(),
                 "blur-none".to_string(),
                 "blur-xs".to_string(),
                 "blur-sm".to_string(),
@@ -10628,6 +10682,8 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".blur"));
+        assert!(result.css.contains("filter: blur(var(--blur))"));
         assert!(result.css.contains(".blur-none"));
         assert!(result.css.contains("filter: blur(0)"));
         assert!(result.css.contains(".blur-xs"));
@@ -10985,6 +11041,7 @@ mod tests {
         };
         let result = generate(
             &[
+                "backdrop-filter".to_string(),
                 "backdrop-filter-none".to_string(),
                 "backdrop-filter-[url('filters.svg#filter-id')]".to_string(),
                 "backdrop-filter-(--my-backdrop-filter)".to_string(),
@@ -10993,6 +11050,10 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".backdrop-filter"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: var(--tw-backdrop-blur,)"));
         assert!(result.css.contains(".backdrop-filter-none"));
         assert!(result.css.contains("backdrop-filter: none"));
         assert!(result
@@ -11020,6 +11081,7 @@ mod tests {
         };
         let result = generate(
             &[
+                "backdrop-blur".to_string(),
                 "backdrop-blur-none".to_string(),
                 "backdrop-blur-sm".to_string(),
                 "backdrop-blur-md".to_string(),
@@ -11031,6 +11093,8 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".backdrop-blur"));
+        assert!(result.css.contains("backdrop-filter: blur(var(--blur))"));
         assert!(result.css.contains(".backdrop-blur-none"));
         assert!(result.css.contains("backdrop-filter: blur(0)"));
         assert!(result.css.contains(".backdrop-blur-sm"));
@@ -14729,6 +14793,7 @@ mod tests {
                 "self-baseline-last".to_string(),
                 "overflow-hidden".to_string(),
                 "gap-4".to_string(),
+                "gap-0.5".to_string(),
                 "md:flex-row".to_string(),
                 "md:flex-wrap-reverse".to_string(),
                 "md:justify-between".to_string(),
@@ -14908,7 +14973,9 @@ mod tests {
         assert!(result.css.contains(".overflow-hidden"));
         assert!(result.css.contains("overflow: hidden"));
         assert!(result.css.contains(".gap-4"));
-        assert!(result.css.contains("gap: 1rem"));
+        assert!(result.css.contains("gap: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".gap-0\\.5"));
+        assert!(result.css.contains("gap: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:flex-row"));
         assert!(result.css.contains(".md\\:flex-wrap-reverse"));
@@ -17327,7 +17394,9 @@ mod tests {
         let result = generate(
             &[
                 "grow".to_string(),
+                "flex-grow".to_string(),
                 "grow-0".to_string(),
+                "flex-grow-0".to_string(),
                 "grow-3".to_string(),
                 "grow-7".to_string(),
                 "grow-[25vw]".to_string(),
@@ -17338,7 +17407,11 @@ mod tests {
         );
         assert!(result.css.contains(".grow"));
         assert!(result.css.contains("flex-grow: 1"));
+        assert!(result.css.contains(".flex-grow"));
+        assert!(result.css.contains("flex-grow: 1"));
         assert!(result.css.contains(".grow-0"));
+        assert!(result.css.contains("flex-grow: 0"));
+        assert!(result.css.contains(".flex-grow-0"));
         assert!(result.css.contains("flex-grow: 0"));
         assert!(result.css.contains(".grow-3"));
         assert!(result.css.contains("flex-grow: 3"));
@@ -17361,7 +17434,9 @@ mod tests {
         let result = generate(
             &[
                 "shrink".to_string(),
+                "flex-shrink".to_string(),
                 "shrink-0".to_string(),
+                "flex-shrink-0".to_string(),
                 "shrink-2".to_string(),
                 "shrink-[calc(100vw-var(--sidebar))]".to_string(),
                 "shrink-(--my-shrink)".to_string(),
@@ -17371,7 +17446,11 @@ mod tests {
         );
         assert!(result.css.contains(".shrink"));
         assert!(result.css.contains("flex-shrink: 1"));
+        assert!(result.css.contains(".flex-shrink"));
+        assert!(result.css.contains("flex-shrink: 1"));
         assert!(result.css.contains(".shrink-0"));
+        assert!(result.css.contains("flex-shrink: 0"));
+        assert!(result.css.contains(".flex-shrink-0"));
         assert!(result.css.contains("flex-shrink: 0"));
         assert!(result.css.contains(".shrink-2"));
         assert!(result.css.contains("flex-shrink: 2"));
@@ -17541,32 +17620,43 @@ mod tests {
         let result = generate(
             &[
                 "gap-4".to_string(),
+                "gap-0.5".to_string(),
                 "gap-[10vw]".to_string(),
                 "gap-(--my-gap)".to_string(),
                 "gap-x-8".to_string(),
                 "gap-x-[5rem]".to_string(),
                 "gap-x-(--my-gap-x)".to_string(),
+                "gap-x-0.5".to_string(),
                 "gap-y-2".to_string(),
                 "gap-y-[3vh]".to_string(),
                 "gap-y-(--my-gap-y)".to_string(),
+                "gap-y-0.5".to_string(),
                 "md:gap-6".to_string(),
             ],
             &config,
         );
         assert!(result.css.contains(".gap-4"));
-        assert!(result.css.contains("gap: 1rem"));
+        assert!(result.css.contains("gap: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".gap-0\\.5"));
+        assert!(result.css.contains("gap: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".gap-\\[10vw\\]"));
         assert!(result.css.contains("gap: 10vw"));
         assert!(result.css.contains(".gap-\\(--my-gap\\)"));
         assert!(result.css.contains("gap: var(--my-gap)"));
         assert!(result.css.contains(".gap-x-8"));
-        assert!(result.css.contains("column-gap: 2rem"));
+        assert!(result.css.contains("column-gap: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".gap-x-0\\.5"));
+        assert!(result
+            .css
+            .contains("column-gap: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".gap-x-\\[5rem\\]"));
         assert!(result.css.contains("column-gap: 5rem"));
         assert!(result.css.contains(".gap-x-\\(--my-gap-x\\)"));
         assert!(result.css.contains("column-gap: var(--my-gap-x)"));
         assert!(result.css.contains(".gap-y-2"));
-        assert!(result.css.contains("row-gap: 0.5rem"));
+        assert!(result.css.contains("row-gap: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".gap-y-0\\.5"));
+        assert!(result.css.contains("row-gap: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".gap-y-\\[3vh\\]"));
         assert!(result.css.contains("row-gap: 3vh"));
         assert!(result.css.contains(".gap-y-\\(--my-gap-y\\)"));
@@ -17675,6 +17765,7 @@ mod tests {
         let result = generate(
             &[
                 "w-4".to_string(),
+                "w-0.5".to_string(),
                 "w-1/2".to_string(),
                 "w-3xs".to_string(),
                 "w-auto".to_string(),
@@ -17692,7 +17783,9 @@ mod tests {
                 "w-fit".to_string(),
                 "w-(--my-width)".to_string(),
                 "w-[42ch]".to_string(),
+                "h-0.5".to_string(),
                 "size-8".to_string(),
+                "size-0.5".to_string(),
                 "size-1/2".to_string(),
                 "size-auto".to_string(),
                 "size-px".to_string(),
@@ -17716,6 +17809,8 @@ mod tests {
 
         assert!(result.css.contains(".w-4"));
         assert!(result.css.contains("width: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".w-0\\.5"));
+        assert!(result.css.contains("width: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".w-1\\/2"));
         assert!(result.css.contains("width: calc(1/2 * 100%)"));
         assert!(result.css.contains(".w-3xs"));
@@ -17750,11 +17845,17 @@ mod tests {
         assert!(result.css.contains("width: var(--my-width)"));
         assert!(result.css.contains(".w-\\[42ch\\]"));
         assert!(result.css.contains("width: 42ch"));
+        assert!(result.css.contains(".h-0\\.5"));
+        assert!(result.css.contains("height: calc(var(--spacing) * 0.5)"));
 
         assert!(result.css.contains(".size-8"));
         assert!(result
             .css
             .contains("width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".size-0\\.5"));
+        assert!(result
+            .css
+            .contains("width: calc(var(--spacing) * 0.5); height: calc(var(--spacing) * 0.5)"));
         assert!(result.css.contains(".size-1\\/2"));
         assert!(result
             .css

@@ -222,6 +222,7 @@ fn extract_classes_by_extension(text: &str, ext: Option<&str>) -> Vec<String> {
             Extractor::Script
         }
         Some("md") | Some("mdx") => Extractor::Markdown,
+        Some("yaml") | Some("yml") | Some("toml") | Some("json") => Extractor::Data,
         _ => Extractor::Fallback,
     };
 
@@ -246,6 +247,7 @@ enum Extractor {
     Markup,
     Script,
     Markdown,
+    Data,
     Fallback,
 }
 
@@ -263,6 +265,7 @@ fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
             candidates.extend(extract_string_literals(text));
             candidates
         }
+        Extractor::Data => extract_class_attributes(text),
         Extractor::Fallback => {
             let mut candidates = extract_class_attributes(text);
             candidates.extend(extract_string_literals(text));
@@ -919,18 +922,81 @@ fn tokenize_class_list(input: &str) -> Vec<String> {
 }
 
 fn is_valid_candidate(token: &str) -> bool {
-    if token.is_empty() {
+    if token.is_empty() || token.starts_with('.') || token.starts_with('/') {
         return false;
     }
+
     let mut has_letter_or_bracket = false;
-    for ch in token.chars() {
+    let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for (idx, ch) in token.chars().enumerate() {
         if ch.is_ascii_alphabetic() || ch == '[' {
             has_letter_or_bracket = true;
         }
         if !is_allowed_char(ch) {
             return false;
         }
+
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => {
+                if bracket_depth == 0 {
+                    return false;
+                }
+                bracket_depth -= 1;
+            }
+            '(' => paren_depth += 1,
+            ')' => {
+                if paren_depth == 0 {
+                    return false;
+                }
+                paren_depth -= 1;
+            }
+            '\'' | '"' => {
+                if bracket_depth == 0 && paren_depth == 0 {
+                    return false;
+                }
+                quote = Some(ch);
+            }
+            '>' | '&' | ',' => {
+                if bracket_depth == 0 && paren_depth == 0 {
+                    return false;
+                }
+            }
+            '!' => {
+                if idx > 0 && bracket_depth == 0 && paren_depth == 0 {
+                    return false;
+                }
+            }
+            _ => {}
+        }
     }
+
+    if quote.is_some() || bracket_depth != 0 || paren_depth != 0 {
+        return false;
+    }
+    if token.ends_with(':') || token.ends_with('\\') {
+        return false;
+    }
+
     has_letter_or_bracket
 }
 
@@ -1141,6 +1207,32 @@ mod tests {
         assert!(classes.contains(&"text-red-500".to_string()));
         assert!(!classes.contains(&"isHidden".to_string()));
         assert!(!classes.contains(&"hasError".to_string()));
+    }
+
+    #[test]
+    fn data_extractor_avoids_generic_string_literal_noise() {
+        let classes = extract_classes_by_extension(
+            r#"
+title: "A/B (100%)"
+body: '<div class="text-sm md:gap-0.5">Hello</div>'
+"#,
+            Some("yaml"),
+        );
+        assert!(classes.contains(&"text-sm".to_string()));
+        assert!(classes.contains(&"md:gap-0.5".to_string()));
+        assert!(!classes.contains(&"A/B".to_string()));
+        assert!(!classes.contains(&"(100%)".to_string()));
+    }
+
+    #[test]
+    fn rejects_garbage_tokens_from_escaped_markup_fragments() {
+        let classes = extract_classes(
+            r#"<div class="text-sm text-xs\">Sound bg-[url('/x.png')] [invalid"></div>"#,
+        );
+        assert!(classes.contains(&"text-sm".to_string()));
+        assert!(classes.contains(&"bg-[url('/x.png')]".to_string()));
+        assert!(!classes.iter().any(|token| token.contains('>')));
+        assert!(!classes.iter().any(|token| token == "text-xs\\\">Sound"));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
