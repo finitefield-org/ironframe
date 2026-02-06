@@ -321,6 +321,10 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_decoration_thickness_rule(base, config))
             .or_else(|| generate_decoration_arbitrary_color_rule(base, config))
             .or_else(|| generate_decoration_palette_color_rule(base, config))
+            .or_else(|| generate_accent_arbitrary_color_rule(base, config))
+            .or_else(|| generate_accent_palette_color_rule(base, config))
+            .or_else(|| generate_caret_arbitrary_color_rule(base, config))
+            .or_else(|| generate_caret_palette_color_rule(base, config))
             .or_else(|| generate_list_style_type_rule(base, config))
             .or_else(|| generate_list_style_image_rule(base, config))
             .or_else(|| generate_line_clamp_rule(base, config))
@@ -334,6 +338,8 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_text_size_rule(base, config))
             .or_else(|| generate_font_family_rule(base, config))
             .or_else(|| generate_spacing_rule(base, config))
+            .or_else(|| generate_scroll_margin_rule(base, config))
+            .or_else(|| generate_scroll_padding_rule(base, config))
             .or_else(|| generate_aspect_ratio_rule(base, config))
             .or_else(|| generate_columns_rule(base, config))
             .or_else(|| generate_break_before_rule(base, config))
@@ -354,6 +360,19 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_float_rule(base, config))
             .or_else(|| generate_clear_rule(base, config))
             .or_else(|| generate_isolation_rule(base, config))
+            .or_else(|| generate_appearance_rule(base, config))
+            .or_else(|| generate_color_scheme_rule(base, config))
+            .or_else(|| generate_cursor_rule(base, config))
+            .or_else(|| generate_field_sizing_rule(base, config))
+            .or_else(|| generate_pointer_events_rule(base, config))
+            .or_else(|| generate_resize_rule(base, config))
+            .or_else(|| generate_scroll_behavior_rule(base, config))
+            .or_else(|| generate_scroll_snap_type_rule(base, config))
+            .or_else(|| generate_scroll_snap_align_rule(base, config))
+            .or_else(|| generate_scroll_snap_stop_rule(base, config))
+            .or_else(|| generate_touch_action_rule(base, config))
+            .or_else(|| generate_user_select_rule(base, config))
+            .or_else(|| generate_will_change_rule(base, config))
             .or_else(|| generate_mix_blend_mode_rule(base, config))
             .or_else(|| generate_mask_image_rule(base, config))
             .or_else(|| generate_mask_mode_rule(base, config))
@@ -2214,6 +2233,126 @@ fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig)
     )
 }
 
+fn generate_accent_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("accent-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("accent-color:var({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("accent-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(&selector, &format!("accent-color:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_accent_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("accent-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "accent-color:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("accent-color:{}", color_value), config)
+}
+
+fn generate_caret_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("caret-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("caret-color:var({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("caret-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(&selector, &format!("caret-color:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_caret_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("caret-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "caret-color:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("caret-color:{}", color_value), config)
+}
+
 fn text_shadow_preset_layers(token: &str) -> Option<(&'static [&'static str], &'static str)> {
     match token {
         "2xs" => Some((&["0px 1px 0px"], "0.15")),
@@ -2872,6 +3011,132 @@ fn parse_space_value(raw: &str, negative: bool) -> Option<String> {
             variable
         });
     }
+    None
+}
+
+fn parse_scroll_margin_value(raw: &str, negative: bool) -> Option<String> {
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(if negative {
+            format!("calc(var(--spacing) * -{})", raw)
+        } else {
+            format!("calc(var(--spacing) * {})", raw)
+        });
+    }
+
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if custom.is_empty() {
+            return None;
+        }
+        return Some(if negative {
+            format!("calc({} * -1)", custom)
+        } else {
+            custom.to_string()
+        });
+    }
+
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if custom.is_empty() {
+            return None;
+        }
+        let variable = format!("var({})", custom);
+        return Some(if negative {
+            format!("calc({} * -1)", variable)
+        } else {
+            variable
+        });
+    }
+
+    None
+}
+
+fn generate_scroll_margin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    for (prefix, property) in [
+        ("scroll-m-", "scroll-margin"),
+        ("scroll-mx-", "scroll-margin-inline"),
+        ("scroll-my-", "scroll-margin-block"),
+        ("scroll-ms-", "scroll-margin-inline-start"),
+        ("scroll-me-", "scroll-margin-inline-end"),
+        ("scroll-mt-", "scroll-margin-top"),
+        ("scroll-mr-", "scroll-margin-right"),
+        ("scroll-mb-", "scroll-margin-bottom"),
+        ("scroll-ml-", "scroll-margin-left"),
+    ] {
+        if let Some(raw) = raw_class.strip_prefix(prefix) {
+            let value = parse_scroll_margin_value(raw, negative)?;
+            return rule(&selector, &format!("{}:{}", property, value), config);
+        }
+    }
+
+    None
+}
+
+fn parse_scroll_padding_value(raw: &str, negative: bool) -> Option<String> {
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(if negative {
+            format!("calc(var(--spacing) * -{})", raw)
+        } else {
+            format!("calc(var(--spacing) * {})", raw)
+        });
+    }
+
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if custom.is_empty() {
+            return None;
+        }
+        return Some(if negative {
+            format!("calc({} * -1)", custom)
+        } else {
+            custom.to_string()
+        });
+    }
+
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if custom.is_empty() {
+            return None;
+        }
+        let variable = format!("var({})", custom);
+        return Some(if negative {
+            format!("calc({} * -1)", variable)
+        } else {
+            variable
+        });
+    }
+
+    None
+}
+
+fn generate_scroll_padding_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    for (prefix, property) in [
+        ("scroll-p-", "scroll-padding"),
+        ("scroll-px-", "scroll-padding-inline"),
+        ("scroll-py-", "scroll-padding-block"),
+        ("scroll-ps-", "scroll-padding-inline-start"),
+        ("scroll-pe-", "scroll-padding-inline-end"),
+        ("scroll-pt-", "scroll-padding-top"),
+        ("scroll-pr-", "scroll-padding-right"),
+        ("scroll-pb-", "scroll-padding-bottom"),
+        ("scroll-pl-", "scroll-padding-left"),
+    ] {
+        if let Some(raw) = raw_class.strip_prefix(prefix) {
+            let value = parse_scroll_padding_value(raw, negative)?;
+            return rule(&selector, &format!("{}:{}", property, value), config);
+        }
+    }
+
     None
 }
 
@@ -3535,6 +3800,245 @@ fn generate_isolation_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         "isolation-auto" => rule(&selector, "isolation:auto", config),
         _ => None,
     }
+}
+
+fn generate_appearance_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "appearance-none" => rule(&selector, "appearance:none", config),
+        "appearance-auto" => rule(&selector, "appearance:auto", config),
+        _ => None,
+    }
+}
+
+fn generate_color_scheme_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "scheme-normal" => "normal",
+        "scheme-dark" => "dark",
+        "scheme-light" => "light",
+        "scheme-light-dark" => "light dark",
+        "scheme-only-dark" => "only dark",
+        "scheme-only-light" => "only light",
+        _ => return None,
+    };
+    rule(&selector, &format!("color-scheme:{}", value), config)
+}
+
+fn generate_cursor_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "cursor-auto" => Some("auto"),
+        "cursor-default" => Some("default"),
+        "cursor-pointer" => Some("pointer"),
+        "cursor-wait" => Some("wait"),
+        "cursor-text" => Some("text"),
+        "cursor-move" => Some("move"),
+        "cursor-help" => Some("help"),
+        "cursor-not-allowed" => Some("not-allowed"),
+        "cursor-none" => Some("none"),
+        "cursor-context-menu" => Some("context-menu"),
+        "cursor-progress" => Some("progress"),
+        "cursor-cell" => Some("cell"),
+        "cursor-crosshair" => Some("crosshair"),
+        "cursor-vertical-text" => Some("vertical-text"),
+        "cursor-alias" => Some("alias"),
+        "cursor-copy" => Some("copy"),
+        "cursor-no-drop" => Some("no-drop"),
+        "cursor-grab" => Some("grab"),
+        "cursor-grabbing" => Some("grabbing"),
+        "cursor-all-scroll" => Some("all-scroll"),
+        "cursor-col-resize" => Some("col-resize"),
+        "cursor-row-resize" => Some("row-resize"),
+        "cursor-n-resize" => Some("n-resize"),
+        "cursor-e-resize" => Some("e-resize"),
+        "cursor-s-resize" => Some("s-resize"),
+        "cursor-w-resize" => Some("w-resize"),
+        "cursor-ne-resize" => Some("ne-resize"),
+        "cursor-nw-resize" => Some("nw-resize"),
+        "cursor-se-resize" => Some("se-resize"),
+        "cursor-sw-resize" => Some("sw-resize"),
+        "cursor-ew-resize" => Some("ew-resize"),
+        "cursor-ns-resize" => Some("ns-resize"),
+        "cursor-nesw-resize" => Some("nesw-resize"),
+        "cursor-nwse-resize" => Some("nwse-resize"),
+        "cursor-zoom-in" => Some("zoom-in"),
+        "cursor-zoom-out" => Some("zoom-out"),
+        _ => None,
+    };
+    if let Some(value) = value {
+        return rule(&selector, &format!("cursor:{}", value), config);
+    }
+
+    if let Some(value) = class
+        .strip_prefix("cursor-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("cursor:var({})", value), config);
+    }
+
+    if let Some(value) = class
+        .strip_prefix("cursor-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("cursor:{}", value), config);
+    }
+
+    None
+}
+
+fn generate_field_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "field-sizing-fixed" => rule(&selector, "field-sizing:fixed", config),
+        "field-sizing-content" => rule(&selector, "field-sizing:content", config),
+        _ => None,
+    }
+}
+
+fn generate_pointer_events_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "pointer-events-auto" => rule(&selector, "pointer-events:auto", config),
+        "pointer-events-none" => rule(&selector, "pointer-events:none", config),
+        _ => None,
+    }
+}
+
+fn generate_resize_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "resize-none" => rule(&selector, "resize:none", config),
+        "resize" => rule(&selector, "resize:both", config),
+        "resize-y" => rule(&selector, "resize:vertical", config),
+        "resize-x" => rule(&selector, "resize:horizontal", config),
+        _ => None,
+    }
+}
+
+fn generate_scroll_behavior_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "scroll-auto" => rule(&selector, "scroll-behavior:auto", config),
+        "scroll-smooth" => rule(&selector, "scroll-behavior:smooth", config),
+        _ => None,
+    }
+}
+
+fn generate_scroll_snap_align_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "snap-start" => rule(&selector, "scroll-snap-align:start", config),
+        "snap-end" => rule(&selector, "scroll-snap-align:end", config),
+        "snap-center" => rule(&selector, "scroll-snap-align:center", config),
+        "snap-align-none" => rule(&selector, "scroll-snap-align:none", config),
+        _ => None,
+    }
+}
+
+fn generate_scroll_snap_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "snap-none" => rule(&selector, "scroll-snap-type:none", config),
+        "snap-x" => rule(
+            &selector,
+            "scroll-snap-type:x var(--tw-scroll-snap-strictness)",
+            config,
+        ),
+        "snap-y" => rule(
+            &selector,
+            "scroll-snap-type:y var(--tw-scroll-snap-strictness)",
+            config,
+        ),
+        "snap-both" => rule(
+            &selector,
+            "scroll-snap-type:both var(--tw-scroll-snap-strictness)",
+            config,
+        ),
+        "snap-mandatory" => rule(&selector, "--tw-scroll-snap-strictness:mandatory", config),
+        "snap-proximity" => rule(&selector, "--tw-scroll-snap-strictness:proximity", config),
+        _ => None,
+    }
+}
+
+fn generate_scroll_snap_stop_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "snap-normal" => rule(&selector, "scroll-snap-stop:normal", config),
+        "snap-always" => rule(&selector, "scroll-snap-stop:always", config),
+        _ => None,
+    }
+}
+
+fn generate_touch_action_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "touch-auto" => "auto",
+        "touch-none" => "none",
+        "touch-pan-x" => "pan-x",
+        "touch-pan-left" => "pan-left",
+        "touch-pan-right" => "pan-right",
+        "touch-pan-y" => "pan-y",
+        "touch-pan-up" => "pan-up",
+        "touch-pan-down" => "pan-down",
+        "touch-pinch-zoom" => "pinch-zoom",
+        "touch-manipulation" => "manipulation",
+        _ => return None,
+    };
+    rule(&selector, &format!("touch-action:{}", value), config)
+}
+
+fn generate_user_select_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "select-none" => "none",
+        "select-text" => "text",
+        "select-all" => "all",
+        "select-auto" => "auto",
+        _ => return None,
+    };
+    rule(&selector, &format!("user-select:{}", value), config)
+}
+
+fn generate_will_change_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "will-change-auto" => return rule(&selector, "will-change:auto", config),
+        "will-change-scroll" => {
+            return rule(&selector, "will-change:scroll-position", config);
+        }
+        "will-change-contents" => return rule(&selector, "will-change:contents", config),
+        "will-change-transform" => return rule(&selector, "will-change:transform", config),
+        _ => {}
+    }
+
+    if let Some(value) = class
+        .strip_prefix("will-change-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("will-change:var({})", value), config);
+    }
+
+    if let Some(value) = class
+        .strip_prefix("will-change-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("will-change:{}", value), config);
+    }
+
+    None
 }
 
 fn generate_mix_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -6097,6 +6601,8 @@ fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         "bg" => format!("background-color:{}", value),
         "border" => format!("border-color:{}", value),
         "decoration" => format!("text-decoration-color:{}", value),
+        "accent" => format!("accent-color:{}", value),
+        "caret" => format!("caret-color:{}", value),
         _ => return None,
     };
     rule(&selector, &declarations, config)
@@ -6728,6 +7234,118 @@ mod tests {
         assert!(result.css.contains("margin-inline-end: calc(var(--spacing) * -2)"));
         assert!(result.css.contains("@media (min-width: 768px)"));
         assert!(result.css.contains(".md\\:mt-8"));
+    }
+
+    #[test]
+    fn generates_scroll_margin_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "scroll-m-4".to_string(),
+                "-scroll-m-2".to_string(),
+                "scroll-m-(--my-scroll-margin)".to_string(),
+                "scroll-m-[24rem]".to_string(),
+                "scroll-mx-6".to_string(),
+                "-scroll-my-1".to_string(),
+                "scroll-ms-8".to_string(),
+                "-scroll-me-3".to_string(),
+                "scroll-mt-5".to_string(),
+                "scroll-mr-[10vh]".to_string(),
+                "scroll-mb-(--my-scroll-margin-bottom)".to_string(),
+                "-scroll-ml-[5px]".to_string(),
+                "md:scroll-m-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".scroll-m-4"));
+        assert!(result.css.contains("scroll-margin: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".-scroll-m-2"));
+        assert!(result.css.contains("scroll-margin: calc(var(--spacing) * -2)"));
+        assert!(result.css.contains(".scroll-m-\\(--my-scroll-margin\\)"));
+        assert!(result.css.contains("scroll-margin: var(--my-scroll-margin)"));
+        assert!(result.css.contains(".scroll-m-\\[24rem\\]"));
+        assert!(result.css.contains("scroll-margin: 24rem"));
+        assert!(result.css.contains(".scroll-mx-6"));
+        assert!(result.css.contains("scroll-margin-inline: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".-scroll-my-1"));
+        assert!(result.css.contains("scroll-margin-block: calc(var(--spacing) * -1)"));
+        assert!(result.css.contains(".scroll-ms-8"));
+        assert!(result.css.contains("scroll-margin-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".-scroll-me-3"));
+        assert!(result.css.contains("scroll-margin-inline-end: calc(var(--spacing) * -3)"));
+        assert!(result.css.contains(".scroll-mt-5"));
+        assert!(result.css.contains("scroll-margin-top: calc(var(--spacing) * 5)"));
+        assert!(result.css.contains(".scroll-mr-\\[10vh\\]"));
+        assert!(result.css.contains("scroll-margin-right: 10vh"));
+        assert!(result
+            .css
+            .contains(".scroll-mb-\\(--my-scroll-margin-bottom\\)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-bottom: var(--my-scroll-margin-bottom)"));
+        assert!(result.css.contains(".-scroll-ml-\\[5px\\]"));
+        assert!(result.css.contains("scroll-margin-left: calc(5px * -1)"));
+        assert!(result.css.contains(".md\\:scroll-m-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_scroll_padding_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "scroll-p-4".to_string(),
+                "-scroll-p-2".to_string(),
+                "scroll-p-(--my-scroll-padding)".to_string(),
+                "scroll-p-[24rem]".to_string(),
+                "scroll-px-6".to_string(),
+                "-scroll-py-1".to_string(),
+                "scroll-ps-8".to_string(),
+                "-scroll-pe-3".to_string(),
+                "scroll-pt-5".to_string(),
+                "scroll-pr-[10vh]".to_string(),
+                "scroll-pb-(--my-scroll-padding-bottom)".to_string(),
+                "-scroll-pl-[5px]".to_string(),
+                "md:scroll-p-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".scroll-p-4"));
+        assert!(result.css.contains("scroll-padding: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".-scroll-p-2"));
+        assert!(result.css.contains("scroll-padding: calc(var(--spacing) * -2)"));
+        assert!(result.css.contains(".scroll-p-\\(--my-scroll-padding\\)"));
+        assert!(result.css.contains("scroll-padding: var(--my-scroll-padding)"));
+        assert!(result.css.contains(".scroll-p-\\[24rem\\]"));
+        assert!(result.css.contains("scroll-padding: 24rem"));
+        assert!(result.css.contains(".scroll-px-6"));
+        assert!(result.css.contains("scroll-padding-inline: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".-scroll-py-1"));
+        assert!(result.css.contains("scroll-padding-block: calc(var(--spacing) * -1)"));
+        assert!(result.css.contains(".scroll-ps-8"));
+        assert!(result.css.contains("scroll-padding-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".-scroll-pe-3"));
+        assert!(result.css.contains("scroll-padding-inline-end: calc(var(--spacing) * -3)"));
+        assert!(result.css.contains(".scroll-pt-5"));
+        assert!(result.css.contains("scroll-padding-top: calc(var(--spacing) * 5)"));
+        assert!(result.css.contains(".scroll-pr-\\[10vh\\]"));
+        assert!(result.css.contains("scroll-padding-right: 10vh"));
+        assert!(result
+            .css
+            .contains(".scroll-pb-\\(--my-scroll-padding-bottom\\)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-bottom: var(--my-scroll-padding-bottom)"));
+        assert!(result.css.contains(".-scroll-pl-\\[5px\\]"));
+        assert!(result.css.contains("scroll-padding-left: calc(5px * -1)"));
+        assert!(result.css.contains(".md\\:scroll-p-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
     }
 
     #[test]
@@ -9044,6 +9662,118 @@ mod tests {
     }
 
     #[test]
+    fn generates_accent_color_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "accent-inherit".to_string(),
+                "accent-current".to_string(),
+                "accent-transparent".to_string(),
+                "accent-black".to_string(),
+                "accent-white".to_string(),
+                "accent-rose-500".to_string(),
+                "accent-purple-500/25".to_string(),
+                "accent-purple-500/[37%]".to_string(),
+                "accent-purple-500/(--my-opacity)".to_string(),
+                "accent-[#50d71e]".to_string(),
+                "accent-(--my-accent-color)".to_string(),
+                "hover:accent-pink-500".to_string(),
+                "md:accent-lime-600".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".accent-inherit"));
+        assert!(result.css.contains("accent-color: inherit"));
+        assert!(result.css.contains(".accent-current"));
+        assert!(result.css.contains("accent-color: currentColor"));
+        assert!(result.css.contains(".accent-transparent"));
+        assert!(result.css.contains("accent-color: transparent"));
+        assert!(result.css.contains(".accent-black"));
+        assert!(result.css.contains("accent-color: var(--color-black)"));
+        assert!(result.css.contains(".accent-white"));
+        assert!(result.css.contains("accent-color: var(--color-white)"));
+        assert!(result.css.contains(".accent-rose-500"));
+        assert!(result.css.contains("accent-color: var(--color-rose-500)"));
+        assert!(result.css.contains(".accent-purple-500\\/25"));
+        assert!(result.css.contains(
+            "accent-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
+        ));
+        assert!(result.css.contains(".accent-purple-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "accent-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".accent-purple-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "accent-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".accent-\\[#50d71e\\]"));
+        assert!(result.css.contains("accent-color: #50d71e"));
+        assert!(result.css.contains(".accent-\\(--my-accent-color\\)"));
+        assert!(result.css.contains("accent-color: var(--my-accent-color)"));
+        assert!(result.css.contains(".hover\\:accent-pink-500:hover"));
+        assert!(result.css.contains(".md\\:accent-lime-600"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_caret_color_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "caret-inherit".to_string(),
+                "caret-current".to_string(),
+                "caret-transparent".to_string(),
+                "caret-black".to_string(),
+                "caret-white".to_string(),
+                "caret-rose-500".to_string(),
+                "caret-purple-500/25".to_string(),
+                "caret-purple-500/[37%]".to_string(),
+                "caret-purple-500/(--my-opacity)".to_string(),
+                "caret-[#50d71e]".to_string(),
+                "caret-(--my-caret-color)".to_string(),
+                "md:caret-lime-600".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".caret-inherit"));
+        assert!(result.css.contains("caret-color: inherit"));
+        assert!(result.css.contains(".caret-current"));
+        assert!(result.css.contains("caret-color: currentColor"));
+        assert!(result.css.contains(".caret-transparent"));
+        assert!(result.css.contains("caret-color: transparent"));
+        assert!(result.css.contains(".caret-black"));
+        assert!(result.css.contains("caret-color: var(--color-black)"));
+        assert!(result.css.contains(".caret-white"));
+        assert!(result.css.contains("caret-color: var(--color-white)"));
+        assert!(result.css.contains(".caret-rose-500"));
+        assert!(result.css.contains("caret-color: var(--color-rose-500)"));
+        assert!(result.css.contains(".caret-purple-500\\/25"));
+        assert!(result.css.contains(
+            "caret-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
+        ));
+        assert!(result.css.contains(".caret-purple-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "caret-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".caret-purple-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "caret-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".caret-\\[#50d71e\\]"));
+        assert!(result.css.contains("caret-color: #50d71e"));
+        assert!(result.css.contains(".caret-\\(--my-caret-color\\)"));
+        assert!(result.css.contains("caret-color: var(--my-caret-color)"));
+        assert!(result.css.contains(".md\\:caret-lime-600"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
     fn generates_border_colors() {
         let config = GeneratorConfig {
             minify: false,
@@ -10377,6 +11107,487 @@ mod tests {
         assert!(result.css.contains("isolation: auto"));
         assert!(result.css.contains("@media (min-width: 768px)"));
         assert!(result.css.contains(".md\\:isolation-auto"));
+    }
+
+    #[test]
+    fn generates_appearance_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "appearance-none".to_string(),
+                "appearance-auto".to_string(),
+                "md:appearance-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".appearance-none"));
+        assert!(result.css.contains("appearance: none"));
+        assert!(result.css.contains(".appearance-auto"));
+        assert!(result.css.contains("appearance: auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:appearance-none"));
+    }
+
+    #[test]
+    fn generates_color_scheme_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "scheme-normal".to_string(),
+                "scheme-dark".to_string(),
+                "scheme-light".to_string(),
+                "scheme-light-dark".to_string(),
+                "scheme-only-dark".to_string(),
+                "scheme-only-light".to_string(),
+                "dark:scheme-dark".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".scheme-normal"));
+        assert!(result.css.contains("color-scheme: normal"));
+        assert!(result.css.contains(".scheme-dark"));
+        assert!(result.css.contains("color-scheme: dark"));
+        assert!(result.css.contains(".scheme-light"));
+        assert!(result.css.contains("color-scheme: light"));
+        assert!(result.css.contains(".scheme-light-dark"));
+        assert!(result.css.contains("color-scheme: light dark"));
+        assert!(result.css.contains(".scheme-only-dark"));
+        assert!(result.css.contains("color-scheme: only dark"));
+        assert!(result.css.contains(".scheme-only-light"));
+        assert!(result.css.contains("color-scheme: only light"));
+        assert!(result.css.contains(".dark .dark\\:scheme-dark"));
+    }
+
+    #[test]
+    fn generates_cursor_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "cursor-auto".to_string(),
+                "cursor-default".to_string(),
+                "cursor-pointer".to_string(),
+                "cursor-wait".to_string(),
+                "cursor-text".to_string(),
+                "cursor-move".to_string(),
+                "cursor-help".to_string(),
+                "cursor-not-allowed".to_string(),
+                "cursor-none".to_string(),
+                "cursor-context-menu".to_string(),
+                "cursor-progress".to_string(),
+                "cursor-cell".to_string(),
+                "cursor-crosshair".to_string(),
+                "cursor-vertical-text".to_string(),
+                "cursor-alias".to_string(),
+                "cursor-copy".to_string(),
+                "cursor-no-drop".to_string(),
+                "cursor-grab".to_string(),
+                "cursor-grabbing".to_string(),
+                "cursor-all-scroll".to_string(),
+                "cursor-col-resize".to_string(),
+                "cursor-row-resize".to_string(),
+                "cursor-n-resize".to_string(),
+                "cursor-e-resize".to_string(),
+                "cursor-s-resize".to_string(),
+                "cursor-w-resize".to_string(),
+                "cursor-ne-resize".to_string(),
+                "cursor-nw-resize".to_string(),
+                "cursor-se-resize".to_string(),
+                "cursor-sw-resize".to_string(),
+                "cursor-ew-resize".to_string(),
+                "cursor-ns-resize".to_string(),
+                "cursor-nesw-resize".to_string(),
+                "cursor-nwse-resize".to_string(),
+                "cursor-zoom-in".to_string(),
+                "cursor-zoom-out".to_string(),
+                "cursor-[url(hand.cur),_pointer]".to_string(),
+                "cursor-(--my-cursor)".to_string(),
+                "md:cursor-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".cursor-auto"));
+        assert!(result.css.contains("cursor: auto"));
+        assert!(result.css.contains(".cursor-default"));
+        assert!(result.css.contains("cursor: default"));
+        assert!(result.css.contains(".cursor-pointer"));
+        assert!(result.css.contains("cursor: pointer"));
+        assert!(result.css.contains(".cursor-wait"));
+        assert!(result.css.contains("cursor: wait"));
+        assert!(result.css.contains(".cursor-text"));
+        assert!(result.css.contains("cursor: text"));
+        assert!(result.css.contains(".cursor-move"));
+        assert!(result.css.contains("cursor: move"));
+        assert!(result.css.contains(".cursor-help"));
+        assert!(result.css.contains("cursor: help"));
+        assert!(result.css.contains(".cursor-not-allowed"));
+        assert!(result.css.contains("cursor: not-allowed"));
+        assert!(result.css.contains(".cursor-none"));
+        assert!(result.css.contains("cursor: none"));
+        assert!(result.css.contains(".cursor-context-menu"));
+        assert!(result.css.contains("cursor: context-menu"));
+        assert!(result.css.contains(".cursor-progress"));
+        assert!(result.css.contains("cursor: progress"));
+        assert!(result.css.contains(".cursor-cell"));
+        assert!(result.css.contains("cursor: cell"));
+        assert!(result.css.contains(".cursor-crosshair"));
+        assert!(result.css.contains("cursor: crosshair"));
+        assert!(result.css.contains(".cursor-vertical-text"));
+        assert!(result.css.contains("cursor: vertical-text"));
+        assert!(result.css.contains(".cursor-alias"));
+        assert!(result.css.contains("cursor: alias"));
+        assert!(result.css.contains(".cursor-copy"));
+        assert!(result.css.contains("cursor: copy"));
+        assert!(result.css.contains(".cursor-no-drop"));
+        assert!(result.css.contains("cursor: no-drop"));
+        assert!(result.css.contains(".cursor-grab"));
+        assert!(result.css.contains("cursor: grab"));
+        assert!(result.css.contains(".cursor-grabbing"));
+        assert!(result.css.contains("cursor: grabbing"));
+        assert!(result.css.contains(".cursor-all-scroll"));
+        assert!(result.css.contains("cursor: all-scroll"));
+        assert!(result.css.contains(".cursor-col-resize"));
+        assert!(result.css.contains("cursor: col-resize"));
+        assert!(result.css.contains(".cursor-row-resize"));
+        assert!(result.css.contains("cursor: row-resize"));
+        assert!(result.css.contains(".cursor-n-resize"));
+        assert!(result.css.contains("cursor: n-resize"));
+        assert!(result.css.contains(".cursor-e-resize"));
+        assert!(result.css.contains("cursor: e-resize"));
+        assert!(result.css.contains(".cursor-s-resize"));
+        assert!(result.css.contains("cursor: s-resize"));
+        assert!(result.css.contains(".cursor-w-resize"));
+        assert!(result.css.contains("cursor: w-resize"));
+        assert!(result.css.contains(".cursor-ne-resize"));
+        assert!(result.css.contains("cursor: ne-resize"));
+        assert!(result.css.contains(".cursor-nw-resize"));
+        assert!(result.css.contains("cursor: nw-resize"));
+        assert!(result.css.contains(".cursor-se-resize"));
+        assert!(result.css.contains("cursor: se-resize"));
+        assert!(result.css.contains(".cursor-sw-resize"));
+        assert!(result.css.contains("cursor: sw-resize"));
+        assert!(result.css.contains(".cursor-ew-resize"));
+        assert!(result.css.contains("cursor: ew-resize"));
+        assert!(result.css.contains(".cursor-ns-resize"));
+        assert!(result.css.contains("cursor: ns-resize"));
+        assert!(result.css.contains(".cursor-nesw-resize"));
+        assert!(result.css.contains("cursor: nesw-resize"));
+        assert!(result.css.contains(".cursor-nwse-resize"));
+        assert!(result.css.contains("cursor: nwse-resize"));
+        assert!(result.css.contains(".cursor-zoom-in"));
+        assert!(result.css.contains("cursor: zoom-in"));
+        assert!(result.css.contains(".cursor-zoom-out"));
+        assert!(result.css.contains("cursor: zoom-out"));
+        assert!(result.css.contains(".cursor-\\[url\\(hand.cur\\)\\,_pointer\\]"));
+        assert!(result.css.contains("cursor: url(hand.cur),_pointer"));
+        assert!(result.css.contains(".cursor-\\(--my-cursor\\)"));
+        assert!(result.css.contains("cursor: var(--my-cursor)"));
+        assert!(result.css.contains(".md\\:cursor-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_field_sizing_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "field-sizing-fixed".to_string(),
+                "field-sizing-content".to_string(),
+                "md:field-sizing-fixed".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".field-sizing-fixed"));
+        assert!(result.css.contains("field-sizing: fixed"));
+        assert!(result.css.contains(".field-sizing-content"));
+        assert!(result.css.contains("field-sizing: content"));
+        assert!(result.css.contains(".md\\:field-sizing-fixed"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_pointer_events_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "pointer-events-auto".to_string(),
+                "pointer-events-none".to_string(),
+                "md:pointer-events-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".pointer-events-auto"));
+        assert!(result.css.contains("pointer-events: auto"));
+        assert!(result.css.contains(".pointer-events-none"));
+        assert!(result.css.contains("pointer-events: none"));
+        assert!(result.css.contains(".md\\:pointer-events-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_resize_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "resize-none".to_string(),
+                "resize".to_string(),
+                "resize-y".to_string(),
+                "resize-x".to_string(),
+                "md:resize".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".resize-none"));
+        assert!(result.css.contains("resize: none"));
+        assert!(result.css.contains(".resize"));
+        assert!(result.css.contains("resize: both"));
+        assert!(result.css.contains(".resize-y"));
+        assert!(result.css.contains("resize: vertical"));
+        assert!(result.css.contains(".resize-x"));
+        assert!(result.css.contains("resize: horizontal"));
+        assert!(result.css.contains(".md\\:resize"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_scroll_behavior_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "scroll-auto".to_string(),
+                "scroll-smooth".to_string(),
+                "md:scroll-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".scroll-auto"));
+        assert!(result.css.contains("scroll-behavior: auto"));
+        assert!(result.css.contains(".scroll-smooth"));
+        assert!(result.css.contains("scroll-behavior: smooth"));
+        assert!(result.css.contains(".md\\:scroll-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_scroll_snap_align_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "snap-start".to_string(),
+                "snap-end".to_string(),
+                "snap-center".to_string(),
+                "snap-align-none".to_string(),
+                "md:snap-start".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".snap-start"));
+        assert!(result.css.contains("scroll-snap-align: start"));
+        assert!(result.css.contains(".snap-end"));
+        assert!(result.css.contains("scroll-snap-align: end"));
+        assert!(result.css.contains(".snap-center"));
+        assert!(result.css.contains("scroll-snap-align: center"));
+        assert!(result.css.contains(".snap-align-none"));
+        assert!(result.css.contains("scroll-snap-align: none"));
+        assert!(result.css.contains(".md\\:snap-start"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_scroll_snap_type_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "snap-none".to_string(),
+                "snap-x".to_string(),
+                "snap-y".to_string(),
+                "snap-both".to_string(),
+                "snap-mandatory".to_string(),
+                "snap-proximity".to_string(),
+                "md:snap-x".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".snap-none"));
+        assert!(result.css.contains("scroll-snap-type: none"));
+        assert!(result.css.contains(".snap-x"));
+        assert!(result
+            .css
+            .contains("scroll-snap-type: x var(--tw-scroll-snap-strictness)"));
+        assert!(result.css.contains(".snap-y"));
+        assert!(result
+            .css
+            .contains("scroll-snap-type: y var(--tw-scroll-snap-strictness)"));
+        assert!(result.css.contains(".snap-both"));
+        assert!(result
+            .css
+            .contains("scroll-snap-type: both var(--tw-scroll-snap-strictness)"));
+        assert!(result.css.contains(".snap-mandatory"));
+        assert!(result
+            .css
+            .contains("--tw-scroll-snap-strictness: mandatory"));
+        assert!(result.css.contains(".snap-proximity"));
+        assert!(result
+            .css
+            .contains("--tw-scroll-snap-strictness: proximity"));
+        assert!(result.css.contains(".md\\:snap-x"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_scroll_snap_stop_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "snap-normal".to_string(),
+                "snap-always".to_string(),
+                "md:snap-normal".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".snap-normal"));
+        assert!(result.css.contains("scroll-snap-stop: normal"));
+        assert!(result.css.contains(".snap-always"));
+        assert!(result.css.contains("scroll-snap-stop: always"));
+        assert!(result.css.contains(".md\\:snap-normal"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_touch_action_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "touch-auto".to_string(),
+                "touch-none".to_string(),
+                "touch-pan-x".to_string(),
+                "touch-pan-left".to_string(),
+                "touch-pan-right".to_string(),
+                "touch-pan-y".to_string(),
+                "touch-pan-up".to_string(),
+                "touch-pan-down".to_string(),
+                "touch-pinch-zoom".to_string(),
+                "touch-manipulation".to_string(),
+                "md:touch-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".touch-auto"));
+        assert!(result.css.contains("touch-action: auto"));
+        assert!(result.css.contains(".touch-none"));
+        assert!(result.css.contains("touch-action: none"));
+        assert!(result.css.contains(".touch-pan-x"));
+        assert!(result.css.contains("touch-action: pan-x"));
+        assert!(result.css.contains(".touch-pan-left"));
+        assert!(result.css.contains("touch-action: pan-left"));
+        assert!(result.css.contains(".touch-pan-right"));
+        assert!(result.css.contains("touch-action: pan-right"));
+        assert!(result.css.contains(".touch-pan-y"));
+        assert!(result.css.contains("touch-action: pan-y"));
+        assert!(result.css.contains(".touch-pan-up"));
+        assert!(result.css.contains("touch-action: pan-up"));
+        assert!(result.css.contains(".touch-pan-down"));
+        assert!(result.css.contains("touch-action: pan-down"));
+        assert!(result.css.contains(".touch-pinch-zoom"));
+        assert!(result.css.contains("touch-action: pinch-zoom"));
+        assert!(result.css.contains(".touch-manipulation"));
+        assert!(result.css.contains("touch-action: manipulation"));
+        assert!(result.css.contains(".md\\:touch-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_user_select_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "select-none".to_string(),
+                "select-text".to_string(),
+                "select-all".to_string(),
+                "select-auto".to_string(),
+                "md:select-all".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".select-none"));
+        assert!(result.css.contains("user-select: none"));
+        assert!(result.css.contains(".select-text"));
+        assert!(result.css.contains("user-select: text"));
+        assert!(result.css.contains(".select-all"));
+        assert!(result.css.contains("user-select: all"));
+        assert!(result.css.contains(".select-auto"));
+        assert!(result.css.contains("user-select: auto"));
+        assert!(result.css.contains(".md\\:select-all"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_will_change_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "will-change-auto".to_string(),
+                "will-change-scroll".to_string(),
+                "will-change-contents".to_string(),
+                "will-change-transform".to_string(),
+                "will-change-(--my-properties)".to_string(),
+                "will-change-[top,left]".to_string(),
+                "md:will-change-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".will-change-auto"));
+        assert!(result.css.contains("will-change: auto"));
+        assert!(result.css.contains(".will-change-scroll"));
+        assert!(result.css.contains("will-change: scroll-position"));
+        assert!(result.css.contains(".will-change-contents"));
+        assert!(result.css.contains("will-change: contents"));
+        assert!(result.css.contains(".will-change-transform"));
+        assert!(result.css.contains("will-change: transform"));
+        assert!(result.css.contains(".will-change-\\(--my-properties\\)"));
+        assert!(result.css.contains("will-change: var(--my-properties)"));
+        assert!(result.css.contains(".will-change-\\[top\\,left\\]"));
+        assert!(result.css.contains("will-change: top,left"));
+        assert!(result.css.contains(".md\\:will-change-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
     }
 
     #[test]
