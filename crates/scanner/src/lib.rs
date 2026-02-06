@@ -129,7 +129,10 @@ fn should_skip_file(path: &Path, options: &ScanGlobOptions) -> bool {
         return true;
     }
 
-    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
     if !options.include_lock_files && is_common_lock_file(file_name) {
         return true;
     }
@@ -252,6 +255,7 @@ fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
         Extractor::Script => {
             let mut candidates = extract_string_literals(text);
             candidates.extend(extract_class_helpers(text));
+            candidates.extend(extract_class_attributes(text));
             candidates
         }
         Extractor::Markdown => {
@@ -543,7 +547,11 @@ fn parse_braced_value(text: &str, idx: usize) -> (Vec<String>, usize) {
             if depth == 0 {
                 let end = pos;
                 let inner = start.map(|s| &text[s..end]).unwrap_or("");
-                let values = extract_string_literals(inner);
+                let mut values = extract_string_literals(inner);
+                values.extend(parse_object_keys_in_body(inner));
+                values.extend(extract_object_keys(inner));
+                let mut seen = HashSet::new();
+                values.retain(|value| seen.insert(value.clone()));
                 return (values, pos + size);
             }
         }
@@ -930,8 +938,7 @@ fn is_allowed_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || matches!(
             ch,
-            '-'
-                | '_'
+            '-' | '_'
                 | '/'
                 | ':'
                 | '.'
@@ -1118,6 +1125,18 @@ mod tests {
             Some("tsx"),
         );
         assert!(classes.contains(&"before:content-['hello\\_world']".to_string()));
+    }
+
+    #[test]
+    fn extracts_unquoted_object_keys_from_braced_class_bindings() {
+        let classes = extract_classes_by_extension(
+            r#"<div className={{ hidden: isHidden, "text-red-500": hasError }}></div>"#,
+            Some("tsx"),
+        );
+        assert!(classes.contains(&"hidden".to_string()));
+        assert!(classes.contains(&"text-red-500".to_string()));
+        assert!(!classes.contains(&"isHidden".to_string()));
+        assert!(!classes.contains(&"hasError".to_string()));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

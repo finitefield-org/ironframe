@@ -401,12 +401,14 @@ fn run_build(
             explicit_patterns.push(normalize_source_pattern(dir, path));
         }
         if !explicit_patterns.is_empty() {
-            let mut explicit_options = ironframe_scanner::ScanGlobOptions::default();
-            explicit_options.base_path = std::env::current_dir().map_err(|err| CliError {
-                message: format!("failed to resolve current directory: {}", err),
-            })?;
-            explicit_options.respect_gitignore = false;
-            explicit_options.include_node_modules = true;
+            let explicit_options = ironframe_scanner::ScanGlobOptions {
+                base_path: std::env::current_dir().map_err(|err| CliError {
+                    message: format!("failed to resolve current directory: {}", err),
+                })?,
+                respect_gitignore: false,
+                include_node_modules: true,
+                ..ironframe_scanner::ScanGlobOptions::default()
+            };
 
             let mut explicit_ignore = ignore.clone();
             explicit_ignore.extend(
@@ -616,7 +618,7 @@ fn run_watch(inputs: Vec<String>, options: WatchOptions) -> Result<(), CliError>
         })?)
     };
 
-    let roots = watch_roots(&inputs);
+    let roots = watch_roots_for_build(&inputs, input_css.as_deref(), config.as_deref());
     if roots.is_empty() {
         watcher
             .watch(Path::new("."), notify::RecursiveMode::Recursive)
@@ -683,6 +685,32 @@ fn watch_roots(patterns: &[String]) -> Vec<PathBuf> {
 
     for pattern in patterns {
         let root = glob_root(pattern);
+        let normalized = if root.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            root
+        };
+        if seen.insert(normalized.clone()) {
+            roots.push(normalized);
+        }
+    }
+
+    roots
+}
+
+fn watch_roots_for_build(
+    patterns: &[String],
+    input_css: Option<&str>,
+    config: Option<&str>,
+) -> Vec<PathBuf> {
+    let mut roots = watch_roots(patterns);
+    let mut seen = roots
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+
+    for extra in [input_css, config].into_iter().flatten() {
+        let root = glob_root(extra);
         let normalized = if root.as_os_str().is_empty() {
             PathBuf::from(".")
         } else {
@@ -1388,8 +1416,8 @@ fn find_matching_paren(css: &str, open_idx: usize) -> Option<usize> {
     let mut depth = 0usize;
     let mut in_string: Option<char> = None;
     let mut escaped = false;
-    let mut chars = css[open_idx..].char_indices();
-    while let Some((rel_idx, ch)) = chars.next() {
+    let chars = css[open_idx..].char_indices();
+    for (rel_idx, ch) in chars {
         let idx = open_idx + rel_idx;
         if let Some(quote) = in_string {
             if escaped {
@@ -2154,9 +2182,7 @@ fn parse_source_directives(css: &str) -> SourceDirectives {
 }
 
 fn extract_import_source_directive(import_line: &str) -> Option<String> {
-    if parse_framework_import_directives(import_line).is_none() {
-        return None;
-    }
+    parse_framework_import_directives(import_line)?;
     parse_parenthesized_quoted_value(import_line, "source")
 }
 
@@ -2630,7 +2656,7 @@ mod tests {
         emit_parsed_theme_css, expand_apply_directives, expand_braces, expand_build_time_functions,
         expand_variant_directives, inline_css_imports, normalize_source_pattern, parse_args,
         parse_framework_import_directives, parse_source_directives, parse_theme,
-        strip_tailwind_custom_directives, Command, PREFLIGHT_CSS,
+        strip_tailwind_custom_directives, watch_roots_for_build, Command, PREFLIGHT_CSS,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -2695,6 +2721,18 @@ mod tests {
                 poll_interval_ms: 500,
             }
         );
+    }
+
+    #[test]
+    fn watch_roots_include_input_css_and_config_paths() {
+        let roots = watch_roots_for_build(
+            &["packages/app/src/**/*.html".to_string()],
+            Some("styles/app.css"),
+            Some("config/tailwind.toml"),
+        );
+        assert!(roots.contains(&PathBuf::from("packages/app")));
+        assert!(roots.contains(&PathBuf::from("styles/")));
+        assert!(roots.contains(&PathBuf::from("config/")));
     }
 
     #[test]
