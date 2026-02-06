@@ -35,25 +35,26 @@ This repository is for learning and prototyping a Rust implementation that match
 - Minimal CLI
 - Sample projects
 
-## Workspace Layout
+## Crate Layout
 
-- `crates/core`: tokenization, AST, and core analysis utilities
-- `crates/scanner`: content scanning and class extraction
-- `crates/generator`: utility class generation and CSS output
-- `crates/config`: configuration, theme, and plugin loading
-- `crates/cli`: CLI entrypoint and build pipeline integration
+- `src/core.rs`: tokenization, AST, and core analysis utilities
+- `src/scanner.rs`: content scanning and class extraction
+- `src/generator.rs`: utility class generation and CSS output
+- `src/config.rs`: configuration, theme, and plugin loading
+- `src/lib.rs`: CLI orchestration and build pipeline integration
+- `src/main.rs`: binary entrypoint (`ironframe`)
 
 ## CLI Usage
 
 ### Run
 
 - Run without installing:
-  - `cargo run -p ironframe-cli --bin ironframe -- <command> [options]`
+  - `cargo run -- <command> [options]`
 - Install to your Cargo bin directory:
-  - `cargo install --path crates/cli`
+  - `cargo install --path .`
   - `ironframe --help`
 - Build release binary:
-  - `cargo build -p ironframe-cli --release`
+  - `cargo build --release`
   - `./target/release/ironframe --help`
 
 ### Commands
@@ -102,12 +103,12 @@ When using `build --input-css`, the CSS file must include `@import "tailwindcss"
 
 ## Minimal API (Draft)
 
-- `ironframe_core`
+- `ironframe::core`
   - `Token` and `TokenKind` for lexer output
   - `AstNode` for parsed structures
   - `ParseError` and `Diagnostic`
   - `parse(input: &str) -> Result<AstNode, ParseError>`
-- `ironframe_scanner`
+- `ironframe::scanner`
   - `ScanTarget` and `ScanResult`
   - `ScanGlobOptions`
   - `scan(paths: &[PathBuf]) -> Result<ScanResult, ScanError>`
@@ -115,15 +116,15 @@ When using `build --input-css`, the CSS file must include `@import "tailwindcss"
   - `scan_globs_with_ignore(patterns: &[String], ignore: &[String]) -> Result<ScanResult, ScanError>`
   - `scan_globs_with_options(patterns: &[String], ignore: &[String], options: &ScanGlobOptions) -> Result<ScanResult, ScanError>`
   - `extract_classes(text: &str) -> Vec<String>`
-- `ironframe_generator`
+- `ironframe::generator`
   - `GeneratorConfig` and `GenerationResult`
   - `generate(classes: &[String], config: &GeneratorConfig) -> GenerationResult`
   - `emit_css(result: &GenerationResult) -> String`
-- `ironframe_config`
+- `ironframe::config`
   - `Config` and `Theme`
   - `load(path: &Path) -> Result<Config, ConfigError>`
   - `resolve_theme(config: &Config) -> Theme`
-- `ironframe_cli` (library crate)
+- `ironframe` (library crate)
   - binary command: `ironframe`
   - `main` with subcommands: `scan`, `build`, `watch`
   - `build` wires: `config -> scanner -> generator -> css`

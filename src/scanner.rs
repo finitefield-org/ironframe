@@ -967,7 +967,6 @@ fn next_char(text: &str, idx: usize) -> Option<(char, usize)> {
 mod tests {
     use super::extract_classes;
     use super::extract_classes_by_extension;
-    use super::scan_globs;
     use super::scan_globs_with_options;
     use super::ScanGlobOptions;
     use std::fs;
@@ -1028,7 +1027,12 @@ mod tests {
         let file_path = nested.join("example.html");
         let _ = fs::write(&file_path, r#"<div class="p-2"></div>"#);
 
-        let result = scan_globs(&["**/*.html".to_string()]).expect("scan_globs should succeed");
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*.html".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
         let _ = fs::remove_dir_all(&base);

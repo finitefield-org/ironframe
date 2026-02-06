@@ -165,38 +165,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "ironframe-cli"
-version = "0.1.0"
-dependencies = [
- "globset",
- "ironframe_config",
- "ironframe_generator",
- "ironframe_scanner",
- "notify",
-]
-
-[[package]]
-name = "ironframe_config"
-version = "0.1.0"
-dependencies = [
- "serde",
- "toml",
-]
-
-[[package]]
-name = "ironframe_core"
-version = "0.1.0"
-
-[[package]]
-name = "ironframe_generator"
-version = "0.1.0"
-
-[[package]]
-name = "ironframe_scanner"
+name = "ironframe"
 version = "0.1.0"
 dependencies = [
  "globset",
  "ignore",
+ "notify",
+ "serde",
+ "toml",
 ]
 
 [[package]]

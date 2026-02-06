@@ -1,14 +1,5 @@
-[workspace]
-members = [
-  "crates/core",
-  "crates/scanner",
-  "crates/generator",
-  "crates/config",
-  "crates/cli",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "ironframe"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -17,3 +8,17 @@ homepage = "https://github.com/finitefield-org/tailwind-rust"
 readme = "README.md"
 description = "Rust implementation aiming for Tailwind CSS v4.1-equivalent functionality."
 
+[lib]
+name = "ironframe"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ironframe"
+path = "src/main.rs"
+
+[dependencies]
+globset = "0.4"
+ignore = "0.4"
+notify = "6"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

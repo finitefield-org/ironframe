@@ -1,3 +1,8 @@
+pub mod config;
+pub mod core;
+pub mod generator;
+pub mod scanner;
+
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::env;
 use std::fs;
@@ -305,7 +310,7 @@ fn parse_watch_args(args: Vec<String>) -> Result<Command, CliError> {
 
 fn run_scan(inputs: Vec<String>, ignore: Vec<String>) -> Result<(), CliError> {
     let mut result =
-        ironframe_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
+        crate::scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
             message: err.message,
         })?;
 
@@ -360,7 +365,7 @@ fn run_build(
     let mut files_scanned = 0usize;
 
     if source_directives.auto_detection {
-        let mut auto_options = ironframe_scanner::ScanGlobOptions::default();
+        let mut auto_options = crate::scanner::ScanGlobOptions::default();
         let mut auto_patterns = inputs.clone();
         if input_css_path.is_some() {
             auto_patterns = vec!["**/*".to_string()];
@@ -385,7 +390,7 @@ fn run_build(
                 .collect::<Vec<_>>(),
         );
         let auto_scan =
-            ironframe_scanner::scan_globs_with_options(&auto_patterns, &auto_ignore, &auto_options)
+            crate::scanner::scan_globs_with_options(&auto_patterns, &auto_ignore, &auto_options)
                 .map_err(|err| CliError {
                     message: err.message,
                 })?;
@@ -401,13 +406,13 @@ fn run_build(
             explicit_patterns.push(normalize_source_pattern(dir, path));
         }
         if !explicit_patterns.is_empty() {
-            let explicit_options = ironframe_scanner::ScanGlobOptions {
+            let explicit_options = crate::scanner::ScanGlobOptions {
                 base_path: std::env::current_dir().map_err(|err| CliError {
                     message: format!("failed to resolve current directory: {}", err),
                 })?,
                 respect_gitignore: false,
                 include_node_modules: true,
-                ..ironframe_scanner::ScanGlobOptions::default()
+                ..crate::scanner::ScanGlobOptions::default()
             };
 
             let mut explicit_ignore = ignore.clone();
@@ -418,7 +423,7 @@ fn run_build(
                     .map(|path| normalize_source_pattern(dir, path))
                     .collect::<Vec<_>>(),
             );
-            let explicit_scan = ironframe_scanner::scan_globs_with_options(
+            let explicit_scan = crate::scanner::scan_globs_with_options(
                 &explicit_patterns,
                 &explicit_ignore,
                 &explicit_options,
@@ -439,22 +444,22 @@ fn run_build(
     for class in &source_directives.inline_exclude {
         classes.remove(class);
     }
-    let scan_result = ironframe_scanner::ScanResult {
+    let scan_result = crate::scanner::ScanResult {
         classes: classes.into_iter().collect(),
         files_scanned,
     };
 
     let config = match config_path {
         Some(path) => {
-            ironframe_config::load(std::path::Path::new(&path)).map_err(|err| CliError {
+            crate::config::load(std::path::Path::new(&path)).map_err(|err| CliError {
                 message: err.message,
             })?
         }
-        None => ironframe_config::Config::default(),
+        None => crate::config::Config::default(),
     };
-    let _theme = ironframe_config::resolve_theme(&config);
+    let _theme = crate::config::resolve_theme(&config);
 
-    let generator_config = ironframe_generator::GeneratorConfig {
+    let generator_config = crate::generator::GeneratorConfig {
         minify,
         colors: config.theme.colors.clone(),
     };
@@ -465,12 +470,12 @@ fn run_build(
             parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
         )?);
     }
-    let generation = ironframe_generator::generate_with_overrides(
+    let generation = crate::generator::generate_with_overrides(
         &scan_result.classes,
         &generator_config,
         parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
     );
-    let mut utility_css = ironframe_generator::emit_css(&generation);
+    let mut utility_css = crate::generator::emit_css(&generation);
     let mut theme_css = String::new();
     if let Some(theme) = parsed_theme.as_ref() {
         if !theme.inline_variables.is_empty() {
@@ -950,8 +955,8 @@ fn parse_plain_css_import_path(trimmed_line: &str) -> Option<String> {
 
 fn expand_apply_directives(
     css: &str,
-    config: &ironframe_generator::GeneratorConfig,
-    overrides: Option<&ironframe_generator::VariantOverrides>,
+    config: &crate::generator::GeneratorConfig,
+    overrides: Option<&crate::generator::VariantOverrides>,
 ) -> Result<String, CliError> {
     let mut out = String::new();
     let mut cursor = 0usize;
@@ -992,7 +997,7 @@ fn expand_apply_directives(
                     message: format!("@apply does not support variant classes: {}", class),
                 });
             }
-            let utility_css = ironframe_generator::generate_with_overrides(
+            let utility_css = crate::generator::generate_with_overrides(
                 &[class.to_string()],
                 config,
                 overrides,
@@ -1002,7 +1007,7 @@ fn expand_apply_directives(
                     message: format!("unknown utility in @apply: {}", class),
                 });
             }
-            let generated = ironframe_generator::emit_css(&utility_css);
+            let generated = crate::generator::emit_css(&utility_css);
             let Some(open_idx) = generated.find('{') else {
                 return Err(CliError {
                     message: format!("failed to parse generated utility for @apply: {}", class),
@@ -1162,7 +1167,7 @@ fn combine_css_blocks(blocks: &[String], minify: bool) -> String {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedTheme {
-    variant_overrides: ironframe_generator::VariantOverrides,
+    variant_overrides: crate::generator::VariantOverrides,
     root_variables: Vec<ThemeVariable>,
     keyframes: Vec<ThemeKeyframes>,
     inline_variables: Vec<(String, String)>,
@@ -1257,7 +1262,7 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
         .map(|(_, selector)| selector.clone());
 
     ParsedTheme {
-        variant_overrides: ironframe_generator::VariantOverrides {
+        variant_overrides: crate::generator::VariantOverrides {
             responsive_breakpoints: resolve_named_sizes(
                 &[
                     ("sm", "40rem"),
@@ -1897,14 +1902,14 @@ fn strip_tailwind_custom_directives(template_css: &str) -> String {
 
 fn expand_variant_directives(
     css: &str,
-    overrides: &ironframe_generator::VariantOverrides,
+    overrides: &crate::generator::VariantOverrides,
 ) -> String {
     expand_variant_directives_in_block(css, overrides)
 }
 
 fn expand_variant_directives_in_block(
     content: &str,
-    overrides: &ironframe_generator::VariantOverrides,
+    overrides: &crate::generator::VariantOverrides,
 ) -> String {
     let mut out = String::new();
     let mut cursor = 0usize;
@@ -1964,7 +1969,7 @@ fn expand_variant_directives_in_block(
 fn wrap_variant_block_for_css(
     variant: &str,
     inner: &str,
-    overrides: &ironframe_generator::VariantOverrides,
+    overrides: &crate::generator::VariantOverrides,
 ) -> Option<String> {
     if variant == "dark" {
         if let Some(template) = overrides.dark_variant_selector.as_ref() {
@@ -3240,7 +3245,7 @@ body { margin: 0; }
   }
 }
 "#;
-        let overrides = ironframe_generator::VariantOverrides {
+        let overrides = crate::generator::VariantOverrides {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
@@ -3265,7 +3270,7 @@ body { margin: 0; }
   @apply rounded-b-lg shadow-md;
 }
 "#;
-        let config = ironframe_generator::GeneratorConfig {
+        let config = crate::generator::GeneratorConfig {
             minify: false,
             colors: std::collections::BTreeMap::new(),
         };
@@ -3279,7 +3284,7 @@ body { margin: 0; }
     #[test]
     fn apply_rejects_unknown_utility() {
         let css = ".x { @apply definitely-not-a-real-utility; }";
-        let config = ironframe_generator::GeneratorConfig {
+        let config = crate::generator::GeneratorConfig {
             minify: false,
             colors: std::collections::BTreeMap::new(),
         };
@@ -3320,7 +3325,7 @@ body { margin: 0; }
   }
 }
 "#;
-        let overrides = ironframe_generator::VariantOverrides {
+        let overrides = crate::generator::VariantOverrides {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
