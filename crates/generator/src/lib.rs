@@ -293,6 +293,12 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_backdrop_opacity_rule(base, config))
             .or_else(|| generate_backdrop_saturate_rule(base, config))
             .or_else(|| generate_backdrop_sepia_rule(base, config))
+            .or_else(|| generate_animation_rule(base, config))
+            .or_else(|| generate_transition_timing_function_rule(base, config))
+            .or_else(|| generate_transition_delay_rule(base, config))
+            .or_else(|| generate_transition_duration_rule(base, config))
+            .or_else(|| generate_transition_behavior_rule(base, config))
+            .or_else(|| generate_transition_property_rule(base, config))
             .or_else(|| generate_blur_rule(base, config))
             .or_else(|| generate_brightness_rule(base, config))
             .or_else(|| generate_contrast_rule(base, config))
@@ -419,6 +425,276 @@ fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String>
             return None;
         }
         return rule(&selector, &format!("filter:var({})", raw), config);
+    }
+
+    None
+}
+
+fn generate_transition_property_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let default_timing_duration = "transition-timing-function:var(--default-transition-timing-function);transition-duration:var(--default-transition-duration)";
+
+    match class {
+        "transition" => {
+            let properties = "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events";
+            return rule(
+                &selector,
+                &format!(
+                    "transition-property:{};{}",
+                    properties, default_timing_duration
+                ),
+                config,
+            );
+        }
+        "transition-all" => {
+            return rule(
+                &selector,
+                &format!("transition-property:all;{}", default_timing_duration),
+                config,
+            );
+        }
+        "transition-colors" => {
+            let properties = "color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to";
+            return rule(
+                &selector,
+                &format!(
+                    "transition-property:{};{}",
+                    properties, default_timing_duration
+                ),
+                config,
+            );
+        }
+        "transition-opacity" => {
+            return rule(
+                &selector,
+                &format!("transition-property:opacity;{}", default_timing_duration),
+                config,
+            );
+        }
+        "transition-shadow" => {
+            return rule(
+                &selector,
+                &format!("transition-property:box-shadow;{}", default_timing_duration),
+                config,
+            );
+        }
+        "transition-transform" => {
+            return rule(
+                &selector,
+                &format!(
+                    "transition-property:transform,translate,scale,rotate;{}",
+                    default_timing_duration
+                ),
+                config,
+            );
+        }
+        "transition-none" => return rule(&selector, "transition-property:none", config),
+        _ => {}
+    }
+
+    if let Some(custom) = class
+        .strip_prefix("transition-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if custom.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!(
+                "transition-property:var({});{}",
+                custom, default_timing_duration
+            ),
+            config,
+        );
+    }
+
+    if let Some(value) = class
+        .strip_prefix("transition-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("transition-property:{};{}", value, default_timing_duration),
+            config,
+        );
+    }
+
+    None
+}
+
+fn generate_animation_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    match class {
+        "animate-spin" => return rule(&selector, "animation:var(--animate-spin)", config),
+        "animate-ping" => return rule(&selector, "animation:var(--animate-ping)", config),
+        "animate-pulse" => return rule(&selector, "animation:var(--animate-pulse)", config),
+        "animate-bounce" => return rule(&selector, "animation:var(--animate-bounce)", config),
+        "animate-none" => return rule(&selector, "animation:none", config),
+        _ => {}
+    }
+
+    if let Some(value) = class
+        .strip_prefix("animate-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("animation:var({})", value), config);
+    }
+
+    if let Some(value) = class
+        .strip_prefix("animate-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("animation:{}", value), config);
+    }
+
+    if let Some(token) = class.strip_prefix("animate-") {
+        if token.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("animation:var(--animate-{})", token), config);
+    }
+
+    None
+}
+
+fn generate_transition_behavior_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "transition-normal" => rule(&selector, "transition-behavior:normal", config),
+        "transition-discrete" => rule(&selector, "transition-behavior:allow-discrete", config),
+        _ => None,
+    }
+}
+
+fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "duration-initial" {
+        return rule(&selector, "transition-duration:initial", config);
+    }
+
+    if let Some(value) = class
+        .strip_prefix("duration-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("transition-duration:var({})", value),
+            config,
+        );
+    }
+
+    if let Some(value) = class
+        .strip_prefix("duration-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("transition-duration:{}", value), config);
+    }
+
+    if let Some(value) = class.strip_prefix("duration-") {
+        if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
+            return rule(&selector, &format!("transition-duration:{}ms", value), config);
+        }
+    }
+
+    None
+}
+
+fn generate_transition_delay_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(value) = class.strip_prefix("delay-(").and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("transition-delay:var({})", value), config);
+    }
+
+    if let Some(value) = class.strip_prefix("delay-[").and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("transition-delay:{}", value), config);
+    }
+
+    if let Some(value) = class.strip_prefix("delay-") {
+        if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
+            return rule(&selector, &format!("transition-delay:{}ms", value), config);
+        }
+    }
+
+    None
+}
+
+fn generate_transition_timing_function_rule(
+    class: &str,
+    config: &GeneratorConfig,
+) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    match class {
+        "ease-linear" => return rule(&selector, "transition-timing-function:linear", config),
+        "ease-in" => return rule(&selector, "transition-timing-function:var(--ease-in)", config),
+        "ease-out" => return rule(&selector, "transition-timing-function:var(--ease-out)", config),
+        "ease-in-out" => {
+            return rule(
+                &selector,
+                "transition-timing-function:var(--ease-in-out)",
+                config,
+            );
+        }
+        "ease-initial" => return rule(&selector, "transition-timing-function:initial", config),
+        _ => {}
+    }
+
+    if let Some(value) = class.strip_prefix("ease-(").and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("transition-timing-function:var({})", value),
+            config,
+        );
+    }
+
+    if let Some(value) = class.strip_prefix("ease-[").and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("transition-timing-function:{}", value),
+            config,
+        );
+    }
+
+    if let Some(token) = class.strip_prefix("ease-") {
+        if token.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("transition-timing-function:var(--ease-{})", token),
+            config,
+        );
     }
 
     None
@@ -5073,6 +5349,8 @@ fn apply_variants(
             "active" => selector = format!("{}:active", selector),
             "before" => selector = format!("{}:before", selector),
             "after" => selector = format!("{}:after", selector),
+            "motion-safe" => media_queries.push("(prefers-reduced-motion: no-preference)"),
+            "motion-reduce" => media_queries.push("(prefers-reduced-motion: reduce)"),
             "sm" => media_queries.push("(min-width: 640px)"),
             "md" => media_queries.push("(min-width: 768px)"),
             "lg" => media_queries.push("(min-width: 1024px)"),
@@ -5211,6 +5489,287 @@ mod tests {
         assert!(result.css.contains("font-size: var(--text-sm)"));
         assert!(result.css.contains(".bg-red-500"));
         assert!(result.css.contains("background-color: #ef4444"));
+    }
+
+    #[test]
+    fn generates_transition_property_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "transition".to_string(),
+                "transition-all".to_string(),
+                "transition-colors".to_string(),
+                "transition-opacity".to_string(),
+                "transition-shadow".to_string(),
+                "transition-transform".to_string(),
+                "transition-none".to_string(),
+                "transition-(--my-properties)".to_string(),
+                "transition-[height]".to_string(),
+                "md:transition-all".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".transition"));
+        assert!(result
+            .css
+            .contains("transition-property: color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to,opacity,box-shadow,transform,translate,scale,rotate,filter,-webkit-backdrop-filter,backdrop-filter,display,content-visibility,overlay,pointer-events"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--default-transition-timing-function)"));
+        assert!(result
+            .css
+            .contains("transition-duration: var(--default-transition-duration)"));
+        assert!(result.css.contains(".transition-all"));
+        assert!(result.css.contains("transition-property: all"));
+        assert!(result.css.contains(".transition-colors"));
+        assert!(result
+            .css
+            .contains("transition-property: color,background-color,border-color,outline-color,text-decoration-color,fill,stroke,--tw-gradient-from,--tw-gradient-via,--tw-gradient-to"));
+        assert!(result.css.contains(".transition-opacity"));
+        assert!(result.css.contains("transition-property: opacity"));
+        assert!(result.css.contains(".transition-shadow"));
+        assert!(result.css.contains("transition-property: box-shadow"));
+        assert!(result.css.contains(".transition-transform"));
+        assert!(result
+            .css
+            .contains("transition-property: transform,translate,scale,rotate"));
+        assert!(result.css.contains(".transition-none"));
+        assert!(result.css.contains("transition-property: none"));
+        assert!(result.css.contains(".transition-\\(--my-properties\\)"));
+        assert!(result.css.contains("transition-property: var(--my-properties)"));
+        assert!(result.css.contains(".transition-\\[height\\]"));
+        assert!(result.css.contains("transition-property: height"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:transition-all"));
+    }
+
+    #[test]
+    fn generates_transition_behavior_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "transition-normal".to_string(),
+                "transition-discrete".to_string(),
+                "md:transition-normal".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".transition-normal"));
+        assert!(result.css.contains("transition-behavior: normal"));
+        assert!(result.css.contains(".transition-discrete"));
+        assert!(result.css.contains("transition-behavior: allow-discrete"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:transition-normal"));
+    }
+
+    #[test]
+    fn generates_transition_duration_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "duration-0".to_string(),
+                "duration-150".to_string(),
+                "duration-700".to_string(),
+                "duration-initial".to_string(),
+                "duration-(--my-duration)".to_string(),
+                "duration-[1s,15s]".to_string(),
+                "motion-reduce:duration-0".to_string(),
+                "md:duration-150".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".duration-0"));
+        assert!(result.css.contains("transition-duration: 0ms"));
+        assert!(result.css.contains(".duration-150"));
+        assert!(result.css.contains("transition-duration: 150ms"));
+        assert!(result.css.contains(".duration-700"));
+        assert!(result.css.contains("transition-duration: 700ms"));
+        assert!(result.css.contains(".duration-initial"));
+        assert!(result.css.contains("transition-duration: initial"));
+        assert!(result.css.contains(".duration-\\(--my-duration\\)"));
+        assert!(result.css.contains("transition-duration: var(--my-duration)"));
+        assert!(result.css.contains(".duration-\\[1s\\,15s\\]"));
+        assert!(result.css.contains("transition-duration: 1s,15s"));
+        assert!(result
+            .css
+            .contains("@media (prefers-reduced-motion: reduce)"));
+        assert!(result.css.contains(".motion-reduce\\:duration-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:duration-150"));
+    }
+
+    #[test]
+    fn generates_transition_delay_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "delay-150".to_string(),
+                "delay-300".to_string(),
+                "delay-700".to_string(),
+                "delay-(--my-delay)".to_string(),
+                "delay-[1s,250ms]".to_string(),
+                "motion-reduce:delay-0".to_string(),
+                "md:delay-300".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".delay-150"));
+        assert!(result.css.contains("transition-delay: 150ms"));
+        assert!(result.css.contains(".delay-300"));
+        assert!(result.css.contains("transition-delay: 300ms"));
+        assert!(result.css.contains(".delay-700"));
+        assert!(result.css.contains("transition-delay: 700ms"));
+        assert!(result.css.contains(".delay-\\(--my-delay\\)"));
+        assert!(result.css.contains("transition-delay: var(--my-delay)"));
+        assert!(result.css.contains(".delay-\\[1s\\,250ms\\]"));
+        assert!(result.css.contains("transition-delay: 1s,250ms"));
+        assert!(result
+            .css
+            .contains("@media (prefers-reduced-motion: reduce)"));
+        assert!(result.css.contains(".motion-reduce\\:delay-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:delay-300"));
+    }
+
+    #[test]
+    fn generates_transition_timing_function_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "ease-linear".to_string(),
+                "ease-in".to_string(),
+                "ease-out".to_string(),
+                "ease-in-out".to_string(),
+                "ease-initial".to_string(),
+                "ease-(--my-ease)".to_string(),
+                "ease-[cubic-bezier(0.95,0.05,0.795,0.035)]".to_string(),
+                "ease-in-expo".to_string(),
+                "md:ease-in".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".ease-linear"));
+        assert!(result.css.contains("transition-timing-function: linear"));
+        assert!(result.css.contains(".ease-in"));
+        assert!(result.css.contains("transition-timing-function: var(--ease-in)"));
+        assert!(result.css.contains(".ease-out"));
+        assert!(result.css.contains("transition-timing-function: var(--ease-out)"));
+        assert!(result.css.contains(".ease-in-out"));
+        assert!(result.css.contains("transition-timing-function: var(--ease-in-out)"));
+        assert!(result.css.contains(".ease-initial"));
+        assert!(result.css.contains("transition-timing-function: initial"));
+        assert!(result.css.contains(".ease-\\(--my-ease\\)"));
+        assert!(result.css.contains("transition-timing-function: var(--my-ease)"));
+        assert!(result
+            .css
+            .contains(".ease-\\[cubic-bezier\\(0.95\\,0.05\\,0.795\\,0.035\\)\\]"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: cubic-bezier(0.95,0.05,0.795,0.035)"));
+        assert!(result.css.contains(".ease-in-expo"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--ease-in-expo)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:ease-in"));
+    }
+
+    #[test]
+    fn generates_animation_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "animate-spin".to_string(),
+                "animate-ping".to_string(),
+                "animate-pulse".to_string(),
+                "animate-bounce".to_string(),
+                "animate-none".to_string(),
+                "animate-(--my-animation)".to_string(),
+                "animate-[wiggle_1s_ease-in-out_infinite]".to_string(),
+                "animate-wiggle".to_string(),
+                "motion-safe:animate-spin".to_string(),
+                "md:animate-spin".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".animate-spin"));
+        assert!(result.css.contains("animation: var(--animate-spin)"));
+        assert!(result.css.contains(".animate-ping"));
+        assert!(result.css.contains("animation: var(--animate-ping)"));
+        assert!(result.css.contains(".animate-pulse"));
+        assert!(result.css.contains("animation: var(--animate-pulse)"));
+        assert!(result.css.contains(".animate-bounce"));
+        assert!(result.css.contains("animation: var(--animate-bounce)"));
+        assert!(result.css.contains(".animate-none"));
+        assert!(result.css.contains("animation: none"));
+        assert!(result.css.contains(".animate-\\(--my-animation\\)"));
+        assert!(result.css.contains("animation: var(--my-animation)"));
+        assert!(result
+            .css
+            .contains(".animate-\\[wiggle_1s_ease-in-out_infinite\\]"));
+        assert!(result
+            .css
+            .contains("animation: wiggle_1s_ease-in-out_infinite"));
+        assert!(result.css.contains(".animate-wiggle"));
+        assert!(result.css.contains("animation: var(--animate-wiggle)"));
+        assert!(result
+            .css
+            .contains("@media (prefers-reduced-motion: no-preference)"));
+        assert!(result.css.contains(".motion-safe\\:animate-spin"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:animate-spin"));
+    }
+
+    #[test]
+    fn generates_motion_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "motion-reduce:transition-none".to_string(),
+                "motion-safe:hover:transition-all".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result
+            .css
+            .contains("@media (prefers-reduced-motion: reduce)"));
+        assert!(result
+            .css
+            .contains(".motion-reduce\\:transition-none"));
+        assert!(result
+            .css
+            .contains("@media (prefers-reduced-motion: no-preference)"));
+        assert!(result
+            .css
+            .contains(".motion-safe\\:hover\\:transition-all:hover"));
     }
 
     #[test]
