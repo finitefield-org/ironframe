@@ -200,15 +200,51 @@ fn generate_rule(
     let (variants, base_with_modifier) = parse_variants(class);
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
     let rule = generate_color_rule(base, config).or_else(|| match base {
-        "font-thin" => rule(".font-thin", "font-weight:100", config),
-        "font-extralight" => rule(".font-extralight", "font-weight:200", config),
-        "font-light" => rule(".font-light", "font-weight:300", config),
-        "font-normal" => rule(".font-normal", "font-weight:400", config),
-        "font-medium" => rule(".font-medium", "font-weight:500", config),
-        "font-semibold" => rule(".font-semibold", "font-weight:600", config),
-        "font-bold" => rule(".font-bold", "font-weight:700", config),
-        "font-extrabold" => rule(".font-extrabold", "font-weight:800", config),
-        "font-black" => rule(".font-black", "font-weight:900", config),
+        "font-thin" => rule(
+            ".font-thin",
+            "--tw-font-weight:var(--font-weight-thin);font-weight:var(--font-weight-thin)",
+            config,
+        ),
+        "font-extralight" => rule(
+            ".font-extralight",
+            "--tw-font-weight:var(--font-weight-extralight);font-weight:var(--font-weight-extralight)",
+            config,
+        ),
+        "font-light" => rule(
+            ".font-light",
+            "--tw-font-weight:var(--font-weight-light);font-weight:var(--font-weight-light)",
+            config,
+        ),
+        "font-normal" => rule(
+            ".font-normal",
+            "--tw-font-weight:var(--font-weight-normal);font-weight:var(--font-weight-normal)",
+            config,
+        ),
+        "font-medium" => rule(
+            ".font-medium",
+            "--tw-font-weight:var(--font-weight-medium);font-weight:var(--font-weight-medium)",
+            config,
+        ),
+        "font-semibold" => rule(
+            ".font-semibold",
+            "--tw-font-weight:var(--font-weight-semibold);font-weight:var(--font-weight-semibold)",
+            config,
+        ),
+        "font-bold" => rule(
+            ".font-bold",
+            "--tw-font-weight:var(--font-weight-bold);font-weight:var(--font-weight-bold)",
+            config,
+        ),
+        "font-extrabold" => rule(
+            ".font-extrabold",
+            "--tw-font-weight:var(--font-weight-extrabold);font-weight:var(--font-weight-extrabold)",
+            config,
+        ),
+        "font-black" => rule(
+            ".font-black",
+            "--tw-font-weight:var(--font-weight-black);font-weight:var(--font-weight-black)",
+            config,
+        ),
         "italic" => rule(".italic", "font-style:italic", config),
         "not-italic" => rule(".not-italic", "font-style:normal", config),
         "antialiased" => rule(
@@ -310,83 +346,107 @@ fn generate_rule(
             "text-decoration-thickness:from-font",
             config,
         ),
-        "leading-none" => rule(".leading-none", "line-height:1", config),
-        "leading-tight" => rule(".leading-tight", "line-height:1.25", config),
-        "leading-snug" => rule(".leading-snug", "line-height:1.375", config),
-        "leading-normal" => rule(".leading-normal", "line-height:1.5", config),
-        "leading-relaxed" => rule(".leading-relaxed", "line-height:1.625", config),
-        "leading-loose" => rule(".leading-loose", "line-height:2", config),
-        "inset-0" => rule(".inset-0", "inset:0px", config),
-        "inset-x-0" => rule(".inset-x-0", "left:0px;right:0px", config),
-        "inset-y-0" => rule(".inset-y-0", "top:0px;bottom:0px", config),
-        "top-0" => rule(".top-0", "top:0px", config),
-        "right-0" => rule(".right-0", "right:0px", config),
-        "bottom-0" => rule(".bottom-0", "bottom:0px", config),
-        "left-0" => rule(".left-0", "left:0px", config),
+        "leading-none" => rule(".leading-none", "--tw-leading:1;line-height:1", config),
+        "leading-tight" => rule(
+            ".leading-tight",
+            "--tw-leading:var(--leading-tight);line-height:var(--leading-tight)",
+            config,
+        ),
+        "leading-snug" => rule(
+            ".leading-snug",
+            "--tw-leading:var(--leading-snug);line-height:var(--leading-snug)",
+            config,
+        ),
+        "leading-normal" => rule(
+            ".leading-normal",
+            "--tw-leading:var(--leading-normal);line-height:var(--leading-normal)",
+            config,
+        ),
+        "leading-relaxed" => rule(
+            ".leading-relaxed",
+            "--tw-leading:var(--leading-relaxed);line-height:var(--leading-relaxed)",
+            config,
+        ),
+        "leading-loose" => rule(
+            ".leading-loose",
+            "--tw-leading:var(--leading-loose);line-height:var(--leading-loose)",
+            config,
+        ),
+        "inset-0" => rule(".inset-0", "inset:calc(var(--spacing) * 0)", config),
+        "inset-x-0" => rule(".inset-x-0", "inset-inline:calc(var(--spacing) * 0)", config),
+        "inset-y-0" => rule(".inset-y-0", "inset-block:calc(var(--spacing) * 0)", config),
+        "top-0" => rule(".top-0", "top:calc(var(--spacing) * 0)", config),
+        "right-0" => rule(".right-0", "right:calc(var(--spacing) * 0)", config),
+        "bottom-0" => rule(".bottom-0", "bottom:calc(var(--spacing) * 0)", config),
+        "left-0" => rule(".left-0", "left:calc(var(--spacing) * 0)", config),
         "shadow-sm" => rule(
             ".shadow-sm",
-            "box-shadow:0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))",
+            "--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow" => rule(
             ".shadow",
-            "box-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.06))",
+            "--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow-md" => rule(
             ".shadow-md",
-            "box-shadow:0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 2px 4px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.06))",
+            "--tw-shadow:0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow-lg" => rule(
             ".shadow-lg",
-            "box-shadow:0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 4px 6px -2px var(--tw-shadow-color,rgb(0 0 0 / 0.05))",
+            "--tw-shadow:0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 4px 6px -4px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow-xl" => rule(
             ".shadow-xl",
-            "box-shadow:0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 10px 10px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.04))",
+            "--tw-shadow:0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 8px 10px -6px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow-2xl" => rule(
             ".shadow-2xl",
-            "box-shadow:0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))",
+            "--tw-shadow:0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "shadow-inner" => rule(
             ".shadow-inner",
-            "box-shadow:inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))",
+            "--tw-shadow:inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
-        "shadow-none" => rule(".shadow-none", "box-shadow:none", config),
+        "shadow-none" => rule(
+            ".shadow-none",
+            "--tw-shadow:0 0 #0000;box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
+            config,
+        ),
         "ring-0" => rule(
             ".ring-0",
-            "box-shadow:0 0 0 0 var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring-1" => rule(
             ".ring-1",
-            "box-shadow:0 0 0 1px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring-2" => rule(
             ".ring-2",
-            "box-shadow:0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring-4" => rule(
             ".ring-4",
-            "box-shadow:0 0 0 4px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(4px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring-8" => rule(
             ".ring-8",
-            "box-shadow:0 0 0 8px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring" => rule(
             ".ring",
-            "box-shadow:0 0 0 3px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
             config,
         ),
         "ring-inset" => rule(".ring-inset", "--tw-ring-inset:inset", config),
@@ -464,9 +524,9 @@ fn generate_rule(
             .or_else(|| generate_filter_rule(base, config))
             .or_else(|| generate_arbitrary_property_rule(base, config))
             .or_else(|| generate_text_arbitrary_color_rule(base, config))
-            .or_else(|| generate_text_palette_color_rule(base, config))
-            .or_else(|| generate_background_arbitrary_color_rule(base, config))
-            .or_else(|| generate_background_palette_color_rule(base, config))
+            .or_else(|| generate_text_palette_color_rule(base, config, variant_tables))
+            .or_else(|| generate_background_arbitrary_color_rule(base, config, variant_tables))
+            .or_else(|| generate_background_palette_color_rule(base, config, variant_tables))
             .or_else(|| generate_fill_arbitrary_color_rule(base, config))
             .or_else(|| generate_fill_palette_color_rule(base, config))
             .or_else(|| generate_stroke_width_rule(base, config))
@@ -475,7 +535,7 @@ fn generate_rule(
             .or_else(|| generate_background_blend_mode_rule(base, config))
             .or_else(|| generate_background_position_rule(base, config))
             .or_else(|| generate_background_size_rule(base, config))
-            .or_else(|| generate_background_image_rule(base, config))
+            .or_else(|| generate_background_image_rule(base, config, variant_tables))
             .or_else(|| generate_content_rule(base, config))
             .or_else(|| generate_decoration_thickness_rule(base, config))
             .or_else(|| generate_decoration_arbitrary_color_rule(base, config))
@@ -485,9 +545,9 @@ fn generate_rule(
             .or_else(|| generate_caret_arbitrary_color_rule(base, config))
             .or_else(|| generate_caret_palette_color_rule(base, config))
             .or_else(|| generate_shadow_value_rule(base, config))
-            .or_else(|| generate_shadow_color_rule(base, config))
+            .or_else(|| generate_shadow_color_rule(base, config, variant_tables))
             .or_else(|| generate_inset_shadow_color_rule(base, config))
-            .or_else(|| generate_ring_color_rule(base, config))
+            .or_else(|| generate_ring_color_rule(base, config, variant_tables))
             .or_else(|| generate_inset_ring_color_rule(base, config))
             .or_else(|| generate_list_style_type_rule(base, config))
             .or_else(|| generate_list_style_image_rule(base, config))
@@ -515,7 +575,7 @@ fn generate_rule(
             .or_else(|| generate_border_width_rule(base, config))
             .or_else(|| generate_divide_width_rule(base, config))
             .or_else(|| generate_border_style_rule(base, config))
-            .or_else(|| generate_border_color_rule(base, config))
+            .or_else(|| generate_border_color_rule(base, config, variant_tables))
             .or_else(|| generate_border_radius_rule(base, config))
             .or_else(|| generate_outline_style_rule(base, config))
             .or_else(|| generate_outline_offset_rule(base, config))
@@ -1195,6 +1255,10 @@ fn composed_filter_property() -> &'static str {
     "filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
 }
 
+fn composed_backdrop_filter_property() -> &'static str {
+    "-webkit-backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,);backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)"
+}
+
 fn composed_filter_rule(
     selector: &str,
     variable_decl: &str,
@@ -1214,9 +1278,21 @@ fn composed_filter_rule(
     rule(selector, &declarations, config)
 }
 
+fn composed_backdrop_filter_rule(
+    selector: &str,
+    variable_decl: &str,
+    config: &GeneratorConfig,
+) -> Option<String> {
+    rule(
+        selector,
+        &format!("{};{}", variable_decl, composed_backdrop_filter_property()),
+        config,
+    )
+}
+
 fn generate_transition_property_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let default_timing_duration = "transition-timing-function:var(--default-transition-timing-function);transition-duration:var(--default-transition-duration)";
+    let default_timing_duration = "transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))";
 
     match class {
         "transition" => {
@@ -1381,7 +1457,10 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
         }
         return rule(
             &selector,
-            &format!("transition-duration:var({})", value),
+            &format!(
+                "--tw-duration:var({});transition-duration:var({})",
+                value, value
+            ),
             config,
         );
     }
@@ -1393,14 +1472,19 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
         if value.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("transition-duration:{}", value), config);
+        return rule(
+            &selector,
+            &format!("--tw-duration:{};transition-duration:{}", value, value),
+            config,
+        );
     }
 
     if let Some(value) = class.strip_prefix("duration-") {
         if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
+            let duration = format!("{}ms", value);
             return rule(
                 &selector,
-                &format!("transition-duration:{}ms", value),
+                &format!("--tw-duration:{};transition-duration:{}", duration, duration),
                 config,
             );
         }
@@ -1452,25 +1536,31 @@ fn generate_transition_timing_function_rule(
     let selector = format!(".{}", escape_selector(class));
 
     match class {
-        "ease-linear" => return rule(&selector, "transition-timing-function:linear", config),
+        "ease-linear" => {
+            return rule(
+                &selector,
+                "--tw-ease:linear;transition-timing-function:linear",
+                config,
+            );
+        }
         "ease-in" => {
             return rule(
                 &selector,
-                "transition-timing-function:var(--ease-in)",
+                "--tw-ease:var(--ease-in);transition-timing-function:var(--ease-in)",
                 config,
             );
         }
         "ease-out" => {
             return rule(
                 &selector,
-                "transition-timing-function:var(--ease-out)",
+                "--tw-ease:var(--ease-out);transition-timing-function:var(--ease-out)",
                 config,
             );
         }
         "ease-in-out" => {
             return rule(
                 &selector,
-                "transition-timing-function:var(--ease-in-out)",
+                "--tw-ease:var(--ease-in-out);transition-timing-function:var(--ease-in-out)",
                 config,
             );
         }
@@ -1485,9 +1575,13 @@ fn generate_transition_timing_function_rule(
         if value.is_empty() {
             return None;
         }
+        let ease_value = format!("var({})", value);
         return rule(
             &selector,
-            &format!("transition-timing-function:var({})", value),
+            &format!(
+                "--tw-ease:{};transition-timing-function:{}",
+                ease_value, ease_value
+            ),
             config,
         );
     }
@@ -1499,9 +1593,13 @@ fn generate_transition_timing_function_rule(
         if value.is_empty() {
             return None;
         }
+        let ease_value = value.to_string();
         return rule(
             &selector,
-            &format!("transition-timing-function:{}", value),
+            &format!(
+                "--tw-ease:{};transition-timing-function:{}",
+                ease_value, ease_value
+            ),
             config,
         );
     }
@@ -1510,9 +1608,13 @@ fn generate_transition_timing_function_rule(
         if token.is_empty() {
             return None;
         }
+        let ease_value = format!("var(--ease-{})", token);
         return rule(
             &selector,
-            &format!("transition-timing-function:var(--ease-{})", token),
+            &format!(
+                "--tw-ease:{};transition-timing-function:{}",
+                ease_value, ease_value
+            ),
             config,
         );
     }
@@ -1526,19 +1628,14 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     if class == "blur" {
         return composed_filter_rule(
             &selector,
-            "--tw-blur:blur(var(--blur))",
-            Some("filter:blur(var(--blur))".to_string()),
+            "--tw-blur:blur(8px)",
+            None,
             config,
         );
     }
 
     if class == "blur-none" {
-        return composed_filter_rule(
-            &selector,
-            "--tw-blur:blur(0)",
-            Some("filter:blur(0)".to_string()),
-            config,
-        );
+        return composed_filter_rule(&selector, "--tw-blur:blur(0)", None, config);
     }
 
     if let Some(raw) = class
@@ -1551,7 +1648,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         return composed_filter_rule(
             &selector,
             &format!("--tw-blur:blur({})", raw),
-            Some(format!("filter:blur({})", raw)),
+            None,
             config,
         );
     }
@@ -1566,7 +1663,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         return composed_filter_rule(
             &selector,
             &format!("--tw-blur:blur(var({}))", raw),
-            Some(format!("filter:blur(var({}))", raw)),
+            None,
             config,
         );
     }
@@ -1578,7 +1675,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     composed_filter_rule(
         &selector,
         &format!("--tw-blur:blur(var(--blur-{}))", scale),
-        Some(format!("filter:blur(var(--blur-{}))", scale)),
+        None,
         config,
     )
 }
@@ -1590,7 +1687,7 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         return composed_filter_rule(
             &selector,
             "--tw-drop-shadow:drop-shadow(0 0 #0000)",
-            Some("filter:drop-shadow(0 0 #0000)".to_string()),
+            None,
             config,
         );
     }
@@ -1619,7 +1716,7 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         return composed_filter_rule(
             &selector,
             &format!("--tw-drop-shadow:drop-shadow({})", raw),
-            Some(format!("filter:drop-shadow({})", raw)),
+            None,
             config,
         );
     }
@@ -1634,7 +1731,7 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         return composed_filter_rule(
             &selector,
             &format!("--tw-drop-shadow:drop-shadow(var({}))", raw),
-            Some(format!("filter:drop-shadow(var({}))", raw)),
+            None,
             config,
         );
     }
@@ -1681,13 +1778,20 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         return None;
     }
 
+    if token == "2xl" && opacity.is_none() {
+        return rule(
+            &selector,
+            "--tw-drop-shadow-size:drop-shadow(0 25px 25px var(--tw-drop-shadow-color,rgb(0 0 0 / 0.15)));--tw-drop-shadow:drop-shadow(var(--drop-shadow-2xl));filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)",
+            config,
+        );
+    }
+
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
         return rule(
             &selector,
             &format!(
-                "--tw-drop-shadow:drop-shadow(var(--drop-shadow-{}));filter:drop-shadow(var(--drop-shadow-{}));--tw-drop-shadow-color:color-mix(in oklab,currentColor {},transparent);{}",
-                token,
+                "--tw-drop-shadow:drop-shadow(var(--drop-shadow-{}));--tw-drop-shadow-color:color-mix(in oklab,currentColor {},transparent);{}",
                 token,
                 opacity_value,
                 composed_filter_property()
@@ -1699,7 +1803,7 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
     composed_filter_rule(
         &selector,
         &format!("--tw-drop-shadow:drop-shadow(var(--drop-shadow-{}))", token),
-        Some(format!("filter:drop-shadow(var(--drop-shadow-{}))", token)),
+        None,
         config,
     )
 }
@@ -1708,11 +1812,11 @@ fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<
     let selector = format!(".{}", escape_selector(class));
 
     if class == "backdrop-blur" {
-        return rule(&selector, "backdrop-filter:blur(var(--blur))", config);
+        return composed_backdrop_filter_rule(&selector, "--tw-backdrop-blur:blur(8px)", config);
     }
 
     if class == "backdrop-blur-none" {
-        return rule(&selector, "backdrop-filter:blur(0)", config);
+        return composed_backdrop_filter_rule(&selector, "--tw-backdrop-blur:blur(0)", config);
     }
 
     if let Some(raw) = class
@@ -1722,7 +1826,11 @@ fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("backdrop-filter:blur({})", raw), config);
+        return composed_backdrop_filter_rule(
+            &selector,
+            &format!("--tw-backdrop-blur:blur({})", raw),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1732,9 +1840,9 @@ fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_backdrop_filter_rule(
             &selector,
-            &format!("backdrop-filter:blur(var({}))", raw),
+            &format!("--tw-backdrop-blur:blur(var({}))", raw),
             config,
         );
     }
@@ -1743,9 +1851,9 @@ fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<
     if scale.is_empty() {
         return None;
     }
-    rule(
+    composed_backdrop_filter_rule(
         &selector,
-        &format!("backdrop-filter:blur(var(--blur-{}))", scale),
+        &format!("--tw-backdrop-blur:blur(var(--blur-{}))", scale),
         config,
     )
 }
@@ -2503,11 +2611,7 @@ fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Optio
     let selector = format!(".{}", escape_selector(class));
 
     if class == "backdrop-filter" {
-        return rule(
-            &selector,
-            "backdrop-filter:var(--tw-backdrop-blur,) var(--tw-backdrop-brightness,) var(--tw-backdrop-contrast,) var(--tw-backdrop-grayscale,) var(--tw-backdrop-hue-rotate,) var(--tw-backdrop-invert,) var(--tw-backdrop-opacity,) var(--tw-backdrop-saturate,) var(--tw-backdrop-sepia,)",
-            config,
-        );
+        return rule(&selector, composed_backdrop_filter_property(), config);
     }
 
     if class == "backdrop-filter-none" {
@@ -2567,6 +2671,7 @@ fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String
 fn generate_background_arbitrary_color_rule(
     class: &str,
     config: &GeneratorConfig,
+    variant_tables: &VariantTables,
 ) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
@@ -2584,15 +2689,24 @@ fn generate_background_arbitrary_color_rule(
         }
         if let Some((raw, opacity_raw)) = rest.split_once("]/") {
             let color = parse_arbitrary_color_value(raw)?;
-            let mixed = mix_color_with_optional_opacity(&color, Some(opacity_raw))?;
-            return rule(&selector, &format!("background-color:{}", mixed), config);
+            let declarations = color_declaration_with_optional_opacity(
+                "background-color",
+                &color,
+                Some(opacity_raw),
+                variant_tables,
+            )?;
+            return rule(&selector, &declarations, config);
         }
     }
 
     None
 }
 
-fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_background_palette_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     if class.starts_with("bg-blend-") {
         return None;
     }
@@ -2624,15 +2738,13 @@ fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig)
     let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
-        let opacity_value = parse_color_opacity_value(opacity_raw)?;
-        return rule(
-            &selector,
-            &format!(
-                "background-color:color-mix(in oklab,{} {},transparent)",
-                color_value, opacity_value
-            ),
-            config,
-        );
+        let declarations = color_declaration_with_optional_opacity(
+            "background-color",
+            &color_value,
+            Some(opacity_raw),
+            variant_tables,
+        )?;
+        return rule(&selector, &declarations, config);
     }
 
     rule(
@@ -2847,7 +2959,11 @@ fn generate_background_size_rule(class: &str, config: &GeneratorConfig) -> Optio
     None
 }
 
-fn generate_background_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_background_image_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if class == "bg-none" {
@@ -3025,13 +3141,13 @@ fn generate_background_image_rule(class: &str, config: &GeneratorConfig) -> Opti
     }
 
     if let Some(raw) = class.strip_prefix("from-") {
-        return gradient_stop_rule(&selector, "from", raw, config);
+        return gradient_stop_rule(&selector, "from", raw, config, variant_tables);
     }
     if let Some(raw) = class.strip_prefix("via-") {
-        return gradient_stop_rule(&selector, "via", raw, config);
+        return gradient_stop_rule(&selector, "via", raw, config, variant_tables);
     }
     if let Some(raw) = class.strip_prefix("to-") {
-        return gradient_stop_rule(&selector, "to", raw, config);
+        return gradient_stop_rule(&selector, "to", raw, config, variant_tables);
     }
 
     None
@@ -3042,6 +3158,14 @@ fn split_slash_modifier(raw: &str) -> (&str, Option<&str>) {
         (left, Some(right))
     } else {
         (raw, None)
+    }
+}
+
+fn append_declaration(declarations: &str, next: &str) -> String {
+    if declarations.trim_end().ends_with('}') {
+        format!("{}{}", declarations, next)
+    } else {
+        format!("{};{}", declarations, next)
     }
 }
 
@@ -3067,12 +3191,29 @@ fn gradient_stop_rule(
     kind: &str,
     raw: &str,
     config: &GeneratorConfig,
+    variant_tables: &VariantTables,
 ) -> Option<String> {
     let (prop_color, prop_pos) = match kind {
         "from" => ("--tw-gradient-from", "--tw-gradient-from-position"),
         "via" => ("--tw-gradient-via", "--tw-gradient-via-position"),
         "to" => ("--tw-gradient-to", "--tw-gradient-to-position"),
         _ => return None,
+    };
+
+    let with_stops = |color_declaration: &str| -> String {
+        match kind {
+            "via" => {
+                let with_via = append_declaration(
+                    color_declaration,
+                    "--tw-gradient-via-stops:var(--tw-gradient-position),var(--tw-gradient-from) var(--tw-gradient-from-position),var(--tw-gradient-via) var(--tw-gradient-via-position),var(--tw-gradient-to) var(--tw-gradient-to-position)",
+                );
+                append_declaration(&with_via, "--tw-gradient-stops:var(--tw-gradient-via-stops)")
+            }
+            _ => append_declaration(
+                color_declaration,
+                "--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from) var(--tw-gradient-from-position),var(--tw-gradient-to) var(--tw-gradient-to-position))",
+            ),
+        }
     };
 
     let (token, opacity) = split_slash_modifier(raw);
@@ -3087,16 +3228,26 @@ fn gradient_stop_rule(
 
     if let Some(value) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
         let color = parse_arbitrary_color_value(value)?;
-        let mixed = mix_color_with_optional_opacity(&color, opacity)?;
-        return rule(selector, &format!("{}:{}", prop_color, mixed), config);
+        let declaration = color_declaration_with_optional_opacity(
+            prop_color,
+            &color,
+            opacity,
+            variant_tables,
+        )?;
+        return rule(selector, &with_stops(&declaration), config);
     }
     if let Some(value) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
         if value.is_empty() {
             return None;
         }
         let color = format!("var({})", value);
-        let mixed = mix_color_with_optional_opacity(&color, opacity)?;
-        return rule(selector, &format!("{}:{}", prop_color, mixed), config);
+        let declaration = color_declaration_with_optional_opacity(
+            prop_color,
+            &color,
+            opacity,
+            variant_tables,
+        )?;
+        return rule(selector, &with_stops(&declaration), config);
     }
 
     let color_value = match token {
@@ -3112,8 +3263,9 @@ fn gradient_stop_rule(
             format!("var(--color-{})", token)
         }
     };
-    let mixed = mix_color_with_optional_opacity(&color_value, opacity)?;
-    rule(selector, &format!("{}:{}", prop_color, mixed), config)
+    let declaration =
+        color_declaration_with_optional_opacity(prop_color, &color_value, opacity, variant_tables)?;
+    rule(selector, &with_stops(&declaration), config)
 }
 
 fn normalize_content_value(raw: &str) -> String {
@@ -3204,13 +3356,58 @@ fn normalize_arbitrary_value(raw: &str) -> String {
         idx += size;
     }
 
-    out
+    normalize_calc_expression_spacing(&out)
 }
 
 fn starts_with_url_function(raw: &str, idx: usize) -> bool {
     raw[idx..]
         .get(..4)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("url("))
+}
+
+fn normalize_calc_expression_spacing(value: &str) -> String {
+    if !value.to_ascii_lowercase().starts_with("calc(") {
+        return value.to_string();
+    }
+
+    let mut out = String::with_capacity(value.len() + 8);
+    let mut chars = value.chars().peekable();
+    let mut prev_non_ws: Option<char> = None;
+
+    while let Some(ch) = chars.next() {
+        if matches!(ch, '+' | '-' | '*' | '/') {
+            let unary_minus = ch == '-'
+                && prev_non_ws.is_none_or(|prev| matches!(prev, '(' | '+' | '-' | '*' | '/'));
+            if unary_minus {
+                out.push(ch);
+                prev_non_ws = Some(ch);
+                continue;
+            }
+
+            while out.ends_with(' ') {
+                out.pop();
+            }
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push(ch);
+            out.push(' ');
+
+            while matches!(chars.peek(), Some(next) if next.is_whitespace()) {
+                chars.next();
+            }
+
+            prev_non_ws = Some(ch);
+            continue;
+        }
+
+        out.push(ch);
+        if !ch.is_whitespace() {
+            prev_non_ws = Some(ch);
+        }
+    }
+
+    out
 }
 
 fn is_color_like_value(raw: &str) -> bool {
@@ -3706,7 +3903,11 @@ fn generate_text_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
     )
 }
 
-fn generate_text_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_text_palette_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     if class.starts_with("text-shadow-") {
         return None;
     }
@@ -3729,16 +3930,14 @@ fn generate_text_palette_color_rule(class: &str, config: &GeneratorConfig) -> Op
 
     let color_value = theme_color_value_from_token(token, true)?;
 
-    if let Some(opacity_raw) = opacity {
-        let opacity_value = parse_color_opacity_value(opacity_raw)?;
-        return rule(
-            &selector,
-            &format!(
-                "color:color-mix(in oklab,{} {},transparent)",
-                color_value, opacity_value
-            ),
-            config,
-        );
+    if opacity.is_some() {
+        let declaration = color_declaration_with_optional_opacity(
+            "color",
+            &color_value,
+            opacity,
+            variant_tables,
+        )?;
+        return rule(&selector, &declaration, config);
     }
 
     rule(&selector, &format!("color:{}", color_value), config)
@@ -3782,15 +3981,41 @@ fn parse_arbitrary_color_value(raw: &str) -> Option<String> {
     is_color_like_value(&normalized).then_some(normalized)
 }
 
-fn mix_color_with_optional_opacity(color: &str, opacity_raw: Option<&str>) -> Option<String> {
-    if let Some(opacity_raw) = opacity_raw {
-        let opacity_value = parse_color_opacity_value(opacity_raw)?;
-        return Some(format!(
-            "color-mix(in oklab,{} {},transparent)",
-            color, opacity_value
-        ));
+fn fallback_color_for_srgb_mix(color: &str, variant_tables: &VariantTables) -> Option<String> {
+    if let Some(name) = color.strip_prefix("var(").and_then(|value| value.strip_suffix(')')) {
+        if let Some(resolved) = variant_tables.theme_variable_values.get(name) {
+            return Some(resolved.clone());
+        }
+        return None;
     }
     Some(color.to_string())
+}
+
+fn color_declaration_with_optional_opacity(
+    property: &str,
+    color: &str,
+    opacity_raw: Option<&str>,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    let Some(opacity_raw) = opacity_raw else {
+        return Some(format!("{}:{}", property, color));
+    };
+    let opacity_value = parse_color_opacity_value(opacity_raw)?;
+    let oklab_mix = format!("color-mix(in oklab,{} {},transparent)", color, opacity_value);
+    if let Some(fallback_color) = fallback_color_for_srgb_mix(color, variant_tables) {
+        let srgb_mix = format!(
+            "color-mix(in srgb,{} {},transparent)",
+            fallback_color, opacity_value
+        );
+        return Some(format!(
+            "{}:{};@supports (color:color-mix(in lab, red, red)) {{{}:{};}}",
+            property, srgb_mix, property, oklab_mix
+        ));
+    }
+    Some(format!(
+        "{}:{};@supports (color:color-mix(in lab, red, red)) {{{}:{};}}",
+        property, color, property, oklab_mix
+    ))
 }
 
 fn is_theme_color_token(token: &str) -> bool {
@@ -3882,6 +4107,50 @@ fn parse_palette_color_value(raw: &str) -> Option<String> {
     Some(color_value)
 }
 
+fn shadow_color_declaration_with_optional_opacity(
+    color: &str,
+    opacity_raw: Option<&str>,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    let is_theme_color = color.starts_with("var(--color-");
+
+    let Some(opacity_raw) = opacity_raw else {
+        if !is_theme_color {
+            return Some(format!("--tw-shadow-color:{}", color));
+        }
+        if let Some(fallback_color) = fallback_color_for_srgb_mix(color, variant_tables) {
+            return Some(format!(
+                "--tw-shadow-color:{};@supports (color:color-mix(in lab, red, red)) {{--tw-shadow-color:color-mix(in oklab,{} var(--tw-shadow-alpha),transparent);}}",
+                fallback_color, color
+            ));
+        }
+        return Some(format!("--tw-shadow-color:{}", color));
+    };
+
+    let opacity_value = parse_color_opacity_value(opacity_raw)?;
+    let oklab_mix = format!("color-mix(in oklab,{} {},transparent)", color, opacity_value);
+
+    if !is_theme_color {
+        return Some(format!("--tw-shadow-color:{}", oklab_mix));
+    }
+
+    if let Some(fallback_color) = fallback_color_for_srgb_mix(color, variant_tables) {
+        let srgb_mix = format!(
+            "color-mix(in srgb,{} {},transparent)",
+            fallback_color, opacity_value
+        );
+        return Some(format!(
+            "--tw-shadow-color:{};@supports (color:color-mix(in lab, red, red)) {{--tw-shadow-color:color-mix(in oklab,{} var(--tw-shadow-alpha),transparent);}}",
+            srgb_mix, oklab_mix
+        ));
+    }
+
+    Some(format!(
+        "--tw-shadow-color:color-mix(in oklab,{} var(--tw-shadow-alpha),transparent)",
+        oklab_mix
+    ))
+}
+
 fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
@@ -3899,7 +4168,14 @@ fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<S
         if !normalized.starts_with("var(") && parse_arbitrary_color_value(raw).is_some() {
             return None;
         }
-        return rule(&selector, &format!("box-shadow:{}", normalized), config);
+        return rule(
+            &selector,
+            &format!(
+                "--tw-shadow:{};box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
+                normalized
+            ),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -3909,53 +4185,58 @@ fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<S
         if raw.is_empty() || raw.starts_with("color:") || raw.ends_with("-color") {
             return None;
         }
-        return rule(&selector, &format!("box-shadow:var({})", raw), config);
+        return rule(
+            &selector,
+            &format!(
+                "--tw-shadow:var({});box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)",
+                raw
+            ),
+            config,
+        );
     }
 
     None
 }
 
-fn generate_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_shadow_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     let raw = class.strip_prefix("shadow-")?;
     if matches!(raw, "none" | "sm" | "md" | "lg" | "xl" | "2xl") {
         return None;
     }
 
-    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        let color = parse_arbitrary_color_value(value)?;
-        return rule(&selector, &format!("--tw-shadow-color:{}", color), config);
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
     }
-    if let Some(value) = raw
+
+    let color_value = if let Some(value) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+    {
+        parse_arbitrary_color_value(value)?
+    } else if let Some(value) = token
         .strip_prefix("(color:")
         .and_then(|v| v.strip_suffix(')'))
     {
         if value.is_empty() {
             return None;
         }
-        return rule(
-            &selector,
-            &format!("--tw-shadow-color:var({})", value),
-            config,
-        );
-    }
-    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        format!("var({})", value)
+    } else if let Some(value) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
         if value.is_empty() {
             return None;
         }
-        return rule(
-            &selector,
-            &format!("--tw-shadow-color:var({})", value),
-            config,
-        );
-    }
+        format!("var({})", value)
+    } else {
+        theme_color_value_from_token(token, true)?
+    };
 
-    let color_value = parse_palette_color_value(raw)?;
-    rule(
-        &selector,
-        &format!("--tw-shadow-color:{}", color_value),
-        config,
-    )
+    let declarations =
+        shadow_color_declaration_with_optional_opacity(&color_value, opacity, variant_tables)?;
+    rule(&selector, &declarations, config)
 }
 
 fn generate_inset_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -4005,34 +4286,41 @@ fn generate_inset_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Op
     )
 }
 
-fn generate_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_ring_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     let raw = class.strip_prefix("ring-")?;
-    if matches!(raw, "0" | "1" | "2" | "4" | "8") {
+    if matches!(raw, "0" | "1" | "2" | "4" | "8" | "inset") {
         return None;
     }
 
-    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        let color = parse_arbitrary_color_value(value)?;
-        return rule(&selector, &format!("--tw-ring-color:{}", color), config);
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
     }
-    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+
+    let color_value = if let Some(value) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+    {
+        parse_arbitrary_color_value(value)?
+    } else if let Some(value) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
         if value.is_empty() {
             return None;
         }
-        return rule(
-            &selector,
-            &format!("--tw-ring-color:var({})", value),
-            config,
-        );
-    }
+        format!("var({})", value)
+    } else {
+        theme_color_value_from_token(token, true)?
+    };
 
-    let color_value = parse_palette_color_value(raw)?;
-    rule(
-        &selector,
-        &format!("--tw-ring-color:{}", color_value),
-        config,
-    )
+    let declarations = color_declaration_with_optional_opacity(
+        "--tw-ring-color",
+        &color_value,
+        opacity,
+        variant_tables,
+    )?;
+    rule(&selector, &declarations, config)
 }
 
 fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -4221,7 +4509,7 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     rule(
         &selector,
         &format!(
-            "font-size:var(--text-{});line-height:var(--text-{}--line-height)",
+            "font-size:var(--text-{});line-height:var(--tw-leading,var(--text-{}--line-height))",
             token, token
         ),
         config,
@@ -4232,17 +4520,27 @@ fn generate_leading_rule(class: &str, config: &GeneratorConfig) -> Option<String
     let selector = format!(".{}", escape_selector(class));
     let raw = class.strip_prefix("leading-")?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        let value = format!("calc(var(--spacing) * {})", raw);
         return rule(
             &selector,
-            &format!("line-height:calc(var(--spacing) * {})", raw),
+            &format!("--tw-leading:{};line-height:{}", value, value),
             config,
         );
     }
     if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
-        return rule(&selector, &format!("line-height:var({})", custom), config);
+        let value = format!("var({})", custom);
+        return rule(
+            &selector,
+            &format!("--tw-leading:{};line-height:{}", value, value),
+            config,
+        );
     }
     if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        return rule(&selector, &format!("line-height:{}", custom), config);
+        return rule(
+            &selector,
+            &format!("--tw-leading:{};line-height:{}", custom, custom),
+            config,
+        );
     }
     None
 }
@@ -4312,7 +4610,11 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         } else {
             custom.to_string()
         };
-        return rule(&selector, &format!("letter-spacing:{}", value), config);
+        return rule(
+            &selector,
+            &format!("--tw-tracking:{};letter-spacing:{}", value, value),
+            config,
+        );
     }
 
     if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
@@ -4322,7 +4624,11 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         } else {
             variable
         };
-        return rule(&selector, &format!("letter-spacing:{}", value), config);
+        return rule(
+            &selector,
+            &format!("--tw-tracking:{};letter-spacing:{}", value, value),
+            config,
+        );
     }
 
     if raw.is_empty() {
@@ -4334,7 +4640,11 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
     } else {
         format!("var(--tracking-{})", raw)
     };
-    rule(&selector, &format!("letter-spacing:{}", value), config)
+    rule(
+        &selector,
+        &format!("--tw-tracking:{};letter-spacing:{}", value, value),
+        config,
+    )
 }
 
 fn generate_font_stretch_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -4378,22 +4688,32 @@ fn generate_font_weight_rule(class: &str, config: &GeneratorConfig) -> Option<St
     if let Some(raw) = class.strip_prefix("font-[") {
         if let Some(value) = raw.strip_suffix(']') {
             if value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty() {
-                return rule(&selector, &format!("font-weight:{}", value), config);
+                return rule(
+                    &selector,
+                    &format!("--tw-font-weight:{};font-weight:{}", value, value),
+                    config,
+                );
             }
         }
     }
 
     if let Some(raw) = class.strip_prefix("font-(weight:") {
         if let Some(custom) = raw.strip_suffix(')') {
-            return rule(&selector, &format!("font-weight:var({})", custom), config);
+            let value = format!("var({})", custom);
+            return rule(
+                &selector,
+                &format!("--tw-font-weight:{};font-weight:{}", value, value),
+                config,
+            );
         }
     }
 
     if let Some(token) = class.strip_prefix("font-") {
         if token == "extrablack" {
+            let value = format!("var(--font-weight-{})", token);
             return rule(
                 &selector,
-                &format!("font-weight:var(--font-weight-{})", token),
+                &format!("--tw-font-weight:{};font-weight:{}", value, value),
                 config,
             );
         }
@@ -4707,7 +5027,7 @@ fn generate_layout_rule(
         "border-separate" => rule(&selector, "border-collapse:separate", config),
         "sr-only" => rule(
             &selector,
-            "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0",
+            "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border-width:0",
             config,
         ),
         "not-sr-only" => rule(
@@ -4842,23 +5162,24 @@ fn generate_sizing_rule(
         let mut breakpoints = variant_tables.responsive_breakpoints.clone();
         sort_breakpoints_by_length(&mut breakpoints);
         if config.minify {
-            let mut out = ".container{width:100%}".to_string();
+            let mut out = ".container{width:100%".to_string();
             for (_, width) in breakpoints {
                 out.push_str(&format!(
-                    "@media (width >= {}){{.container{{max-width:{}}}}}",
+                    "@media (width >= {}){{max-width:{}}}",
                     width, width
                 ));
             }
+            out.push('}');
             return Some(out);
         }
-        let mut out = ".container { width: 100%; }".to_string();
+        let mut out = ".container {\n  width: 100%;".to_string();
         for (_, width) in breakpoints {
-            out.push('\n');
             out.push_str(&format!(
-                "@media (width >= {}) {{ .container {{ max-width: {}; }} }}",
+                "\n  @media (width >= {}) {{\n    max-width: {};\n  }}",
                 width, width
             ));
         }
+        out.push_str("\n}");
         return Some(out);
     }
 
@@ -4886,7 +5207,7 @@ fn generate_sizing_rule(
                     format!("max-width:var(--container-{})", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("max-width:{}", custom)
+                    format!("max-width:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("max-width:var({})", custom)
@@ -4922,7 +5243,7 @@ fn generate_sizing_rule(
                     format!("min-width:var(--container-{})", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("min-width:{}", custom)
+                    format!("min-width:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("min-width:var({})", custom)
@@ -4957,7 +5278,7 @@ fn generate_sizing_rule(
                     format!("min-height:calc({} * 100%)", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("min-height:{}", custom)
+                    format!("min-height:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("min-height:var({})", custom)
@@ -4992,7 +5313,7 @@ fn generate_sizing_rule(
                     format!("max-height:calc({} * 100%)", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("max-height:{}", custom)
+                    format!("max-height:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("max-height:var({})", custom)
@@ -5028,7 +5349,7 @@ fn generate_sizing_rule(
                     format!("width:var(--container-{})", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("width:{}", custom)
+                    format!("width:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("width:var({})", custom)
@@ -5063,7 +5384,7 @@ fn generate_sizing_rule(
                     format!("height:calc({} * 100%)", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    format!("height:{}", custom)
+                    format!("height:{}", normalize_arbitrary_value(custom))
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("height:var({})", custom)
@@ -5096,7 +5417,7 @@ fn generate_sizing_rule(
                     format!("calc({} * 100%)", raw)
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
-                    custom.to_string()
+                    normalize_arbitrary_value(custom)
                 } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("var({})", custom)
@@ -5139,19 +5460,23 @@ fn generate_gap_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     None
 }
 
+fn nested_child_selector_block(declarations: &str) -> String {
+    format!(":where(& > :not(:last-child)) {{{}}}", declarations)
+}
+
 fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     if class == "space-x-reverse" {
         return rule(
-            &format!("{} > :not(:last-child)", selector),
-            "--tw-space-x-reverse:1",
+            &selector,
+            &nested_child_selector_block("--tw-space-x-reverse:1"),
             config,
         );
     }
     if class == "space-y-reverse" {
         return rule(
-            &format!("{} > :not(:last-child)", selector),
-            "--tw-space-y-reverse:1",
+            &selector,
+            &nested_child_selector_block("--tw-space-y-reverse:1"),
             config,
         );
     }
@@ -5164,24 +5489,26 @@ fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 
     if let Some(raw) = raw_class.strip_prefix("space-x-") {
         let value = parse_space_value(raw, negative)?;
+        let declarations = format!(
+            "--tw-space-x-reverse:0;margin-inline-start:calc({} * var(--tw-space-x-reverse));margin-inline-end:calc({} * calc(1 - var(--tw-space-x-reverse)))",
+            value, value
+        );
         return rule(
-            &format!("{} > :not(:last-child)", selector),
-            &format!(
-                "--tw-space-x-reverse:0;margin-inline-start:calc({} * var(--tw-space-x-reverse));margin-inline-end:calc({} * calc(1 - var(--tw-space-x-reverse)))",
-                value, value
-            ),
+            &selector,
+            &nested_child_selector_block(&declarations),
             config,
         );
     }
 
     if let Some(raw) = raw_class.strip_prefix("space-y-") {
         let value = parse_space_value(raw, negative)?;
+        let declarations = format!(
+            "--tw-space-y-reverse:0;margin-block-start:calc({} * var(--tw-space-y-reverse));margin-block-end:calc({} * calc(1 - var(--tw-space-y-reverse)))",
+            value, value
+        );
         return rule(
-            &format!("{} > :not(:last-child)", selector),
-            &format!(
-                "--tw-space-y-reverse:0;margin-block-start:calc({} * var(--tw-space-y-reverse));margin-block-end:calc({} * calc(1 - var(--tw-space-y-reverse)))",
-                value, value
-            ),
+            &selector,
+            &nested_child_selector_block(&declarations),
             config,
         );
     }
@@ -5550,7 +5877,11 @@ fn generate_user_select_rule(class: &str, config: &GeneratorConfig) -> Option<St
         "select-auto" => "auto",
         _ => return None,
     };
-    rule(&selector, &format!("user-select:{}", value), config)
+    rule(
+        &selector,
+        &format!("-webkit-user-select:{};user-select:{}", value, value),
+        config,
+    )
 }
 
 fn generate_will_change_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -6781,14 +7112,24 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
     }
     if let Some(number) = class.strip_prefix("scale-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
-            return rule(&selector, &format!("scale:{}% {}%", number, number), config);
+            return rule(
+                &selector,
+                &format!(
+                    "--tw-scale-x:{}%;--tw-scale-y:{}%;--tw-scale-z:{}%;scale:var(--tw-scale-x) var(--tw-scale-y)",
+                    number, number, number
+                ),
+                config,
+            );
         }
     }
     if let Some(number) = class.strip_prefix("-scale-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("scale:calc({}% * -1) calc({}% * -1)", number, number),
+                &format!(
+                    "--tw-scale-x:calc({}% * -1);--tw-scale-y:calc({}% * -1);--tw-scale-z:calc({}% * -1);scale:var(--tw-scale-x) var(--tw-scale-y)",
+                    number, number, number
+                ),
                 config,
             );
         }
@@ -6800,7 +7141,10 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         if !raw.is_empty() {
             return rule(
                 &selector,
-                &format!("scale:var({}) var({})", raw, raw),
+                &format!(
+                    "--tw-scale-x:var({});--tw-scale-y:var({});--tw-scale-z:var({});scale:var(--tw-scale-x) var(--tw-scale-y)",
+                    raw, raw, raw
+                ),
                 config,
             );
         }
@@ -6819,12 +7163,17 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 
 fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
+    let transform_chain =
+        "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
 
     if let Some(number) = class.strip_prefix("skew-x-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX({}deg)", number),
+                &format!(
+                    "--tw-skew-x:skewX({}deg);transform:{}",
+                    number, transform_chain
+                ),
                 config,
             );
         }
@@ -6833,7 +7182,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX(-{}deg)", number),
+                &format!(
+                    "--tw-skew-x:skewX(-{}deg);transform:{}",
+                    number, transform_chain
+                ),
                 config,
             );
         }
@@ -6843,7 +7195,14 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         .and_then(|value| value.strip_suffix(')'))
     {
         if !raw.is_empty() {
-            return rule(&selector, &format!("transform:skewX(var({}))", raw), config);
+            return rule(
+                &selector,
+                &format!(
+                    "--tw-skew-x:skewX(var({}));transform:{}",
+                    raw, transform_chain
+                ),
+                config,
+            );
         }
     }
     if let Some(raw) = class
@@ -6851,7 +7210,11 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         .and_then(|value| value.strip_suffix(']'))
     {
         if !raw.is_empty() {
-            return rule(&selector, &format!("transform:skewX({})", raw), config);
+            return rule(
+                &selector,
+                &format!("--tw-skew-x:skewX({});transform:{}", raw, transform_chain),
+                config,
+            );
         }
     }
 
@@ -6859,7 +7222,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewY({}deg)", number),
+                &format!(
+                    "--tw-skew-y:skewY({}deg);transform:{}",
+                    number, transform_chain
+                ),
                 config,
             );
         }
@@ -6868,7 +7234,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewY(-{}deg)", number),
+                &format!(
+                    "--tw-skew-y:skewY(-{}deg);transform:{}",
+                    number, transform_chain
+                ),
                 config,
             );
         }
@@ -6878,7 +7247,14 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         .and_then(|value| value.strip_suffix(')'))
     {
         if !raw.is_empty() {
-            return rule(&selector, &format!("transform:skewY(var({}))", raw), config);
+            return rule(
+                &selector,
+                &format!(
+                    "--tw-skew-y:skewY(var({}));transform:{}",
+                    raw, transform_chain
+                ),
+                config,
+            );
         }
     }
     if let Some(raw) = class
@@ -6886,7 +7262,11 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         .and_then(|value| value.strip_suffix(']'))
     {
         if !raw.is_empty() {
-            return rule(&selector, &format!("transform:skewY({})", raw), config);
+            return rule(
+                &selector,
+                &format!("--tw-skew-y:skewY({});transform:{}", raw, transform_chain),
+                config,
+            );
         }
     }
 
@@ -6894,7 +7274,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX({}deg) skewY({}deg)", number, number),
+                &format!(
+                    "--tw-skew-x:skewX({}deg);--tw-skew-y:skewY({}deg);transform:{}",
+                    number, number, transform_chain
+                ),
                 config,
             );
         }
@@ -6903,7 +7286,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX(-{}deg) skewY(-{}deg)", number, number),
+                &format!(
+                    "--tw-skew-x:skewX(-{}deg);--tw-skew-y:skewY(-{}deg);transform:{}",
+                    number, number, transform_chain
+                ),
                 config,
             );
         }
@@ -6915,7 +7301,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if !raw.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX(var({})) skewY(var({}))", raw, raw),
+                &format!(
+                    "--tw-skew-x:skewX(var({}));--tw-skew-y:skewY(var({}));transform:{}",
+                    raw, raw, transform_chain
+                ),
                 config,
             );
         }
@@ -6927,7 +7316,10 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         if !raw.is_empty() {
             return rule(
                 &selector,
-                &format!("transform:skewX({}) skewY({})", raw, raw),
+                &format!(
+                    "--tw-skew-x:skewX({});--tw-skew-y:skewY({});transform:{}",
+                    raw, raw, transform_chain
+                ),
                 config,
             );
         }
@@ -6941,18 +7333,18 @@ fn generate_transform_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     match class {
         "transform" => rule(
             &selector,
-            "transform:var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            "transform:var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
             config,
         ),
         "transform-none" => rule(&selector, "transform:none", config),
         "transform-gpu" => rule(
             &selector,
-            "transform:translateZ(0) var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            "transform:translateZ(0) var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
             config,
         ),
         "transform-cpu" => rule(
             &selector,
-            "transform:var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            "transform:var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)",
             config,
         ),
         _ => {
@@ -7039,7 +7431,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:var({}) var(--tw-translate-y)", custom),
+                        &format!(
+                            "--tw-translate-x:var({});translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom
+                        ),
                         config,
                     );
                 }
@@ -7048,7 +7443,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:{} var(--tw-translate-y)", custom),
+                        &format!(
+                            "--tw-translate-x:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom
+                        ),
                         config,
                     );
                 }
@@ -7057,7 +7455,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         let value = parse_translate_value(token, negative, true, true)?;
         return rule(
             &selector,
-            &format!("translate:{} var(--tw-translate-y)", value),
+            &format!(
+                "--tw-translate-x:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                value
+            ),
             config,
         );
     }
@@ -7068,7 +7469,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:var(--tw-translate-x) var({})", custom),
+                        &format!(
+                            "--tw-translate-y:var({});translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom
+                        ),
                         config,
                     );
                 }
@@ -7077,7 +7481,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:var(--tw-translate-x) {}", custom),
+                        &format!(
+                            "--tw-translate-y:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom
+                        ),
                         config,
                     );
                 }
@@ -7086,7 +7493,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         let value = parse_translate_value(token, negative, true, true)?;
         return rule(
             &selector,
-            &format!("translate:var(--tw-translate-x) {}", value),
+            &format!(
+                "--tw-translate-y:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                value
+            ),
             config,
         );
     }
@@ -7135,7 +7545,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:var({}) var({})", custom, custom),
+                        &format!(
+                            "--tw-translate-x:var({});--tw-translate-y:var({});translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom, custom
+                        ),
                         config,
                     );
                 }
@@ -7144,14 +7557,24 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
                 if !custom.is_empty() {
                     return rule(
                         &selector,
-                        &format!("translate:{} {}", custom, custom),
+                        &format!(
+                            "--tw-translate-x:{};--tw-translate-y:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                            custom, custom
+                        ),
                         config,
                     );
                 }
             }
         }
         let value = parse_translate_value(token, negative, true, true)?;
-        return rule(&selector, &format!("translate:{} {}", value, value), config);
+        return rule(
+            &selector,
+            &format!(
+                "--tw-translate-x:{};--tw-translate-y:{};translate:var(--tw-translate-x) var(--tw-translate-y)",
+                value, value
+            ),
+            config,
+        );
     }
 
     None
@@ -7186,7 +7609,7 @@ fn parse_translate_value(
     }
     if allow_fraction && is_fraction(token) {
         return Some(if negative {
-            format!("calc({} * -100%)", token)
+            format!("calc(calc({} * 100%) * -1)", token)
         } else {
             format!("calc({} * 100%)", token)
         });
@@ -7206,7 +7629,7 @@ fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String
     }
     if let Some(num) = class.strip_prefix("-z-") {
         if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
-            return rule(&selector, &format!("z-index:-{}", num), config);
+            return rule(&selector, &format!("z-index:calc({} * -1)", num), config);
         }
     }
     if let Some(raw) = class.strip_prefix("z-[").and_then(|v| v.strip_suffix(']')) {
@@ -7488,7 +7911,7 @@ fn parse_border_width_value(raw: &str) -> Option<String> {
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        if value.is_empty() || is_color_like_value(value) {
+        if value.is_empty() || value.contains(':') || is_color_like_value(value) {
             return None;
         }
         return Some(value.to_string());
@@ -7554,38 +7977,61 @@ fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
     let selector = format!(".{}", escape_selector(class));
 
     if class == "border" {
-        return rule(&selector, "border-width:1px", config);
+        return rule(
+            &selector,
+            "border-style:var(--tw-border-style);border-width:1px",
+            config,
+        );
     }
 
-    for (utility, property) in [
-        ("border-x", "border-inline-width"),
-        ("border-y", "border-block-width"),
-        ("border-s", "border-inline-start-width"),
-        ("border-e", "border-inline-end-width"),
-        ("border-t", "border-top-width"),
-        ("border-r", "border-right-width"),
-        ("border-b", "border-bottom-width"),
-        ("border-l", "border-left-width"),
+    for (utility, style_property, width_property) in [
+        ("border-x", "border-inline-style", "border-inline-width"),
+        ("border-y", "border-block-style", "border-block-width"),
+        ("border-s", "border-inline-start-style", "border-inline-start-width"),
+        ("border-e", "border-inline-end-style", "border-inline-end-width"),
+        ("border-t", "border-top-style", "border-top-width"),
+        ("border-r", "border-right-style", "border-right-width"),
+        ("border-b", "border-bottom-style", "border-bottom-width"),
+        ("border-l", "border-left-style", "border-left-width"),
     ] {
         if class == utility {
-            return rule(&selector, &format!("{}:1px", property), config);
+            return rule(
+                &selector,
+                &format!("{}:var(--tw-border-style);{}:1px", style_property, width_property),
+                config,
+            );
         }
     }
 
-    for (prefix, property) in [
-        ("border-x-", "border-inline-width"),
-        ("border-y-", "border-block-width"),
-        ("border-s-", "border-inline-start-width"),
-        ("border-e-", "border-inline-end-width"),
-        ("border-t-", "border-top-width"),
-        ("border-r-", "border-right-width"),
-        ("border-b-", "border-bottom-width"),
-        ("border-l-", "border-left-width"),
-        ("border-", "border-width"),
+    for (prefix, style_property, width_property) in [
+        ("border-x-", "border-inline-style", "border-inline-width"),
+        ("border-y-", "border-block-style", "border-block-width"),
+        (
+            "border-s-",
+            "border-inline-start-style",
+            "border-inline-start-width",
+        ),
+        (
+            "border-e-",
+            "border-inline-end-style",
+            "border-inline-end-width",
+        ),
+        ("border-t-", "border-top-style", "border-top-width"),
+        ("border-r-", "border-right-style", "border-right-width"),
+        ("border-b-", "border-bottom-style", "border-bottom-width"),
+        ("border-l-", "border-left-style", "border-left-width"),
+        ("border-", "border-style", "border-width"),
     ] {
         if let Some(raw) = class.strip_prefix(prefix) {
             if let Some(value) = parse_border_width_value(raw) {
-                return rule(&selector, &format!("{}:{}", property, value), config);
+                return rule(
+                    &selector,
+                    &format!(
+                        "{}:var(--tw-border-style);{}:{}",
+                        style_property, width_property, value
+                    ),
+                    config,
+                );
             }
         }
     }
@@ -7595,38 +8041,48 @@ fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
 
 fn generate_divide_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let child_selector = format!("{} > :not(:last-child)", selector);
 
     if class == "divide-x-reverse" {
-        return rule(&child_selector, "--tw-divide-x-reverse:1", config);
+        return rule(
+            &selector,
+            &nested_child_selector_block("--tw-divide-x-reverse:1"),
+            config,
+        );
     }
     if class == "divide-y-reverse" {
-        return rule(&child_selector, "--tw-divide-y-reverse:1", config);
+        return rule(
+            &selector,
+            &nested_child_selector_block("--tw-divide-y-reverse:1"),
+            config,
+        );
     }
 
     if class == "divide-x" {
+        let declarations = "--tw-divide-x-reverse:0;border-inline-style:var(--tw-border-style);border-inline-start-width:calc(1px * var(--tw-divide-x-reverse));border-inline-end-width:calc(1px * calc(1 - var(--tw-divide-x-reverse)))";
         return rule(
-            &child_selector,
-            "--tw-divide-x-reverse:0;border-inline-start-width:calc(1px * var(--tw-divide-x-reverse));border-inline-end-width:calc(1px * calc(1 - var(--tw-divide-x-reverse)))",
+            &selector,
+            &nested_child_selector_block(declarations),
             config,
         );
     }
     if class == "divide-y" {
+        let declarations = "--tw-divide-y-reverse:0;border-bottom-style:var(--tw-border-style);border-top-style:var(--tw-border-style);border-top-width:calc(1px * var(--tw-divide-y-reverse));border-bottom-width:calc(1px * calc(1 - var(--tw-divide-y-reverse)))";
         return rule(
-            &child_selector,
-            "--tw-divide-y-reverse:0;border-block-start-width:calc(1px * var(--tw-divide-y-reverse));border-block-end-width:calc(1px * calc(1 - var(--tw-divide-y-reverse)))",
+            &selector,
+            &nested_child_selector_block(declarations),
             config,
         );
     }
 
     if let Some(raw) = class.strip_prefix("divide-x-") {
         if let Some(value) = parse_border_width_value(raw) {
+            let declarations = format!(
+                "--tw-divide-x-reverse:0;border-inline-style:var(--tw-border-style);border-inline-start-width:calc({} * var(--tw-divide-x-reverse));border-inline-end-width:calc({} * calc(1 - var(--tw-divide-x-reverse)))",
+                value, value
+            );
             return rule(
-                &child_selector,
-                &format!(
-                    "--tw-divide-x-reverse:0;border-inline-start-width:calc({} * var(--tw-divide-x-reverse));border-inline-end-width:calc({} * calc(1 - var(--tw-divide-x-reverse)))",
-                    value, value
-                ),
+                &selector,
+                &nested_child_selector_block(&declarations),
                 config,
             );
         }
@@ -7634,12 +8090,13 @@ fn generate_divide_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
 
     if let Some(raw) = class.strip_prefix("divide-y-") {
         if let Some(value) = parse_border_width_value(raw) {
+            let declarations = format!(
+                "--tw-divide-y-reverse:0;border-bottom-style:var(--tw-border-style);border-top-style:var(--tw-border-style);border-top-width:calc({} * var(--tw-divide-y-reverse));border-bottom-width:calc({} * calc(1 - var(--tw-divide-y-reverse)))",
+                value, value
+            );
             return rule(
-                &child_selector,
-                &format!(
-                    "--tw-divide-y-reverse:0;border-block-start-width:calc({} * var(--tw-divide-y-reverse));border-block-end-width:calc({} * calc(1 - var(--tw-divide-y-reverse)))",
-                    value, value
-                ),
+                &selector,
+                &nested_child_selector_block(&declarations),
                 config,
             );
         }
@@ -7661,59 +8118,58 @@ fn generate_border_style_rule(class: &str, config: &GeneratorConfig) -> Option<S
 
     let selector = format!(".{}", escape_selector(class));
     if class.starts_with("divide-") {
+        let declarations = format!("--tw-border-style:{};border-style:{}", value, value);
         return rule(
-            &format!("{} > :not(:last-child)", selector),
-            &format!("border-style:{}", value),
+            &selector,
+            &nested_child_selector_block(&declarations),
             config,
         );
     }
-    rule(&selector, &format!("border-style:{}", value), config)
+    rule(
+        &selector,
+        &format!("--tw-border-style:{};border-style:{}", value, value),
+        config,
+    )
 }
 
-fn parse_border_color_value(raw: &str) -> Option<String> {
+fn parse_border_color_components(raw: &str) -> Option<(String, Option<String>)> {
     if raw.is_empty() {
         return None;
-    }
-    if let Some(value) = raw
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-    {
-        if value.is_empty() || !is_color_like_value(value) {
-            return None;
-        }
-        return Some(value.to_string());
-    }
-    if let Some(value) = raw
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-    {
-        if value.is_empty() {
-            return None;
-        }
-        return Some(format!("var({})", value));
     }
 
     let (token, opacity) = split_slash_modifier(raw);
     if token.is_empty() {
         return None;
     }
+
+    if let Some(value) = token
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        let color = parse_arbitrary_color_value(value)?;
+        return Some((color, opacity.map(ToString::to_string)));
+    }
+    if let Some(value) = token
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return Some((format!("var({})", value), opacity.map(ToString::to_string)));
+    }
     if matches!(token, "collapse" | "separate") {
         return None;
     }
     let color_value = theme_color_value_from_token(token, true)?;
-
-    if let Some(opacity_raw) = opacity {
-        let opacity_value = parse_color_opacity_value(opacity_raw)?;
-        return Some(format!(
-            "color-mix(in oklab,{} {},transparent)",
-            color_value, opacity_value
-        ));
-    }
-
-    Some(color_value)
+    Some((color_value, opacity.map(ToString::to_string)))
 }
 
-fn generate_border_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_border_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     for (prefix, property, child_only) in [
@@ -7729,13 +8185,26 @@ fn generate_border_color_rule(class: &str, config: &GeneratorConfig) -> Option<S
         ("divide-", "border-color", true),
     ] {
         if let Some(raw) = class.strip_prefix(prefix) {
-            let value = parse_border_color_value(raw)?;
+            let (color, opacity) = parse_border_color_components(raw)?;
             let target = if child_only {
-                format!("{} > :not(:last-child)", selector)
+                selector.clone()
             } else {
                 selector.clone()
             };
-            return rule(&target, &format!("{}:{}", property, value), config);
+            let declarations = color_declaration_with_optional_opacity(
+                property,
+                &color,
+                opacity.as_deref(),
+                variant_tables,
+            )?;
+            if child_only {
+                return rule(
+                    &target,
+                    &nested_child_selector_block(&declarations),
+                    config,
+                );
+            }
+            return rule(&target, &declarations, config);
         }
     }
 
@@ -7762,7 +8231,7 @@ fn parse_outline_width_value(raw: &str) -> Option<String> {
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        if value.is_empty() || is_color_like_value(value) {
+        if value.is_empty() || value.contains(':') || is_color_like_value(value) {
             return None;
         }
         return Some(value.to_string());
@@ -7779,10 +8248,7 @@ fn parse_outline_color_value(raw: &str) -> Option<String> {
         .strip_prefix('[')
         .and_then(|value| value.strip_suffix(']'))
     {
-        if value.is_empty() || !is_color_like_value(value) {
-            return None;
-        }
-        return Some(value.to_string());
+        return parse_arbitrary_color_value(value);
     }
 
     if let Some(value) = raw
@@ -7867,7 +8333,7 @@ fn generate_outline_style_rule(class: &str, config: &GeneratorConfig) -> Option<
         "outline-dashed" => "outline-style:dashed",
         "outline-dotted" => "outline-style:dotted",
         "outline-double" => "outline-style:double",
-        "outline-none" => "outline-style:none",
+        "outline-none" => "--tw-outline-style:none;outline-style:none",
         "outline-hidden" => "outline:2px solid transparent;outline-offset:2px",
         _ => return None,
     };
@@ -7884,20 +8350,27 @@ fn generate_outline_color_rule(class: &str, config: &GeneratorConfig) -> Option<
 fn generate_outline_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     if class == "outline" {
-        return rule(&selector, "outline-width:1px", config);
+        return rule(
+            &selector,
+            "outline-style:var(--tw-outline-style);outline-width:1px",
+            config,
+        );
     }
     let raw = class.strip_prefix("outline-")?;
     let value = parse_outline_width_value(raw)?;
-    rule(&selector, &format!("outline-width:{}", value), config)
+    rule(
+        &selector,
+        &format!("outline-style:var(--tw-outline-style);outline-width:{}", value),
+        config,
+    )
 }
 
 fn generate_border_radius_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let raw = if class == "rounded" {
-        "md"
-    } else {
-        class.strip_prefix("rounded-")?
-    };
     let selector = format!(".{}", escape_selector(class));
+    if class == "rounded" {
+        return rule(&selector, "border-radius:0.25rem", config);
+    }
+    let raw = class.strip_prefix("rounded-")?;
 
     let targets = if let Some((target, rest)) = raw.split_once('-') {
         if rest.is_empty() {
@@ -8196,8 +8669,8 @@ fn is_fraction(token: &str) -> bool {
 fn inset_declarations(key: &str, value: &str) -> Option<String> {
     let declarations = match key {
         "inset" => format!("inset:{}", value),
-        "inset-x" => format!("left:{};right:{}", value, value),
-        "inset-y" => format!("top:{};bottom:{}", value, value),
+        "inset-x" => format!("inset-inline:{}", value),
+        "inset-y" => format!("inset-block:{}", value),
         "start" => format!("inset-inline-start:{}", value),
         "end" => format!("inset-inline-end:{}", value),
         "top" => format!("top:{}", value),
@@ -9352,10 +9825,25 @@ fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<
     if config.minify {
         return Some(format!("{}{{{}}}", selector, formatted));
     }
+    if formatted.ends_with('}') || formatted.ends_with(';') {
+        return Some(format!("{} {{ {} }}", selector, formatted));
+    }
     Some(format!("{} {{ {}; }}", selector, formatted))
 }
 
 fn format_declarations(declarations: &str, minify: bool) -> String {
+    if declarations.contains('{') || declarations.contains('}') {
+        let trimmed = declarations.trim();
+        if minify {
+            return trimmed
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace("; ", ";")
+                .replace(": ", ":");
+        }
+        return trimmed.to_string();
+    }
     let mut parts = Vec::new();
     for decl in declarations.split(';') {
         let decl = decl.trim();
@@ -9450,12 +9938,12 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("transition-timing-function: var(--default-transition-timing-function)")
+                .contains("transition-timing-function: var(--tw-ease,var(--default-transition-timing-function))")
         );
         assert!(
             result
                 .css
-                .contains("transition-duration: var(--default-transition-duration)")
+                .contains("transition-duration: var(--tw-duration,var(--default-transition-duration))")
         );
         assert!(result.css.contains(".transition-all"));
         assert!(result.css.contains("transition-property: all"));
@@ -10159,7 +10647,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("line-height: var(--text-xs--line-height)")
+                .contains("line-height: var(--tw-leading,var(--text-xs--line-height))")
         );
         assert!(result.css.contains(".text-sm"));
         assert!(result.css.contains("font-size: var(--text-sm)"));
@@ -10234,7 +10722,11 @@ mod tests {
         assert!(result.css.contains(".font-\\[Open_Sans\\]"));
         assert!(result.css.contains("font-family: Open_Sans"));
         assert!(result.css.contains(".font-bold"));
-        assert!(result.css.contains("font-weight: 700"));
+        assert!(
+            result
+                .css
+                .contains("font-weight: var(--font-weight-bold)")
+        );
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-serif"));
     }
@@ -10269,17 +10761,17 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".font-thin"));
-        assert!(result.css.contains("font-weight: 100"));
+        assert!(result.css.contains("font-weight: var(--font-weight-thin)"));
         assert!(result.css.contains(".font-extralight"));
-        assert!(result.css.contains("font-weight: 200"));
+        assert!(result.css.contains("font-weight: var(--font-weight-extralight)"));
         assert!(result.css.contains(".font-medium"));
-        assert!(result.css.contains("font-weight: 500"));
+        assert!(result.css.contains("font-weight: var(--font-weight-medium)"));
         assert!(result.css.contains(".font-bold"));
-        assert!(result.css.contains("font-weight: 700"));
+        assert!(result.css.contains("font-weight: var(--font-weight-bold)"));
         assert!(result.css.contains(".font-extrabold"));
-        assert!(result.css.contains("font-weight: 800"));
+        assert!(result.css.contains("font-weight: var(--font-weight-extrabold)"));
         assert!(result.css.contains(".font-black"));
-        assert!(result.css.contains("font-weight: 900"));
+        assert!(result.css.contains("font-weight: var(--font-weight-black)"));
         assert!(result.css.contains(".font-\\[1000\\]"));
         assert!(result.css.contains("font-weight: 1000"));
         assert!(result.css.contains(".font-\\(weight\\:--my-font-weight\\)"));
@@ -10301,11 +10793,11 @@ mod tests {
         assert!(result.css.contains(".leading-\\[1.5\\]"));
         assert!(result.css.contains("line-height: 1.5"));
         assert!(result.css.contains(".leading-snug"));
-        assert!(result.css.contains("line-height: 1.375"));
+        assert!(result.css.contains("line-height: var(--leading-snug)"));
         assert!(result.css.contains(".leading-normal"));
-        assert!(result.css.contains("line-height: 1.5"));
+        assert!(result.css.contains("line-height: var(--leading-normal)"));
         assert!(result.css.contains(".leading-loose"));
-        assert!(result.css.contains("line-height: 2"));
+        assert!(result.css.contains("line-height: var(--leading-loose)"));
         assert!(result.css.contains(".md\\:leading-7"));
     }
 
@@ -10963,23 +11455,24 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".blur"));
-        assert!(result.css.contains("filter: blur(var(--blur))"));
+        assert!(result.css.contains("--tw-blur: blur(8px)"));
         assert!(result.css.contains(".blur-none"));
-        assert!(result.css.contains("filter: blur(0)"));
+        assert!(result.css.contains("--tw-blur: blur(0)"));
         assert!(result.css.contains(".blur-xs"));
-        assert!(result.css.contains("filter: blur(var(--blur-xs))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-xs))"));
         assert!(result.css.contains(".blur-sm"));
-        assert!(result.css.contains("filter: blur(var(--blur-sm))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-sm))"));
         assert!(result.css.contains(".blur-lg"));
-        assert!(result.css.contains("filter: blur(var(--blur-lg))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-lg))"));
         assert!(result.css.contains(".blur-2xl"));
-        assert!(result.css.contains("filter: blur(var(--blur-2xl))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-2xl))"));
         assert!(result.css.contains(".blur-2xs"));
-        assert!(result.css.contains("filter: blur(var(--blur-2xs))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-2xs))"));
         assert!(result.css.contains(".blur-\\[2px\\]"));
-        assert!(result.css.contains("filter: blur(2px)"));
+        assert!(result.css.contains("--tw-blur: blur(2px)"));
         assert!(result.css.contains(".blur-\\(--my-blur\\)"));
-        assert!(result.css.contains("filter: blur(var(--my-blur))"));
+        assert!(result.css.contains("--tw-blur: blur(var(--my-blur))"));
+        assert!(result.css.contains("filter: var(--tw-blur,)"));
         assert!(result.css.contains(".md\\:blur-lg"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -11092,18 +11585,18 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".drop-shadow-none"));
-        assert!(result.css.contains("filter: drop-shadow(0 0 #0000)"));
+        assert!(result.css.contains("--tw-drop-shadow: drop-shadow(0 0 #0000)"));
         assert!(result.css.contains(".drop-shadow-md"));
         assert!(
             result
                 .css
-                .contains("filter: drop-shadow(var(--drop-shadow-md))")
+                .contains("--tw-drop-shadow: drop-shadow(var(--drop-shadow-md))")
         );
         assert!(result.css.contains(".drop-shadow-3xl"));
         assert!(
             result
                 .css
-                .contains("filter: drop-shadow(var(--drop-shadow-3xl))")
+                .contains("--tw-drop-shadow: drop-shadow(var(--drop-shadow-3xl))")
         );
         assert!(
             result
@@ -11113,13 +11606,13 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("filter: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))")
+                .contains("--tw-drop-shadow: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))")
         );
         assert!(result.css.contains(".drop-shadow-\\(--my-drop-shadow\\)"));
         assert!(
             result
                 .css
-                .contains("filter: drop-shadow(var(--my-drop-shadow))")
+                .contains("--tw-drop-shadow: drop-shadow(var(--my-drop-shadow))")
         );
         assert!(
             result
@@ -11145,7 +11638,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("filter: drop-shadow(var(--drop-shadow-xl))")
+                .contains("--tw-drop-shadow: drop-shadow(var(--drop-shadow-xl))")
         );
         assert!(
             result.css.contains(
@@ -11412,23 +11905,23 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".backdrop-blur"));
-        assert!(result.css.contains("backdrop-filter: blur(var(--blur))"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(8px)"));
         assert!(result.css.contains(".backdrop-blur-none"));
-        assert!(result.css.contains("backdrop-filter: blur(0)"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(0)"));
         assert!(result.css.contains(".backdrop-blur-sm"));
-        assert!(result.css.contains("backdrop-filter: blur(var(--blur-sm))"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-sm))"));
         assert!(result.css.contains(".backdrop-blur-md"));
-        assert!(result.css.contains("backdrop-filter: blur(var(--blur-md))"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-md))"));
         assert!(result.css.contains(".backdrop-blur-lg"));
-        assert!(result.css.contains("backdrop-filter: blur(var(--blur-lg))"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(var(--blur-lg))"));
         assert!(result.css.contains(".backdrop-blur-2xs"));
         assert!(
             result
                 .css
-                .contains("backdrop-filter: blur(var(--blur-2xs))")
+                .contains("--tw-backdrop-blur: blur(var(--blur-2xs))")
         );
         assert!(result.css.contains(".backdrop-blur-\\[2px\\]"));
-        assert!(result.css.contains("backdrop-filter: blur(2px)"));
+        assert!(result.css.contains("--tw-backdrop-blur: blur(2px)"));
         assert!(
             result
                 .css
@@ -11437,8 +11930,9 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("backdrop-filter: blur(var(--my-backdrop-blur))")
+                .contains("--tw-backdrop-blur: blur(var(--my-backdrop-blur))")
         );
+        assert!(result.css.contains("-webkit-backdrop-filter: var(--tw-backdrop-blur,)"));
         assert!(result.css.contains(".md\\:backdrop-blur-lg"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -12087,7 +12581,7 @@ mod tests {
         assert!(result.css.contains(".z-auto"));
         assert!(result.css.contains("z-index: auto"));
         assert!(result.css.contains(".-z-10"));
-        assert!(result.css.contains("z-index: -10"));
+        assert!(result.css.contains("z-index: calc(10 * -1)"));
         assert!(
             result
                 .css
@@ -12097,19 +12591,19 @@ mod tests {
         assert!(result.css.contains(".z-\\(--my-z\\)"));
         assert!(result.css.contains("z-index: var(--my-z)"));
         assert!(result.css.contains(".inset-0"));
-        assert!(result.css.contains("inset: 0px"));
+        assert!(result.css.contains("inset: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".top-0"));
-        assert!(result.css.contains("top: 0px"));
+        assert!(result.css.contains("top: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".right-0"));
-        assert!(result.css.contains("right: 0px"));
+        assert!(result.css.contains("right: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".bottom-0"));
-        assert!(result.css.contains("bottom: 0px"));
+        assert!(result.css.contains("bottom: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".left-0"));
-        assert!(result.css.contains("left: 0px"));
+        assert!(result.css.contains("left: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".inset-x-0"));
-        assert!(result.css.contains("left: 0px; right: 0px"));
+        assert!(result.css.contains("inset-inline: calc(var(--spacing) * 0)"));
         assert!(result.css.contains(".inset-y-0"));
-        assert!(result.css.contains("top: 0px; bottom: 0px"));
+        assert!(result.css.contains("inset-block: calc(var(--spacing) * 0)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:z-50"));
     }
@@ -12401,17 +12895,13 @@ mod tests {
                 .contains("background-color: var(--color-sky-500)")
         );
         assert!(result.css.contains(".bg-sky-500\\/75"));
-        assert!(result.css.contains(
-            "background-color: color-mix(in oklab,var(--color-sky-500) 75%,transparent)"
-        ));
+        assert!(result.css.contains("color-mix(in oklab,var(--color-sky-500) 75%,transparent)"));
         assert!(result.css.contains(".bg-sky-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "background-color: color-mix(in oklab,var(--color-sky-500) 37%,transparent)"
-        ));
+        assert!(result.css.contains("color-mix(in oklab,var(--color-sky-500) 37%,transparent)"));
         assert!(result.css.contains(".bg-sky-500\\/\\(--my-opacity\\)"));
-        assert!(result.css.contains(
-            "background-color: color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)"));
         assert!(result.css.contains(".bg-\\[#50d71e\\]"));
         assert!(result.css.contains("background-color: #50d71e"));
         assert!(
@@ -12427,7 +12917,7 @@ mod tests {
         );
         assert!(
             result.css.contains(
-                "background-color: color-mix(in oklab,var(--tool-surface) 90%,transparent)"
+                "color-mix(in oklab,var(--tool-surface) 90%,transparent)"
             )
         );
         assert!(result.css.contains(".bg-\\(--my-color\\)"));
@@ -12583,9 +13073,7 @@ mod tests {
                 .contains("--tw-gradient-from: var(--color-indigo-500)")
         );
         assert!(result.css.contains(".from-white\\/10"));
-        assert!(result.css.contains(
-            "--tw-gradient-from: color-mix(in oklab,var(--color-white) 10%,transparent)"
-        ));
+        assert!(result.css.contains("color-mix(in oklab,var(--color-white) 10%,transparent)"));
         assert!(result.css.contains(".from-10\\%"));
         assert!(result.css.contains("--tw-gradient-from-position: 10%"));
         assert!(result.css.contains(".from-\\(--my-from\\)"));
@@ -12609,7 +13097,7 @@ mod tests {
         assert!(result.css.contains(".to-white\\/30"));
         assert!(
             result.css.contains(
-                "--tw-gradient-to: color-mix(in oklab,var(--color-white) 30%,transparent)"
+                "color-mix(in oklab,var(--color-white) 30%,transparent)"
             )
         );
         assert!(result.css.contains(".to-90\\%"));
@@ -12676,35 +13164,35 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("color: color-mix(in oklab,var(--color-red-500) 75%,transparent)")
+                .contains("color-mix(in oklab,var(--color-red-500) 75%,transparent)")
         );
         assert!(result.css.contains(".text-red-500\\/\\[37\\%\\]"));
         assert!(
             result
                 .css
-                .contains("color: color-mix(in oklab,var(--color-red-500) 37%,transparent)")
+                .contains("color-mix(in oklab,var(--color-red-500) 37%,transparent)")
         );
         assert!(result.css.contains(".text-red-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
-            "color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
+            "color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
         ));
         assert!(result.css.contains(".text-white\\/60"));
         assert!(
             result
                 .css
-                .contains("color: color-mix(in oklab,var(--color-white) 60%,transparent)")
+                .contains("color-mix(in oklab,var(--color-white) 60%,transparent)")
         );
         assert!(result.css.contains(".text-white\\/70"));
         assert!(
             result
                 .css
-                .contains("color: color-mix(in oklab,var(--color-white) 70%,transparent)")
+                .contains("color-mix(in oklab,var(--color-white) 70%,transparent)")
         );
         assert!(result.css.contains(".text-white\\/90"));
         assert!(
             result
                 .css
-                .contains("color: color-mix(in oklab,var(--color-white) 90%,transparent)")
+                .contains("color-mix(in oklab,var(--color-white) 90%,transparent)")
         );
     }
 
@@ -13260,6 +13748,7 @@ mod tests {
                 "border-x-indigo-500".to_string(),
                 "border-s-emerald-500/30".to_string(),
                 "border-[#243c5a]".to_string(),
+                "border-[color:var(--tool-border)]".to_string(),
                 "border-(--my-border)".to_string(),
                 "divide-rose-400".to_string(),
             ],
@@ -13276,15 +13765,21 @@ mod tests {
                 .contains("border-inline-color: var(--color-indigo-500)")
         );
         assert!(result.css.contains(".border-s-emerald-500\\/30"));
-        assert!(result.css.contains(
-            "border-inline-start-color: color-mix(in oklab,var(--color-emerald-500) 30%,transparent)"
-        ));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab,var(--color-emerald-500) 30%,transparent)")
+        );
         assert!(result.css.contains(".border-\\[#243c5a\\]"));
         assert!(result.css.contains("border-color: #243c5a"));
+        assert!(result.css.contains(".border-\\[color\\:var\\(--tool-border\\)\\]"));
+        assert!(result.css.contains("border-color: var(--tool-border)"));
+        assert!(!result.css.contains("border-width: color:var(--tool-border)"));
         assert!(result.css.contains(".border-\\(--my-border\\)"));
         assert!(result.css.contains("border-color: var(--my-border)"));
-        assert!(result.css.contains(".divide-rose-400 > :not(:last-child)"));
-        assert!(result.css.contains("border-color: var(--color-rose-400)"));
+        assert!(result.css.contains(".divide-rose-400"));
+        assert!(result.css.contains(":where(& > :not(:last-child))"));
+        assert!(result.css.contains("border-color:var(--color-rose-400)"));
     }
 
     #[test]
@@ -13334,31 +13829,27 @@ mod tests {
                 .css
                 .contains("border-inline-end-width: var(--my-border-width)")
         );
-        assert!(result.css.contains(".divide-x-2 > :not(:last-child)"));
+        assert!(result.css.contains(".divide-x-2"));
         assert!(
             result
                 .css
-                .contains("border-inline-start-width: calc(2px * var(--tw-divide-x-reverse))")
+                .contains("border-inline-start-width:calc(2px * var(--tw-divide-x-reverse))")
         );
         assert!(
             result.css.contains(
-                "border-inline-end-width: calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
+                "border-inline-end-width:calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
             )
         );
-        assert!(
-            result
-                .css
-                .contains(".divide-y-\\[3px\\] > :not(:last-child)")
-        );
+        assert!(result.css.contains(".divide-y-\\[3px\\]"));
         assert!(
             result.css.contains(
-                "border-block-end-width: calc(3px * calc(1 - var(--tw-divide-y-reverse)))"
+                "border-bottom-width:calc(3px * calc(1 - var(--tw-divide-y-reverse)))"
             )
         );
-        assert!(result.css.contains(".divide-x-reverse > :not(:last-child)"));
-        assert!(result.css.contains("--tw-divide-x-reverse: 1"));
-        assert!(result.css.contains(".divide-y-reverse > :not(:last-child)"));
-        assert!(result.css.contains("--tw-divide-y-reverse: 1"));
+        assert!(result.css.contains(".divide-x-reverse"));
+        assert!(result.css.contains("--tw-divide-x-reverse:1"));
+        assert!(result.css.contains(".divide-y-reverse"));
+        assert!(result.css.contains("--tw-divide-y-reverse:1"));
     }
 
     #[test]
@@ -13480,8 +13971,8 @@ mod tests {
         assert!(result.css.contains("border-style: hidden"));
         assert!(result.css.contains(".border-none"));
         assert!(result.css.contains("border-style: none"));
-        assert!(result.css.contains(".divide-dashed > :not(:last-child)"));
-        assert!(result.css.contains(".divide-none > :not(:last-child)"));
+        assert!(result.css.contains(".divide-dashed"));
+        assert!(result.css.contains(".divide-none"));
         assert!(result.css.contains(".md\\:border-dotted"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -13545,6 +14036,7 @@ mod tests {
                 "outline-rose-500/[37%]".to_string(),
                 "outline-red-500/(--my-opacity)".to_string(),
                 "outline-[#243c5a]".to_string(),
+                "outline-[color:var(--tool-primary)]".to_string(),
                 "outline-(--my-color)".to_string(),
                 "focus:outline-sky-500".to_string(),
                 "md:outline-blue-400".to_string(),
@@ -13581,6 +14073,9 @@ mod tests {
         ));
         assert!(result.css.contains(".outline-\\[#243c5a\\]"));
         assert!(result.css.contains("outline-color: #243c5a"));
+        assert!(result.css.contains(".outline-\\[color\\:var\\(--tool-primary\\)\\]"));
+        assert!(result.css.contains("outline-color: var(--tool-primary)"));
+        assert!(!result.css.contains("outline-width: color:var(--tool-primary)"));
         assert!(result.css.contains(".outline-\\(--my-color\\)"));
         assert!(result.css.contains("outline-color: var(--my-color)"));
         assert!(result.css.contains(".focus\\:outline-sky-500:focus"));
@@ -13695,7 +14190,7 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".rounded"));
-        assert!(result.css.contains("border-radius: var(--radius-md)"));
+        assert!(result.css.contains("border-radius: var(--radius-sm)"));
         assert!(result.css.contains(".rounded-xs"));
         assert!(result.css.contains("border-radius: var(--radius-xs)"));
         assert!(result.css.contains(".rounded-sm"));
@@ -13766,58 +14261,57 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))")
+                .contains("--tw-shadow: 0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
         );
         assert!(result.css.contains(".shadow"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+                .contains("--tw-shadow: 0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
         );
+        assert!(result.css.contains(
+            "box-shadow: var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        ));
         assert!(result.css.contains(".shadow-md"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+                .contains("--tw-shadow: 0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
         );
         assert!(result.css.contains(".shadow-lg"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+                .contains("--tw-shadow: 0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
         );
         assert!(result.css.contains(".shadow-xl"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+                .contains("--tw-shadow: 0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
         );
         assert!(result.css.contains(".shadow-2xl"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))")
+                .contains("--tw-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))")
         );
         assert!(result.css.contains(".shadow-inner"));
         assert!(
             result
                 .css
-                .contains("box-shadow: inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))")
+                .contains("--tw-shadow: inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))")
         );
         assert!(result.css.contains(".shadow-none"));
-        assert!(result.css.contains("box-shadow: none"));
+        assert!(result.css.contains("--tw-shadow: 0 0 #0000"));
         assert!(
             result
                 .css
                 .contains(".shadow-\\[0_0_20px_rgba\\(255\\,255\\,255\\,0.3\\)\\]")
         );
-        assert!(
-            result
-                .css
-                .contains("box-shadow: 0 0 20px rgba(255,255,255,0.3)")
-        );
+        assert!(result.css.contains("--tw-shadow: 0 0 20px rgba(255,255,255,0.3)"));
         assert!(result.css.contains(".shadow-\\(--portal-shadow\\)"));
-        assert!(result.css.contains("box-shadow: var(--portal-shadow)"));
+        assert!(result.css.contains("--tw-shadow: var(--portal-shadow)"));
     }
 
     #[test]
@@ -13843,9 +14337,7 @@ mod tests {
                 .contains("--tw-shadow-color: var(--color-red-500)")
         );
         assert!(result.css.contains(".shadow-cyan-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 37%,transparent)"
-        ));
+        assert!(result.css.contains("color-mix(in oklab,color-mix(in oklab,var(--color-cyan-500) 37%,transparent) var(--tw-shadow-alpha),transparent)"));
         assert!(result.css.contains(".shadow-\\(--my-shadow-color\\)"));
         assert!(
             result
@@ -13915,27 +14407,30 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 3px var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))")
         );
+        assert!(result.css.contains(
+            "box-shadow: var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        ));
         assert!(result.css.contains(".ring-inset"));
         assert!(result.css.contains("--tw-ring-inset: inset"));
         assert!(result.css.contains(".ring-0"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 0 var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width))")
         );
         assert!(result.css.contains(".ring-2"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
         );
         assert!(result.css.contains(".ring-8"));
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 8px var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width))")
         );
     }
 
@@ -13963,9 +14458,7 @@ mod tests {
                 .contains("--tw-ring-color: var(--color-blue-500)")
         );
         assert!(result.css.contains(".ring-rose-500\\/30"));
-        assert!(result.css.contains(
-            "--tw-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"
-        ));
+        assert!(result.css.contains("color-mix(in oklab,var(--color-rose-500) 30%,transparent)"));
         assert!(result.css.contains(".ring-\\(--my-ring-color\\)"));
         assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
         assert!(result.css.contains(".ring-\\[#243c5a\\]"));
@@ -14028,7 +14521,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
         );
     }
 
@@ -14076,7 +14569,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("box-shadow: 0 0 0 1px var(--tw-ring-color,rgba(59,130,246,0.5))")
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))")
         );
         assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
         assert!(
@@ -15296,7 +15789,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("max-height: calc(100dvh-(--spacing(6)))")
+                .contains("max-height: calc(100dvh - (--spacing(6)))")
         );
     }
 
@@ -15536,7 +16029,7 @@ mod tests {
         assert!(result.css.contains(".md\\:border-separate"));
         assert!(result.css.contains(".sr-only"));
         assert!(result.css.contains("position: absolute"));
-        assert!(result.css.contains("clip: rect(0,0,0,0)"));
+        assert!(result.css.contains("clip-path: inset(50%)"));
         assert!(result.css.contains(".not-sr-only"));
         assert!(result.css.contains("position: static"));
         assert!(result.css.contains("clip: auto"));
@@ -17446,13 +17939,13 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("left: calc(var(--spacing) * 2); right: calc(var(--spacing) * 2)")
+                .contains("inset-inline: calc(var(--spacing) * 2)")
         );
         assert!(result.css.contains(".inset-y-3"));
         assert!(
             result
                 .css
-                .contains("top: calc(var(--spacing) * 3); bottom: calc(var(--spacing) * 3)")
+                .contains("inset-block: calc(var(--spacing) * 3)")
         );
         assert!(result.css.contains(".top-1\\/2"));
         assert!(result.css.contains("top: calc(1/2 * 100%)"));
@@ -17813,19 +18306,18 @@ mod tests {
         assert!(result.css.contains(".scale-none"));
         assert!(result.css.contains("scale: none"));
         assert!(result.css.contains(".scale-75"));
-        assert!(result.css.contains("scale: 75% 75%"));
+        assert!(result.css.contains("--tw-scale-x: 75%"));
+        assert!(result.css.contains("--tw-scale-y: 75%"));
+        assert!(result.css.contains("--tw-scale-z: 75%"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y)"));
         assert!(result.css.contains(".-scale-125"));
-        assert!(
-            result
-                .css
-                .contains("scale: calc(125% * -1) calc(125% * -1)")
-        );
+        assert!(result.css.contains("--tw-scale-x: calc(125% * -1)"));
+        assert!(result.css.contains("--tw-scale-y: calc(125% * -1)"));
+        assert!(result.css.contains("--tw-scale-z: calc(125% * -1)"));
         assert!(result.css.contains(".scale-\\(--my-scale\\)"));
-        assert!(
-            result
-                .css
-                .contains("scale: var(--my-scale) var(--my-scale)")
-        );
+        assert!(result.css.contains("--tw-scale-x: var(--my-scale)"));
+        assert!(result.css.contains("--tw-scale-y: var(--my-scale)"));
+        assert!(result.css.contains("--tw-scale-z: var(--my-scale)"));
         assert!(result.css.contains(".scale-\\[1.7\\]"));
         assert!(result.css.contains("scale: 1.7"));
 
@@ -17895,10 +18387,14 @@ mod tests {
         );
 
         assert!(result.css.contains(".hover\\:scale-120:hover"));
-        assert!(result.css.contains("scale: 120% 120%"));
+        assert!(result.css.contains("--tw-scale-x: 120%"));
+        assert!(result.css.contains("--tw-scale-y: 120%"));
+        assert!(result.css.contains("--tw-scale-z: 120%"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:scale-150"));
-        assert!(result.css.contains("scale: 150% 150%"));
+        assert!(result.css.contains("--tw-scale-x: 150%"));
+        assert!(result.css.contains("--tw-scale-y: 150%"));
+        assert!(result.css.contains("--tw-scale-z: 150%"));
     }
 
     #[test]
@@ -17926,47 +18422,43 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".skew-3"));
-        assert!(result.css.contains("transform: skewX(3deg) skewY(3deg)"));
+        assert!(result.css.contains("--tw-skew-x: skewX(3deg)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(3deg)"));
+        assert!(result.css.contains(
+            "transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
+        ));
         assert!(result.css.contains(".-skew-12"));
-        assert!(
-            result
-                .css
-                .contains("transform: skewX(-12deg) skewY(-12deg)")
-        );
+        assert!(result.css.contains("--tw-skew-x: skewX(-12deg)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(-12deg)"));
         assert!(result.css.contains(".skew-\\(--my-skew\\)"));
-        assert!(
-            result
-                .css
-                .contains("transform: skewX(var(--my-skew)) skewY(var(--my-skew))")
-        );
+        assert!(result.css.contains("--tw-skew-x: skewX(var(--my-skew))"));
+        assert!(result.css.contains("--tw-skew-y: skewY(var(--my-skew))"));
         assert!(result.css.contains(".skew-\\[3.142rad\\]"));
-        assert!(
-            result
-                .css
-                .contains("transform: skewX(3.142rad) skewY(3.142rad)")
-        );
+        assert!(result.css.contains("--tw-skew-x: skewX(3.142rad)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(3.142rad)"));
 
         assert!(result.css.contains(".skew-x-6"));
-        assert!(result.css.contains("transform: skewX(6deg)"));
+        assert!(result.css.contains("--tw-skew-x: skewX(6deg)"));
         assert!(result.css.contains(".-skew-x-10"));
-        assert!(result.css.contains("transform: skewX(-10deg)"));
+        assert!(result.css.contains("--tw-skew-x: skewX(-10deg)"));
         assert!(result.css.contains(".skew-x-\\(--my-skew-x\\)"));
-        assert!(result.css.contains("transform: skewX(var(--my-skew-x))"));
+        assert!(result.css.contains("--tw-skew-x: skewX(var(--my-skew-x))"));
         assert!(result.css.contains(".skew-x-\\[25deg\\]"));
-        assert!(result.css.contains("transform: skewX(25deg)"));
+        assert!(result.css.contains("--tw-skew-x: skewX(25deg)"));
 
         assert!(result.css.contains(".skew-y-6"));
-        assert!(result.css.contains("transform: skewY(6deg)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(6deg)"));
         assert!(result.css.contains(".-skew-y-10"));
-        assert!(result.css.contains("transform: skewY(-10deg)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(-10deg)"));
         assert!(result.css.contains(".skew-y-\\(--my-skew-y\\)"));
-        assert!(result.css.contains("transform: skewY(var(--my-skew-y))"));
+        assert!(result.css.contains("--tw-skew-y: skewY(var(--my-skew-y))"));
         assert!(result.css.contains(".skew-y-\\[0.25turn\\]"));
-        assert!(result.css.contains("transform: skewY(0.25turn)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(0.25turn)"));
 
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:skew-12"));
-        assert!(result.css.contains("transform: skewX(12deg) skewY(12deg)"));
+        assert!(result.css.contains("--tw-skew-x: skewX(12deg)"));
+        assert!(result.css.contains("--tw-skew-y: skewY(12deg)"));
     }
 
     #[test]
@@ -17989,17 +18481,17 @@ mod tests {
         );
         assert!(result.css.contains(".transform"));
         assert!(result.css.contains(
-            "transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+            "transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
         ));
         assert!(result.css.contains(".transform-none"));
         assert!(result.css.contains("transform: none"));
         assert!(result.css.contains(".transform-gpu"));
         assert!(result.css.contains(
-            "transform: translateZ(0) var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+            "transform: translateZ(0) var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
         ));
         assert!(result.css.contains(".transform-cpu"));
         assert!(result.css.contains(
-            "transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+            "transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)"
         ));
         assert!(result.css.contains(".transform-\\(--my-transform\\)"));
         assert!(result.css.contains("transform: var(--my-transform)"));
@@ -18141,135 +18633,78 @@ mod tests {
         assert!(result.css.contains(".translate-none"));
         assert!(result.css.contains("translate: none"));
         assert!(result.css.contains(".translate-2"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(var(--spacing) * 2) calc(var(--spacing) * 2)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) var(--tw-translate-y)"));
         assert!(result.css.contains(".-translate-4"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(var(--spacing) * -4) calc(var(--spacing) * -4)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * -4)"));
+        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * -4)"));
         assert!(result.css.contains(".translate-1\\/2"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(1/2 * 100%) calc(1/2 * 100%)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(1/2 * 100%)"));
+        assert!(result.css.contains("--tw-translate-y: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-translate-1\\/4"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(1/4 * -100%) calc(1/4 * -100%)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)"));
+        assert!(result.css.contains("--tw-translate-y: calc(calc(1/4 * 100%) * -1)"));
         assert!(result.css.contains(".translate-full"));
-        assert!(result.css.contains("translate: 100% 100%"));
+        assert!(result.css.contains("--tw-translate-x: 100%"));
+        assert!(result.css.contains("--tw-translate-y: 100%"));
         assert!(result.css.contains(".-translate-full"));
-        assert!(result.css.contains("translate: -100% -100%"));
+        assert!(result.css.contains("--tw-translate-x: -100%"));
+        assert!(result.css.contains("--tw-translate-y: -100%"));
         assert!(result.css.contains(".translate-px"));
-        assert!(result.css.contains("translate: 1px 1px"));
+        assert!(result.css.contains("--tw-translate-x: 1px"));
+        assert!(result.css.contains("--tw-translate-y: 1px"));
         assert!(result.css.contains(".-translate-px"));
-        assert!(result.css.contains("translate: -1px -1px"));
+        assert!(result.css.contains("--tw-translate-x: -1px"));
+        assert!(result.css.contains("--tw-translate-y: -1px"));
         assert!(result.css.contains(".translate-\\(--my-translate\\)"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--my-translate) var(--my-translate)")
-        );
+        assert!(result.css.contains("--tw-translate-x: var(--my-translate)"));
+        assert!(result.css.contains("--tw-translate-y: var(--my-translate)"));
         assert!(result.css.contains(".translate-\\[3.142rad\\]"));
-        assert!(result.css.contains("translate: 3.142rad 3.142rad"));
+        assert!(result.css.contains("--tw-translate-x: 3.142rad"));
+        assert!(result.css.contains("--tw-translate-y: 3.142rad"));
 
         assert!(result.css.contains(".translate-x-3"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(var(--spacing) * 3) var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 3)"));
         assert!(result.css.contains(".-translate-x-6"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(var(--spacing) * -6) var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * -6)"));
         assert!(result.css.contains(".translate-x-1\\/2"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(1/2 * 100%) var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-translate-x-1\\/4"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(1/4 * -100%) var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(calc(1/4 * 100%) * -1)"));
         assert!(result.css.contains(".translate-x-full"));
-        assert!(result.css.contains("translate: 100% var(--tw-translate-y)"));
+        assert!(result.css.contains("--tw-translate-x: 100%"));
         assert!(result.css.contains(".-translate-x-full"));
-        assert!(
-            result
-                .css
-                .contains("translate: -100% var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: -100%"));
         assert!(result.css.contains(".translate-x-px"));
-        assert!(result.css.contains("translate: 1px var(--tw-translate-y)"));
+        assert!(result.css.contains("--tw-translate-x: 1px"));
         assert!(result.css.contains(".-translate-x-px"));
-        assert!(result.css.contains("translate: -1px var(--tw-translate-y)"));
+        assert!(result.css.contains("--tw-translate-x: -1px"));
         assert!(result.css.contains(".translate-x-\\(--my-translate-x\\)"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--my-translate-x) var(--tw-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-x: var(--my-translate-x)"));
         assert!(result.css.contains(".translate-x-\\[4px\\]"));
-        assert!(result.css.contains("translate: 4px var(--tw-translate-y)"));
+        assert!(result.css.contains("--tw-translate-x: 4px"));
 
         assert!(result.css.contains(".translate-y-8"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) calc(var(--spacing) * 8)")
-        );
+        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-translate-y-2"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) calc(var(--spacing) * -2)")
-        );
+        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * -2)"));
         assert!(result.css.contains(".translate-y-1\\/3"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) calc(1/3 * 100%)")
-        );
+        assert!(result.css.contains("--tw-translate-y: calc(1/3 * 100%)"));
         assert!(result.css.contains(".-translate-y-1\\/2"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) calc(1/2 * -100%)")
-        );
+        assert!(result.css.contains("--tw-translate-y: calc(calc(1/2 * 100%) * -1)"));
         assert!(result.css.contains(".translate-y-full"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) 100%"));
+        assert!(result.css.contains("--tw-translate-y: 100%"));
         assert!(result.css.contains(".-translate-y-full"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) -100%")
-        );
+        assert!(result.css.contains("--tw-translate-y: -100%"));
         assert!(result.css.contains(".translate-y-px"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) 1px"));
+        assert!(result.css.contains("--tw-translate-y: 1px"));
         assert!(result.css.contains(".-translate-y-px"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) -1px"));
+        assert!(result.css.contains("--tw-translate-y: -1px"));
         assert!(result.css.contains(".translate-y-\\(--my-translate-y\\)"));
-        assert!(
-            result
-                .css
-                .contains("translate: var(--tw-translate-x) var(--my-translate-y)")
-        );
+        assert!(result.css.contains("--tw-translate-y: var(--my-translate-y)"));
         assert!(result.css.contains(".translate-y-\\[5px\\]"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) 5px"));
+        assert!(result.css.contains("--tw-translate-y: 5px"));
 
         assert!(result.css.contains(".translate-z-12"));
         assert!(result.css.contains(
@@ -18304,11 +18739,8 @@ mod tests {
 
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:translate-6"));
-        assert!(
-            result
-                .css
-                .contains("translate: calc(var(--spacing) * 6) calc(var(--spacing) * 6)")
-        );
+        assert!(result.css.contains("--tw-translate-x: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains("--tw-translate-y: calc(var(--spacing) * 6)"));
     }
 
     #[test]
@@ -18753,92 +19185,77 @@ mod tests {
             &config,
         );
 
-        assert!(result.css.contains(".space-x-4 > :not(:last-child)"));
+        assert!(result.css.contains(".space-x-4"));
+        assert!(result.css.contains(":where(& > :not(:last-child))"));
         assert!(result.css.contains(
-            "margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"
+            "margin-inline-start:calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"
         ));
-        assert!(result.css.contains(".-space-x-2 > :not(:last-child)"));
+        assert!(result.css.contains(".-space-x-2"));
         assert!(result
             .css
-            .contains("margin-inline-end: calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)))"));
-        assert!(result.css.contains(".space-x-px > :not(:last-child)"));
+            .contains("margin-inline-end:calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)))"));
+        assert!(result.css.contains(".space-x-px"));
         assert!(
             result
                 .css
-                .contains("margin-inline-start: calc(1px * var(--tw-space-x-reverse))")
+                .contains("margin-inline-start:calc(1px * var(--tw-space-x-reverse))")
         );
-        assert!(result.css.contains(".-space-x-px > :not(:last-child)"));
+        assert!(result.css.contains(".-space-x-px"));
         assert!(
             result
                 .css
-                .contains("margin-inline-end: calc(-1px * calc(1 - var(--tw-space-x-reverse)))")
+                .contains("margin-inline-end:calc(-1px * calc(1 - var(--tw-space-x-reverse)))")
         );
-        assert!(
-            result
-                .css
-                .contains(".space-x-\\(--my-space-x\\) > :not(:last-child)")
-        );
+        assert!(result.css.contains(".space-x-\\(--my-space-x\\)"));
         assert!(
             result.css.contains(
-                "margin-inline-start: calc(var(--my-space-x) * var(--tw-space-x-reverse))"
+                "margin-inline-start:calc(var(--my-space-x) * var(--tw-space-x-reverse))"
             )
         );
+        assert!(result.css.contains(".space-x-\\[3rem\\]"));
         assert!(
             result
                 .css
-                .contains(".space-x-\\[3rem\\] > :not(:last-child)")
+                .contains("margin-inline-end:calc(3rem * calc(1 - var(--tw-space-x-reverse)))")
         );
-        assert!(
-            result
-                .css
-                .contains("margin-inline-end: calc(3rem * calc(1 - var(--tw-space-x-reverse)))")
-        );
-        assert!(result.css.contains(".space-y-6 > :not(:last-child)"));
+        assert!(result.css.contains(".space-y-6"));
         assert!(result.css.contains(
-            "margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
+            "margin-block-start:calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
         ));
-        assert!(result.css.contains(".-space-y-1 > :not(:last-child)"));
+        assert!(result.css.contains(".-space-y-1"));
         assert!(result
             .css
-            .contains("margin-block-end: calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"));
-        assert!(result.css.contains(".space-y-px > :not(:last-child)"));
+            .contains("margin-block-end:calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"));
+        assert!(result.css.contains(".space-y-px"));
         assert!(
             result
                 .css
-                .contains("margin-block-start: calc(1px * var(--tw-space-y-reverse))")
+                .contains("margin-block-start:calc(1px * var(--tw-space-y-reverse))")
         );
-        assert!(result.css.contains(".-space-y-px > :not(:last-child)"));
+        assert!(result.css.contains(".-space-y-px"));
         assert!(
             result
                 .css
-                .contains("margin-block-end: calc(-1px * calc(1 - var(--tw-space-y-reverse)))")
+                .contains("margin-block-end:calc(-1px * calc(1 - var(--tw-space-y-reverse)))")
         );
-        assert!(
-            result
-                .css
-                .contains(".space-y-\\(--my-space-y\\) > :not(:last-child)")
-        );
+        assert!(result.css.contains(".space-y-\\(--my-space-y\\)"));
         assert!(
             result.css.contains(
-                "margin-block-start: calc(var(--my-space-y) * var(--tw-space-y-reverse))"
+                "margin-block-start:calc(var(--my-space-y) * var(--tw-space-y-reverse))"
             )
         );
+        assert!(result.css.contains(".space-y-\\[10\\%\\]"));
         assert!(
             result
                 .css
-                .contains(".space-y-\\[10\\%\\] > :not(:last-child)")
+                .contains("margin-block-end:calc(10% * calc(1 - var(--tw-space-y-reverse)))")
         );
-        assert!(
-            result
-                .css
-                .contains("margin-block-end: calc(10% * calc(1 - var(--tw-space-y-reverse)))")
-        );
-        assert!(result.css.contains(".space-x-reverse > :not(:last-child)"));
-        assert!(result.css.contains("--tw-space-x-reverse: 1"));
-        assert!(result.css.contains(".space-y-reverse > :not(:last-child)"));
-        assert!(result.css.contains("--tw-space-y-reverse: 1"));
+        assert!(result.css.contains(".space-x-reverse"));
+        assert!(result.css.contains("--tw-space-x-reverse:1"));
+        assert!(result.css.contains(".space-y-reverse"));
+        assert!(result.css.contains("--tw-space-y-reverse:1"));
         assert!(result.css.contains("@media (width >= 48rem)"));
-        assert!(result.css.contains(".md\\:space-x-8 > :not(:last-child)"));
+        assert!(result.css.contains(".md\\:space-x-8"));
     }
 
     #[test]
