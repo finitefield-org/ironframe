@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
+const PREFLIGHT_CSS: &str = include_str!("preflight.css");
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Scan {
@@ -382,14 +384,11 @@ fn run_build(
                 })
                 .collect::<Vec<_>>(),
         );
-        let auto_scan = ironframe_scanner::scan_globs_with_options(
-            &auto_patterns,
-            &auto_ignore,
-            &auto_options,
-        )
-        .map_err(|err| CliError {
-                message: err.message,
-            })?;
+        let auto_scan =
+            ironframe_scanner::scan_globs_with_options(&auto_patterns, &auto_ignore, &auto_options)
+                .map_err(|err| CliError {
+                    message: err.message,
+                })?;
         files_scanned += auto_scan.files_scanned;
         for class in auto_scan.classes {
             classes.insert(class);
@@ -469,36 +468,46 @@ fn run_build(
         &generator_config,
         parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
     );
-    let mut css = ironframe_generator::emit_css(&generation);
+    let mut utility_css = ironframe_generator::emit_css(&generation);
+    let mut theme_css = String::new();
     if let Some(theme) = parsed_theme.as_ref() {
         if !theme.inline_variables.is_empty() {
-            css = apply_inline_theme_variables(&css, &theme.inline_variables);
+            utility_css = apply_inline_theme_variables(&utility_css, &theme.inline_variables);
         }
         let usage_css = if let Some(template) = stripped_template_css.as_ref() {
-            format!("{}\n{}", css, template)
+            format!("{}\n{}", utility_css, template)
         } else {
-            css.clone()
+            utility_css.clone()
         };
-        let theme_css = emit_parsed_theme_css(theme, &usage_css, minify);
-        if !theme_css.is_empty() {
-            css = if minify {
-                format!("{}{}", theme_css, css)
-            } else {
-                format!("{}\n{}", theme_css, css)
-            };
-        }
+        theme_css = emit_parsed_theme_css(theme, &usage_css, minify);
     }
+    let preflight_css = PREFLIGHT_CSS.to_string();
     let header = build_header(scan_result.files_scanned, scan_result.classes.len(), minify);
-    if minify {
-        css = format!("{}{}", header, css);
+    let mut css = if minify {
+        format!("{}{}{}", header, theme_css, utility_css)
     } else {
-        css = format!("{}\n{}", header, css);
-    }
+        let mut parts = vec![header.clone()];
+        if !theme_css.is_empty() {
+            parts.push(theme_css.clone());
+        }
+        if !utility_css.is_empty() {
+            parts.push(utility_css.clone());
+        }
+        parts.join("\n")
+    };
 
     if let Some(path) = input_css_path {
         let template = stripped_template_css
             .unwrap_or_else(|| strip_tailwind_custom_directives(&template_css.unwrap_or_default()));
-        css = apply_framework_import_alias(&template, &css).ok_or_else(|| CliError {
+        css = apply_framework_import_alias(
+            &template,
+            &header,
+            &theme_css,
+            &preflight_css,
+            &utility_css,
+            minify,
+        )
+        .ok_or_else(|| CliError {
             message: format!(
                 "input css {} must include @import \"tailwindcss\" or @import \"ironframe\"",
                 path
@@ -847,9 +856,7 @@ fn inline_css_imports_recursive(
             rendered_lines.push(line.to_string());
             continue;
         };
-        if path.starts_with("http://")
-            || path.starts_with("https://")
-            || path.starts_with("data:")
+        if path.starts_with("http://") || path.starts_with("https://") || path.starts_with("data:")
         {
             rendered_lines.push(line.to_string());
             continue;
@@ -859,7 +866,11 @@ fn inline_css_imports_recursive(
             continue;
         }
         let imported = fs::read_to_string(&resolved).map_err(|err| CliError {
-            message: format!("failed to read imported css {}: {}", resolved.display(), err),
+            message: format!(
+                "failed to read imported css {}: {}",
+                resolved.display(),
+                err
+            ),
         })?;
         visited.insert(resolved.clone());
         let next_base = resolved.parent().unwrap_or(base_dir);
@@ -895,7 +906,11 @@ fn parse_plain_css_import_path(trimmed_line: &str) -> Option<String> {
         let path = inside
             .strip_prefix('"')
             .and_then(|raw| raw.strip_suffix('"'))
-            .or_else(|| inside.strip_prefix('\'').and_then(|raw| raw.strip_suffix('\'')))
+            .or_else(|| {
+                inside
+                    .strip_prefix('\'')
+                    .and_then(|raw| raw.strip_suffix('\''))
+            })
             .unwrap_or(inside)
             .to_string();
         if rest[close + 1..].trim().is_empty() {
@@ -970,7 +985,9 @@ fn expand_apply_directives(
                     message: format!("failed to parse generated utility for @apply: {}", class),
                 });
             };
-            let body = generated[open_idx + 1..close_idx].trim().trim_end_matches(';');
+            let body = generated[open_idx + 1..close_idx]
+                .trim()
+                .trim_end_matches(';');
             if body.is_empty() {
                 return Err(CliError {
                     message: format!("utility in @apply has no declarations: {}", class),
@@ -989,27 +1006,89 @@ fn expand_apply_directives(
     Ok(out)
 }
 
-fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Option<String> {
+fn apply_framework_import_alias(
+    template_css: &str,
+    header_css: &str,
+    theme_css: &str,
+    preflight_css: &str,
+    utility_css: &str,
+    minify: bool,
+) -> Option<String> {
     let mut replaced = false;
+    let mut emitted_header = false;
+    let mut emitted_theme = false;
+    let mut emitted_preflight = false;
+    let mut emitted_utilities = false;
     let mut rendered_lines = Vec::new();
-    let mut generated_bundle = generated_css.to_string();
 
     for line in template_css.lines() {
-        if let Some(directives) = parse_framework_import_directives(line) {
-            if !replaced {
-                if directives.prefix.is_some() {
-                    generated_bundle =
-                        apply_prefix_to_css(&generated_bundle, directives.prefix.as_deref()?);
-                }
-                if directives.important {
-                    generated_bundle = apply_important_to_css(&generated_bundle);
-                }
-                rendered_lines.push(generated_bundle.clone());
-                replaced = true;
-            }
+        let Some(directives) = parse_framework_import_directives(line) else {
+            rendered_lines.push(line.to_string());
             continue;
+        };
+
+        replaced = true;
+        let mut blocks = Vec::<String>::new();
+        if !emitted_header {
+            blocks.push(header_css.to_string());
+            emitted_header = true;
         }
-        rendered_lines.push(line.to_string());
+
+        match directives.target {
+            FrameworkImportTarget::Framework => {
+                if !emitted_theme {
+                    blocks.push(apply_import_transforms(
+                        theme_css,
+                        directives.prefix.as_deref(),
+                        false,
+                    ));
+                    emitted_theme = true;
+                }
+                if !emitted_preflight {
+                    blocks.push(preflight_css.to_string());
+                    emitted_preflight = true;
+                }
+                if !emitted_utilities {
+                    blocks.push(apply_import_transforms(
+                        utility_css,
+                        directives.prefix.as_deref(),
+                        directives.important,
+                    ));
+                    emitted_utilities = true;
+                }
+            }
+            FrameworkImportTarget::Theme => {
+                if !emitted_theme {
+                    blocks.push(apply_import_transforms(
+                        theme_css,
+                        directives.prefix.as_deref(),
+                        false,
+                    ));
+                    emitted_theme = true;
+                }
+            }
+            FrameworkImportTarget::Preflight => {
+                if !emitted_preflight {
+                    blocks.push(preflight_css.to_string());
+                    emitted_preflight = true;
+                }
+            }
+            FrameworkImportTarget::Utilities => {
+                if !emitted_utilities {
+                    blocks.push(apply_import_transforms(
+                        utility_css,
+                        directives.prefix.as_deref(),
+                        directives.important,
+                    ));
+                    emitted_utilities = true;
+                }
+            }
+        }
+
+        let rendered_block = combine_css_blocks(&blocks, minify);
+        if !rendered_block.is_empty() {
+            rendered_lines.push(rendered_block);
+        }
     }
 
     if !replaced {
@@ -1021,6 +1100,36 @@ fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Opti
         rendered.push('\n');
     }
     Some(rendered)
+}
+
+fn apply_import_transforms(css: &str, prefix: Option<&str>, important: bool) -> String {
+    let mut rendered = css.to_string();
+    if let Some(prefix) = prefix {
+        rendered = apply_prefix_to_css(&rendered, prefix);
+    }
+    if important {
+        rendered = apply_important_to_css(&rendered);
+    }
+    rendered
+}
+
+fn combine_css_blocks(blocks: &[String], minify: bool) -> String {
+    let filtered = blocks
+        .iter()
+        .filter(|block| !block.is_empty())
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return String::new();
+    }
+    if minify {
+        filtered.into_iter().map(|block| block.as_str()).collect()
+    } else {
+        filtered
+            .into_iter()
+            .map(|block| block.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1068,7 +1177,10 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
                 global_theme_reset = true;
                 continue;
             }
-            if let Some(namespace) = name.strip_prefix("--color-").and_then(|raw| raw.strip_suffix("-*")) {
+            if let Some(namespace) = name
+                .strip_prefix("--color-")
+                .and_then(|raw| raw.strip_suffix("-*"))
+            {
                 if value == "initial" {
                     if !namespace.is_empty() {
                         disabled_color_families.insert(namespace.to_string());
@@ -1076,7 +1188,10 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
                     continue;
                 }
             }
-            if let Some(namespace) = name.strip_prefix("--").and_then(|raw| raw.strip_suffix("-*")) {
+            if let Some(namespace) = name
+                .strip_prefix("--")
+                .and_then(|raw| raw.strip_suffix("-*"))
+            {
                 if value == "initial" {
                     disabled_namespaces.insert(namespace.to_string());
                     continue;
@@ -1752,7 +1867,10 @@ fn strip_tailwind_custom_directives(template_css: &str) -> String {
     rendered
 }
 
-fn expand_variant_directives(css: &str, overrides: &ironframe_generator::VariantOverrides) -> String {
+fn expand_variant_directives(
+    css: &str,
+    overrides: &ironframe_generator::VariantOverrides,
+) -> String {
     expand_variant_directives_in_block(css, overrides)
 }
 
@@ -1822,9 +1940,16 @@ fn wrap_variant_block_for_css(
 ) -> Option<String> {
     if variant == "dark" {
         if let Some(template) = overrides.dark_variant_selector.as_ref() {
-            return Some(format!("{} {{ {} }}", normalize_variant_template(template), inner));
+            return Some(format!(
+                "{} {{ {} }}",
+                normalize_variant_template(template),
+                inner
+            ));
         }
-        return Some(format!("@media (prefers-color-scheme: dark) {{ {} }}", inner));
+        return Some(format!(
+            "@media (prefers-color-scheme: dark) {{ {} }}",
+            inner
+        ));
     }
 
     if let Some((_, template)) = overrides
@@ -1868,8 +1993,17 @@ fn normalize_variant_template(template: &str) -> String {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ImportDirectives {
+    target: FrameworkImportTarget,
     important: bool,
     prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FrameworkImportTarget {
+    Framework,
+    Theme,
+    Preflight,
+    Utilities,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1901,25 +2035,51 @@ fn parse_framework_import_directives(line: &str) -> Option<ImportDirectives> {
         return None;
     }
 
-    const TARGETS: [&str; 8] = [
-        "\"tailwindcss\"",
-        "'tailwindcss'",
-        "url(\"tailwindcss\")",
-        "url('tailwindcss')",
-        "\"ironframe\"",
-        "'ironframe'",
-        "url(\"ironframe\")",
-        "url('ironframe')",
-    ];
-
-    if !TARGETS.iter().any(|target| trimmed.contains(target)) {
-        return None;
-    }
+    let target = resolve_framework_import_target(trimmed)?;
 
     let important = trimmed.contains(" important") || trimmed.ends_with("important;");
     let prefix = extract_prefix_directive(trimmed);
 
-    Some(ImportDirectives { important, prefix })
+    Some(ImportDirectives {
+        target,
+        important,
+        prefix,
+    })
+}
+
+fn resolve_framework_import_target(import_line: &str) -> Option<FrameworkImportTarget> {
+    if contains_framework_import_target(import_line, "tailwindcss/preflight.css")
+        || contains_framework_import_target(import_line, "ironframe/preflight.css")
+    {
+        return Some(FrameworkImportTarget::Preflight);
+    }
+    if contains_framework_import_target(import_line, "tailwindcss/theme.css")
+        || contains_framework_import_target(import_line, "ironframe/theme.css")
+    {
+        return Some(FrameworkImportTarget::Theme);
+    }
+    if contains_framework_import_target(import_line, "tailwindcss/utilities.css")
+        || contains_framework_import_target(import_line, "ironframe/utilities.css")
+    {
+        return Some(FrameworkImportTarget::Utilities);
+    }
+    if contains_framework_import_target(import_line, "tailwindcss")
+        || contains_framework_import_target(import_line, "ironframe")
+    {
+        return Some(FrameworkImportTarget::Framework);
+    }
+    None
+}
+
+fn contains_framework_import_target(import_line: &str, target: &str) -> bool {
+    let quoted_double = format!("\"{}\"", target);
+    let quoted_single = format!("'{}'", target);
+    let url_double = format!("url(\"{}\")", target);
+    let url_single = format!("url('{}')", target);
+    import_line.contains(&quoted_double)
+        || import_line.contains(&quoted_single)
+        || import_line.contains(&url_double)
+        || import_line.contains(&url_single)
 }
 
 fn extract_prefix_directive(import_line: &str) -> Option<String> {
@@ -2467,16 +2627,25 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        emit_parsed_theme_css, expand_apply_directives, expand_braces,
-        expand_build_time_functions, expand_variant_directives, inline_css_imports,
-        normalize_source_pattern,
-        parse_args,
+        emit_parsed_theme_css, expand_apply_directives, expand_braces, expand_build_time_functions,
+        expand_variant_directives, inline_css_imports, normalize_source_pattern, parse_args,
         parse_framework_import_directives, parse_source_directives, parse_theme,
-        strip_tailwind_custom_directives, Command,
+        strip_tailwind_custom_directives, Command, PREFLIGHT_CSS,
     };
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn render_framework_import(template_css: &str, generated_css: &str) -> Option<String> {
+        apply_framework_import_alias(
+            template_css,
+            "/* header */",
+            "",
+            PREFLIGHT_CSS,
+            generated_css,
+            false,
+        )
+    }
 
     #[test]
     fn parse_build_supports_input_css_flag() {
@@ -2534,22 +2703,69 @@ mod tests {
         assert!(parse_framework_import_directives(r#"@import "tailwindcss" important;"#).is_some());
         assert!(parse_framework_import_directives(r#"@import "ironframe";"#).is_some());
         assert!(parse_framework_import_directives(r#"@import 'ironframe';"#).is_some());
+        assert!(parse_framework_import_directives(r#"@import "tailwindcss/theme.css";"#).is_some());
+        assert!(
+            parse_framework_import_directives(r#"@import "tailwindcss/preflight.css";"#).is_some()
+        );
+        assert!(
+            parse_framework_import_directives(r#"@import "tailwindcss/utilities.css";"#).is_some()
+        );
+    }
+
+    #[test]
+    fn can_disable_preflight_by_omitting_preflight_import() {
+        let template = r#"@import "tailwindcss/theme.css";
+@import "tailwindcss/utilities.css";
+"#;
+        let rendered = apply_framework_import_alias(
+            template,
+            "/* header */",
+            ":root { --color-red-500: #ef4444; }",
+            PREFLIGHT_CSS,
+            ".p-2 { padding: 0.5rem; }",
+            false,
+        )
+        .expect("framework imports should be replaced");
+
+        assert!(rendered.contains("--color-red-500"));
+        assert!(rendered.contains(".p-2 { padding: 0.5rem; }"));
+        assert!(!rendered.contains("::file-selector-button {\n  box-sizing: border-box;"));
+    }
+
+    #[test]
+    fn supports_split_preflight_imports() {
+        let template = r#"@import "tailwindcss/theme.css";
+@import "tailwindcss/preflight.css";
+@import "tailwindcss/utilities.css";
+"#;
+        let rendered = apply_framework_import_alias(
+            template,
+            "/* header */",
+            ":root { --color-red-500: #ef4444; }",
+            PREFLIGHT_CSS,
+            ".p-2 { padding: 0.5rem; }",
+            false,
+        )
+        .expect("framework imports should be replaced");
+
+        assert!(rendered.contains(":root { --color-red-500: #ef4444; }"));
+        assert!(rendered.contains("::file-selector-button {\n  box-sizing: border-box;"));
+        assert!(rendered.contains(".p-2 { padding: 0.5rem; }"));
     }
 
     #[test]
     fn replaces_framework_import_line_with_generated_css() {
         let generated = "/* generated */\n.p-2 { padding: 0.5rem; }";
 
-        let rendered = apply_framework_import_alias(
-            "@import \"tailwindcss\";\nbody { margin: 0; }\n",
-            generated,
-        )
-        .expect("tailwindcss import should be replaced");
+        let rendered =
+            render_framework_import("@import \"tailwindcss\";\nbody { margin: 0; }\n", generated)
+                .expect("tailwindcss import should be replaced");
         assert!(rendered.contains("/* generated */"));
         assert!(rendered.contains("body { margin: 0; }"));
+        assert!(rendered.contains("*,\n::after,\n::before,\n::backdrop,\n::file-selector-button"));
         assert!(!rendered.contains("@import \"tailwindcss\";"));
 
-        let rendered = apply_framework_import_alias(
+        let rendered = render_framework_import(
             "@import \"ironframe\";\nmain { display: block; }\n",
             generated,
         )
@@ -2562,7 +2778,7 @@ mod tests {
     #[test]
     fn supports_import_important_directive() {
         let generated = ".p-2 { padding: 0.5rem; color: red; }";
-        let rendered = apply_framework_import_alias(
+        let rendered = render_framework_import(
             "@import \"tailwindcss\" important;\nbody { margin: 0; }\n",
             generated,
         )
@@ -2574,7 +2790,7 @@ mod tests {
     #[test]
     fn supports_import_prefix_directive() {
         let generated = ".p-2 { padding: 0.5rem; }\n.dark\\:bg-gray-900 { background-color: var(--color-gray-900); }";
-        let rendered = apply_framework_import_alias(
+        let rendered = render_framework_import(
             "@import \"ironframe\" prefix(tw);\nbody { margin: 0; }\n",
             generated,
         )
@@ -2604,11 +2820,9 @@ mod tests {
     #[test]
     fn supports_import_prefix_and_important_together() {
         let generated = ".p-2 { padding: 0.5rem; }\n@media (min-width: 640px) { .sm\\:p-2 { padding: 0.5rem; } }";
-        let rendered = apply_framework_import_alias(
-            "@import \"tailwindcss\" prefix(tw) important;\n",
-            generated,
-        )
-        .expect("combined directives should be applied");
+        let rendered =
+            render_framework_import("@import \"tailwindcss\" prefix(tw) important;\n", generated)
+                .expect("combined directives should be applied");
         assert!(rendered.contains(".tw\\:p-2"));
         assert!(rendered.contains("padding: 0.5rem !important;"));
         assert!(rendered.contains(".tw\\:sm\\:p-2"));
@@ -2617,9 +2831,8 @@ mod tests {
     #[test]
     fn supports_url_import_form() {
         let generated = ".p-2 { padding: 0.5rem; }";
-        let rendered =
-            apply_framework_import_alias("@import url('ironframe') prefix(tw);\n", generated)
-                .expect("url import should be recognized");
+        let rendered = render_framework_import("@import url('ironframe') prefix(tw);\n", generated)
+            .expect("url import should be recognized");
         assert!(rendered.contains(".tw\\:p-2"));
     }
 
@@ -2635,7 +2848,8 @@ mod tests {
             "@import \"./nested.css\";\n.imported { color: blue; }\n",
         )
         .expect("should write imported.css");
-        let css = "@import \"tailwindcss\";\n@import \"./imported.css\";\n.main { color: black; }\n";
+        let css =
+            "@import \"tailwindcss\";\n@import \"./imported.css\";\n.main { color: black; }\n";
         let inlined = inline_css_imports(css, &base).expect("should inline imports");
 
         assert!(inlined.contains("@import \"tailwindcss\";"));
@@ -2648,9 +2862,8 @@ mod tests {
     #[test]
     fn prefixes_framework_variable_definitions_and_references() {
         let generated = ":root { --color-red-500: #ef4444; --my-brand: #123; }\n.text-red-500 { color: var(--color-red-500); }\n.bg-brand { background: var(--my-brand); }";
-        let rendered =
-            apply_framework_import_alias("@import \"tailwindcss\" prefix(tw);\n", generated)
-                .expect("prefix import should be replaced");
+        let rendered = render_framework_import("@import \"tailwindcss\" prefix(tw);\n", generated)
+            .expect("prefix import should be replaced");
         assert!(rendered.contains("--tw-color-red-500: #ef4444"));
         assert!(rendered.contains("color: var(--tw-color-red-500)"));
         assert!(rendered.contains("--my-brand: #123"));
@@ -2659,7 +2872,7 @@ mod tests {
 
     #[test]
     fn returns_none_when_framework_import_is_missing() {
-        assert!(apply_framework_import_alias("body { color: black; }", ".p-2{}").is_none());
+        assert!(render_framework_import("body { color: black; }", ".p-2{}").is_none());
     }
 
     #[test]
@@ -2709,12 +2922,10 @@ mod tests {
             overrides.dark_variant_selector,
             Some("&:where(.dark, .dark *)".to_string())
         );
-        assert!(overrides
-            .custom_variant_selectors
-            .contains(&(
-                "theme-midnight".to_string(),
-                "&:where([data-theme=\"midnight\"] *)".to_string()
-            )));
+        assert!(overrides.custom_variant_selectors.contains(&(
+            "theme-midnight".to_string(),
+            "&:where([data-theme=\"midnight\"] *)".to_string()
+        )));
         assert!(overrides
             .custom_variant_selectors
             .iter()
@@ -2726,10 +2937,9 @@ mod tests {
         assert!(overrides
             .theme_variable_values
             .contains(&("--color-brand-500".to_string(), "#10b981".to_string())));
-        assert!(overrides
-            .custom_utilities
-            .iter()
-            .any(|(name, body)| name == "scrollbar-hidden" && body.contains("&::-webkit-scrollbar")));
+        assert!(overrides.custom_utilities.iter().any(
+            |(name, body)| name == "scrollbar-hidden" && body.contains("&::-webkit-scrollbar")
+        ));
         assert!(!overrides.global_theme_reset);
         assert!(overrides
             .disabled_namespaces
@@ -2935,9 +3145,7 @@ body { margin: 0; }
         assert!(directives
             .inline_include
             .contains(&"focus:underline".to_string()));
-        assert!(directives
-            .inline_exclude
-            .contains(&"bg-red-50".to_string()));
+        assert!(directives.inline_exclude.contains(&"bg-red-50".to_string()));
         assert!(directives
             .inline_exclude
             .contains(&"hover:bg-red-500".to_string()));
@@ -3052,9 +3260,8 @@ body { margin: 0; }
     fn expands_alpha_function_in_css() {
         let css = ".my-element { color: --alpha(var(--color-lime-300) / 50%); }";
         let compiled = expand_build_time_functions(css);
-        assert!(
-            compiled.contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);")
-        );
+        assert!(compiled
+            .contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);"));
     }
 
     #[test]

@@ -84,6 +84,10 @@ This repository references Tailwind CSS v4.1 for behavior and ideas but is not a
 `ironframe_cli build --input-css` also supports:
 - local CSS import inlining (`@import "./tokens.css";`)
 - utility inlining with `@apply` for known utilities (`@apply rounded-b-lg shadow-md;`)
+- Tailwind-style framework import splitting:
+  - `@import "tailwindcss";` injects theme + preflight + utilities
+  - `@import "tailwindcss/theme.css";`, `@import "tailwindcss/preflight.css";`, `@import "tailwindcss/utilities.css";` can be imported individually
+  - omitting `preflight.css` disables preflight injection
 - build-time functions in CSS:
   - `--alpha(var(--color-lime-300) / 50%)` -> `color-mix(in oklab, var(--color-lime-300) 50%, transparent)`
   - `--spacing(4)` -> `calc(var(--spacing) * 4)`
