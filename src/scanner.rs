@@ -253,7 +253,13 @@ enum Extractor {
 
 fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
     match extractor {
-        Extractor::Markup => extract_class_attributes(text),
+        Extractor::Markup => {
+            let mut candidates = extract_class_attributes(text);
+            candidates.extend(extract_class_helpers(text));
+            candidates.extend(extract_dom_class_list_calls(text));
+            candidates.extend(extract_class_like_values(text));
+            candidates
+        }
         Extractor::Script => {
             let mut candidates = extract_string_literals(text);
             candidates.extend(extract_class_helpers(text));
@@ -265,7 +271,11 @@ fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
             candidates.extend(extract_string_literals(text));
             candidates
         }
-        Extractor::Data => extract_class_attributes(text),
+        Extractor::Data => {
+            let mut candidates = extract_class_attributes(text);
+            candidates.extend(extract_class_like_values(text));
+            candidates
+        }
         Extractor::Fallback => {
             let mut candidates = extract_class_attributes(text);
             candidates.extend(extract_string_literals(text));
@@ -374,6 +384,179 @@ fn extract_class_helpers(text: &str) -> Vec<String> {
     }
 
     out
+}
+
+fn extract_dom_class_list_calls(text: &str) -> Vec<String> {
+    const METHODS: [&str; 5] = [
+        "classList.add",
+        "classList.remove",
+        "classList.toggle",
+        "classList.replace",
+        "classList.contains",
+    ];
+    let mut out = Vec::new();
+
+    for method in METHODS {
+        for (idx, _) in text.match_indices(method) {
+            if !is_identifier_boundary(text, idx, method.len()) {
+                continue;
+            }
+            let mut pos = idx + method.len();
+            pos = skip_whitespace(text, pos);
+            if pos >= text.len() || !text[pos..].starts_with('(') {
+                continue;
+            }
+            let (args, end) = extract_parenthesized(text, pos);
+            if !args.is_empty() {
+                out.extend(extract_string_literals(args));
+            }
+            if end <= pos {
+                break;
+            }
+        }
+    }
+
+    out
+}
+
+fn extract_class_like_values(text: &str) -> Vec<String> {
+    let mut out = extract_class_like_assignment_values(text);
+    out.extend(extract_class_like_quoted_pair_values(text));
+    out
+}
+
+fn extract_class_like_assignment_values(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("//") {
+            continue;
+        }
+
+        let Some((key, value)) = split_key_value_pair(trimmed) else {
+            continue;
+        };
+        if !key_looks_class_related(key) {
+            continue;
+        }
+
+        let mut literals = extract_string_literals(value);
+        if literals.is_empty() {
+            let plain = value
+                .split('#')
+                .next()
+                .unwrap_or(value)
+                .trim()
+                .trim_end_matches(',')
+                .trim();
+            if !plain.is_empty() {
+                literals.push(plain.to_string());
+            }
+        }
+        out.extend(literals);
+    }
+
+    out
+}
+
+fn extract_class_like_quoted_pair_values(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut idx = 0;
+
+    while idx < text.len() {
+        let Some((quote, size)) = next_char(text, idx) else {
+            break;
+        };
+        if quote != '"' && quote != '\'' {
+            idx += size;
+            continue;
+        }
+
+        let (key, key_end) = parse_string_literal(text, idx + size, quote);
+        let mut value_start = skip_whitespace(text, key_end);
+
+        let Some((next_quote, next_size)) = next_char(text, value_start) else {
+            idx = key_end;
+            continue;
+        };
+        if (next_quote != '"' && next_quote != '\'') || !key_looks_class_related(&key) {
+            idx = key_end;
+            continue;
+        }
+
+        value_start += next_size;
+        let (value, value_end) = parse_string_literal(text, value_start, next_quote);
+        if !value.is_empty() {
+            out.push(value);
+        }
+        idx = value_end;
+    }
+
+    out
+}
+
+fn split_key_value_pair(line: &str) -> Option<(&str, &str)> {
+    let mut idx = 0;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    while idx < line.len() {
+        let Some((ch, size)) = next_char(line, idx) else {
+            break;
+        };
+
+        if let Some(active_quote) = quote {
+            if escaped {
+                escaped = false;
+                idx += size;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                idx += size;
+                continue;
+            }
+            if ch == active_quote {
+                quote = None;
+            }
+            idx += size;
+            continue;
+        }
+
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            ':' | '=' => return Some((&line[..idx], &line[idx + size..])),
+            _ => {}
+        }
+        idx += size;
+    }
+
+    None
+}
+
+fn key_looks_class_related(raw: &str) -> bool {
+    let mut key = raw.trim().trim_start_matches('-').trim();
+    key = key.trim_end_matches(',').trim();
+
+    if key.starts_with('"') && key.ends_with('"') && key.len() >= 2 {
+        key = &key[1..key.len() - 1];
+    } else if key.starts_with('\'') && key.ends_with('\'') && key.len() >= 2 {
+        key = &key[1..key.len() - 1];
+    }
+
+    if key.is_empty() {
+        return false;
+    }
+
+    let lower = key.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "class" | "classname" | "classes" | "classlist"
+    ) || lower.ends_with("class")
+        || lower.ends_with("classname")
+        || lower.ends_with("classes")
+        || lower.ends_with("classlist")
 }
 
 fn build_globset(patterns: &[String]) -> Result<GlobSet, ScanError> {
@@ -881,6 +1064,18 @@ fn tokenize_class_list(input: &str) -> Vec<String> {
         let Some((ch, size)) = next_char(input, idx) else {
             break;
         };
+
+        if bracket_depth == 0 && paren_depth == 0 {
+            if let Some(next_idx) = skip_template_directive(input, idx) {
+                if !current.is_empty() {
+                    tokens.push(current.clone());
+                    current.clear();
+                }
+                idx = next_idx;
+                continue;
+            }
+        }
+
         if ch == '\\' {
             let next_idx = idx + size;
             if let Some((next, next_size)) = next_char(input, next_idx) {
@@ -919,6 +1114,28 @@ fn tokenize_class_list(input: &str) -> Vec<String> {
     }
 
     tokens
+}
+
+fn skip_template_directive(input: &str, idx: usize) -> Option<usize> {
+    for (open, close) in [("{{", "}}"), ("{%", "%}"), ("{#", "#}")] {
+        if input[idx..].starts_with(open) {
+            return Some(skip_until_delimiter(input, idx + open.len(), close));
+        }
+    }
+    None
+}
+
+fn skip_until_delimiter(input: &str, mut idx: usize, close: &str) -> usize {
+    while idx < input.len() {
+        if input[idx..].starts_with(close) {
+            return idx + close.len();
+        }
+        let Some((_, size)) = next_char(input, idx) else {
+            break;
+        };
+        idx += size;
+    }
+    input.len()
 }
 
 fn is_valid_candidate(token: &str) -> bool {
@@ -1233,6 +1450,52 @@ body: '<div class="text-sm md:gap-0.5">Hello</div>'
         assert!(classes.contains(&"bg-[url('/x.png')]".to_string()));
         assert!(!classes.iter().any(|token| token.contains('>')));
         assert!(!classes.iter().any(|token| token == "text-xs\\\">Sound"));
+    }
+
+    #[test]
+    fn keeps_classes_inside_go_template_blocks() {
+        let classes = extract_classes(
+            r#"<div class="{{if .Goal}}bg-green-50 border-green-500 text-green-600{{else}}bg-white border-gray-300 text-gray-400 group-hover:border-blue-500 group-hover:text-blue-500{{end}}"></div>"#,
+        );
+        assert!(classes.contains(&"bg-green-50".to_string()));
+        assert!(classes.contains(&"group-hover:text-blue-500".to_string()));
+        assert!(!classes.iter().any(|token| token.contains("{{")));
+        assert!(!classes.iter().any(|token| token == "if"));
+    }
+
+    #[test]
+    fn extracts_classlist_calls_from_markup_scripts() {
+        let classes = extract_classes(
+            r#"
+<script>
+  el.classList.add("translate-x-3.5", "translate-y-0", "opacity-100");
+  el.classList.remove("ring-[color:var(--tool-danger)]");
+</script>
+"#,
+        );
+        assert!(classes.contains(&"translate-x-3.5".to_string()));
+        assert!(classes.contains(&"translate-y-0".to_string()));
+        assert!(classes.contains(&"opacity-100".to_string()));
+        assert!(classes.contains(&"ring-[color:var(--tool-danger)]".to_string()));
+    }
+
+    #[test]
+    fn extracts_class_like_values_from_data_keys() {
+        let classes = extract_classes_by_extension(
+            r#"
+card:
+  class: bg-cyan-50 text-cyan-700
+  accentClass: "border-cyan-400"
+  offsetClass: "md:mt-12"
+  title: "Revenue growth"
+"#,
+            Some("yaml"),
+        );
+        assert!(classes.contains(&"bg-cyan-50".to_string()));
+        assert!(classes.contains(&"text-cyan-700".to_string()));
+        assert!(classes.contains(&"border-cyan-400".to_string()));
+        assert!(classes.contains(&"md:mt-12".to_string()));
+        assert!(!classes.contains(&"Revenue".to_string()));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {

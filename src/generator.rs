@@ -312,6 +312,7 @@ fn generate_rule(
         ),
         "leading-none" => rule(".leading-none", "line-height:1", config),
         "leading-tight" => rule(".leading-tight", "line-height:1.25", config),
+        "leading-snug" => rule(".leading-snug", "line-height:1.375", config),
         "leading-normal" => rule(".leading-normal", "line-height:1.5", config),
         "leading-relaxed" => rule(".leading-relaxed", "line-height:1.625", config),
         "leading-loose" => rule(".leading-loose", "line-height:2", config),
@@ -477,6 +478,7 @@ fn generate_rule(
             .or_else(|| generate_accent_palette_color_rule(base, config))
             .or_else(|| generate_caret_arbitrary_color_rule(base, config))
             .or_else(|| generate_caret_palette_color_rule(base, config))
+            .or_else(|| generate_shadow_value_rule(base, config))
             .or_else(|| generate_shadow_color_rule(base, config))
             .or_else(|| generate_inset_shadow_color_rule(base, config))
             .or_else(|| generate_ring_color_rule(base, config))
@@ -568,6 +570,7 @@ fn generate_rule(
             .or_else(|| generate_grid_column_rule(base, config))
             .or_else(|| generate_grid_row_rule(base, config))
             .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
+            .or_else(|| generate_opacity_rule(base, config))
             .or_else(|| generate_layout_rule(base, config, variant_tables)),
     });
 
@@ -1117,9 +1120,8 @@ fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
         .strip_prefix("text-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("color:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("color:{}", value), config);
     }
 
     None
@@ -1962,6 +1964,30 @@ fn generate_backdrop_invert_rule(class: &str, config: &GeneratorConfig) -> Optio
     )
 }
 
+fn generate_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("opacity-[").and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("opacity:{}", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("opacity-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("opacity:var({})", raw), config);
+    }
+
+    let number = class.strip_prefix("opacity-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(&selector, &format!("opacity:{}%", number), config)
+}
+
 fn generate_backdrop_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
@@ -2527,9 +2553,15 @@ fn generate_background_arbitrary_color_rule(
         return rule(&selector, &format!("background-color:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("bg-[").and_then(|v| v.strip_suffix(']')) {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("background-color:{}", raw), config);
+    if let Some(rest) = class.strip_prefix("bg-[") {
+        if let Some(raw) = rest.strip_suffix(']') {
+            let color = parse_arbitrary_color_value(raw)?;
+            return rule(&selector, &format!("background-color:{}", color), config);
+        }
+        if let Some((raw, opacity_raw)) = rest.split_once("]/") {
+            let color = parse_arbitrary_color_value(raw)?;
+            let mixed = mix_color_with_optional_opacity(&color, Some(opacity_raw))?;
+            return rule(&selector, &format!("background-color:{}", mixed), config);
         }
     }
 
@@ -2603,9 +2635,8 @@ fn generate_fill_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
         .strip_prefix("fill-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("fill:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("fill:{}", value), config);
     }
 
     None
@@ -2664,9 +2695,8 @@ fn generate_stroke_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -
         .strip_prefix("stroke-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("stroke:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("stroke:{}", value), config);
     }
 
     None
@@ -3020,31 +3050,46 @@ fn gradient_stop_rule(
         "to" => ("--tw-gradient-to", "--tw-gradient-to-position"),
         _ => return None,
     };
-    if let Some(value) = raw.strip_suffix('%') {
-        if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit() || c == '.') {
-            return rule(selector, &format!("{}:{}%", prop_pos, value), config);
+
+    let (token, opacity) = split_slash_modifier(raw);
+
+    if opacity.is_none() {
+        if let Some(value) = token.strip_suffix('%') {
+            if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+                return rule(selector, &format!("{}:{}%", prop_pos, value), config);
+            }
         }
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        return rule(selector, &format!("{}:{}", prop_color, value), config);
+
+    if let Some(value) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        let color = parse_arbitrary_color_value(value)?;
+        let mixed = mix_color_with_optional_opacity(&color, opacity)?;
+        return rule(selector, &format!("{}:{}", prop_color, mixed), config);
     }
-    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
-        return rule(selector, &format!("{}:var({})", prop_color, value), config);
+    if let Some(value) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        let color = format!("var({})", value);
+        let mixed = mix_color_with_optional_opacity(&color, opacity)?;
+        return rule(selector, &format!("{}:{}", prop_color, mixed), config);
     }
-    let color_value = match raw {
+
+    let color_value = match token {
         "inherit" => "inherit".to_string(),
         "current" => "currentColor".to_string(),
         "transparent" => "transparent".to_string(),
         "black" => "var(--color-black)".to_string(),
         "white" => "var(--color-white)".to_string(),
         _ => {
-            if !raw.contains('-') {
+            if !token.contains('-') {
                 return None;
             }
-            format!("var(--color-{})", raw)
+            format!("var(--color-{})", token)
         }
     };
-    rule(selector, &format!("{}:{}", prop_color, color_value), config)
+    let mixed = mix_color_with_optional_opacity(&color_value, opacity)?;
+    rule(selector, &format!("{}:{}", prop_color, mixed), config)
 }
 
 fn normalize_content_value(raw: &str) -> String {
@@ -3187,9 +3232,8 @@ fn generate_decoration_arbitrary_color_rule(
         .strip_prefix("decoration-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("text-decoration-color:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("text-decoration-color:{}", value), config);
     }
 
     None
@@ -3408,9 +3452,8 @@ fn generate_accent_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -
         .strip_prefix("accent-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("accent-color:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("accent-color:{}", value), config);
     }
 
     None
@@ -3462,9 +3505,8 @@ fn generate_caret_arbitrary_color_rule(class: &str, config: &GeneratorConfig) ->
         .strip_prefix("caret-[")
         .and_then(|v| v.strip_suffix(']'))
     {
-        if is_color_like_value(raw) {
-            return rule(&selector, &format!("caret-color:{}", raw), config);
-        }
+        let value = parse_arbitrary_color_value(raw)?;
+        return rule(&selector, &format!("caret-color:{}", value), config);
     }
 
     None
@@ -3696,6 +3738,33 @@ fn parse_color_opacity_value(raw: &str) -> Option<String> {
     None
 }
 
+fn parse_arbitrary_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+
+    let normalized = normalize_arbitrary_value(raw);
+    if let Some(value) = normalized.strip_prefix("color:") {
+        if value.is_empty() {
+            return None;
+        }
+        return is_color_like_value(value).then(|| value.to_string());
+    }
+
+    is_color_like_value(&normalized).then_some(normalized)
+}
+
+fn mix_color_with_optional_opacity(color: &str, opacity_raw: Option<&str>) -> Option<String> {
+    if let Some(opacity_raw) = opacity_raw {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return Some(format!(
+            "color-mix(in oklab,{} {},transparent)",
+            color, opacity_value
+        ));
+    }
+    Some(color.to_string())
+}
+
 fn is_theme_color_token(token: &str) -> bool {
     !token.is_empty()
         && token
@@ -3787,6 +3856,39 @@ fn parse_palette_color_value(raw: &str) -> Option<String> {
     Some(color_value)
 }
 
+fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("shadow-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        let normalized = normalize_arbitrary_value(raw);
+        if normalized.is_empty() {
+            return None;
+        }
+        if !normalized.starts_with("var(") && parse_arbitrary_color_value(raw).is_some() {
+            return None;
+        }
+        return rule(&selector, &format!("box-shadow:{}", normalized), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("shadow-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if raw.is_empty() || raw.starts_with("color:") || raw.ends_with("-color") {
+            return None;
+        }
+        return rule(&selector, &format!("box-shadow:var({})", raw), config);
+    }
+
+    None
+}
+
 fn generate_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     let raw = class.strip_prefix("shadow-")?;
@@ -3795,10 +3897,8 @@ fn generate_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<S
     }
 
     if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        if !is_color_like_value(value) {
-            return None;
-        }
-        return rule(&selector, &format!("--tw-shadow-color:{}", value), config);
+        let color = parse_arbitrary_color_value(value)?;
+        return rule(&selector, &format!("--tw-shadow-color:{}", color), config);
     }
     if let Some(value) = raw
         .strip_prefix("(color:")
@@ -3840,12 +3940,10 @@ fn generate_inset_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Op
     }
 
     if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        if !is_color_like_value(value) {
-            return None;
-        }
+        let color = parse_arbitrary_color_value(value)?;
         return rule(
             &selector,
-            &format!("--tw-inset-shadow-color:{}", value),
+            &format!("--tw-inset-shadow-color:{}", color),
             config,
         );
     }
@@ -3889,10 +3987,8 @@ fn generate_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<Str
     }
 
     if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        if !is_color_like_value(value) {
-            return None;
-        }
-        return rule(&selector, &format!("--tw-ring-color:{}", value), config);
+        let color = parse_arbitrary_color_value(value)?;
+        return rule(&selector, &format!("--tw-ring-color:{}", color), config);
     }
     if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
         if value.is_empty() {
@@ -3921,12 +4017,10 @@ fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Opti
     }
 
     if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-        if !is_color_like_value(value) {
-            return None;
-        }
+        let color = parse_arbitrary_color_value(value)?;
         return rule(
             &selector,
-            &format!("--tw-inset-ring-color:{}", value),
+            &format!("--tw-inset-ring-color:{}", color),
             config,
         );
     }
@@ -6807,6 +6901,11 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
 fn generate_transform_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     match class {
+        "transform" => rule(
+            &selector,
+            "transform:var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            config,
+        ),
         "transform-none" => rule(&selector, "transform:none", config),
         "transform-gpu" => rule(
             &selector,
@@ -10018,6 +10117,7 @@ mod tests {
                 "leading-6".to_string(),
                 "leading-(--my-leading)".to_string(),
                 "leading-[1.5]".to_string(),
+                "leading-snug".to_string(),
                 "leading-normal".to_string(),
                 "leading-loose".to_string(),
                 "md:leading-7".to_string(),
@@ -10054,6 +10154,8 @@ mod tests {
         assert!(result.css.contains("line-height: var(--my-leading)"));
         assert!(result.css.contains(".leading-\\[1.5\\]"));
         assert!(result.css.contains("line-height: 1.5"));
+        assert!(result.css.contains(".leading-snug"));
+        assert!(result.css.contains("line-height: 1.375"));
         assert!(result.css.contains(".leading-normal"));
         assert!(result.css.contains("line-height: 1.5"));
         assert!(result.css.contains(".leading-loose"));
@@ -11351,6 +11453,41 @@ mod tests {
     }
 
     #[test]
+    fn generates_opacity_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "opacity-0".to_string(),
+                "opacity-5".to_string(),
+                "opacity-50".to_string(),
+                "opacity-100".to_string(),
+                "opacity-[.15]".to_string(),
+                "opacity-(--my-opacity)".to_string(),
+                "disabled:opacity-50".to_string(),
+                "group-hover:opacity-100".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".opacity-0"));
+        assert!(result.css.contains("opacity: 0%"));
+        assert!(result.css.contains(".opacity-5"));
+        assert!(result.css.contains("opacity: 5%"));
+        assert!(result.css.contains(".opacity-50"));
+        assert!(result.css.contains("opacity: 50%"));
+        assert!(result.css.contains(".opacity-100"));
+        assert!(result.css.contains("opacity: 100%"));
+        assert!(result.css.contains(".opacity-\\[.15\\]"));
+        assert!(result.css.contains("opacity: .15"));
+        assert!(result.css.contains(".opacity-\\(--my-opacity\\)"));
+        assert!(result.css.contains("opacity: var(--my-opacity)"));
+        assert!(result.css.contains(".disabled\\:opacity-50:disabled"));
+        assert!(result.css.contains(".group-hover\\:opacity-100"));
+    }
+
+    #[test]
     fn generates_backdrop_saturate_rules() {
         let config = GeneratorConfig {
             minify: false,
@@ -11957,6 +12094,8 @@ mod tests {
                 "bg-sky-500/[37%]".to_string(),
                 "bg-sky-500/(--my-opacity)".to_string(),
                 "bg-[#50d71e]".to_string(),
+                "bg-[color:var(--tool-surface)]".to_string(),
+                "bg-[color:var(--tool-surface)]/90".to_string(),
                 "bg-(--my-color)".to_string(),
                 "hover:bg-fuchsia-500".to_string(),
                 "md:bg-green-500".to_string(),
@@ -11991,6 +12130,16 @@ mod tests {
         ));
         assert!(result.css.contains(".bg-\\[#50d71e\\]"));
         assert!(result.css.contains("background-color: #50d71e"));
+        assert!(result
+            .css
+            .contains(".bg-\\[color\\:var\\(--tool-surface\\)\\]"));
+        assert!(result.css.contains("background-color: var(--tool-surface)"));
+        assert!(result
+            .css
+            .contains(".bg-\\[color\\:var\\(--tool-surface\\)\\]\\/90"));
+        assert!(result.css.contains(
+            "background-color: color-mix(in oklab,var(--tool-surface) 90%,transparent)"
+        ));
         assert!(result.css.contains(".bg-\\(--my-color\\)"));
         assert!(result.css.contains("background-color: var(--my-color)"));
         assert!(result.css.contains(".hover\\:bg-fuchsia-500:hover"));
@@ -12025,12 +12174,14 @@ mod tests {
                 "bg-conic-(--my-conic)".to_string(),
                 "bg-conic-[conic-gradient(from_0deg,red,blue)]".to_string(),
                 "from-indigo-500".to_string(),
+                "from-white/10".to_string(),
                 "from-10%".to_string(),
                 "from-(--my-from)".to_string(),
                 "from-[#50d71e]".to_string(),
                 "via-purple-500".to_string(),
                 "via-30%".to_string(),
                 "to-pink-500".to_string(),
+                "to-white/30".to_string(),
                 "to-90%".to_string(),
                 "md:from-yellow-500".to_string(),
                 "hover:bg-none".to_string(),
@@ -12117,6 +12268,10 @@ mod tests {
         assert!(result
             .css
             .contains("--tw-gradient-from: var(--color-indigo-500)"));
+        assert!(result.css.contains(".from-white\\/10"));
+        assert!(result.css.contains(
+            "--tw-gradient-from: color-mix(in oklab,var(--color-white) 10%,transparent)"
+        ));
         assert!(result.css.contains(".from-10\\%"));
         assert!(result.css.contains("--tw-gradient-from-position: 10%"));
         assert!(result.css.contains(".from-\\(--my-from\\)"));
@@ -12133,6 +12288,10 @@ mod tests {
         assert!(result
             .css
             .contains("--tw-gradient-to: var(--color-pink-500)"));
+        assert!(result.css.contains(".to-white\\/30"));
+        assert!(result.css.contains(
+            "--tw-gradient-to: color-mix(in oklab,var(--color-white) 30%,transparent)"
+        ));
         assert!(result.css.contains(".to-90\\%"));
         assert!(result.css.contains("--tw-gradient-to-position: 90%"));
         assert!(result.css.contains(".md\\:from-yellow-500"));
@@ -12158,6 +12317,7 @@ mod tests {
                 "text-(--my-color)".to_string(),
                 "text-(color:--my-color-hinted)".to_string(),
                 "text-[#50d71e]".to_string(),
+                "text-[color:var(--accent)]".to_string(),
                 "text-red-500".to_string(),
                 "text-red-500/75".to_string(),
                 "text-red-500/[37%]".to_string(),
@@ -12185,6 +12345,8 @@ mod tests {
         assert!(result.css.contains("color: var(--my-color-hinted)"));
         assert!(result.css.contains(".text-\\[#50d71e\\]"));
         assert!(result.css.contains("color: #50d71e"));
+        assert!(result.css.contains(".text-\\[color\\:var\\(--accent\\)\\]"));
+        assert!(result.css.contains("color: var(--accent)"));
         assert!(result.css.contains(".text-red-500"));
         assert!(result.css.contains("color: var(--color-red-500)"));
         assert!(result.css.contains(".text-red-500\\/75"));
@@ -12511,6 +12673,7 @@ mod tests {
                 "accent-purple-500/[37%]".to_string(),
                 "accent-purple-500/(--my-opacity)".to_string(),
                 "accent-[#50d71e]".to_string(),
+                "accent-[color:var(--tool-accent)]".to_string(),
                 "accent-(--my-accent-color)".to_string(),
                 "hover:accent-pink-500".to_string(),
                 "md:accent-lime-600".to_string(),
@@ -12545,6 +12708,10 @@ mod tests {
         ));
         assert!(result.css.contains(".accent-\\[#50d71e\\]"));
         assert!(result.css.contains("accent-color: #50d71e"));
+        assert!(result
+            .css
+            .contains(".accent-\\[color\\:var\\(--tool-accent\\)\\]"));
+        assert!(result.css.contains("accent-color: var(--tool-accent)"));
         assert!(result.css.contains(".accent-\\(--my-accent-color\\)"));
         assert!(result.css.contains("accent-color: var(--my-accent-color)"));
         assert!(result.css.contains(".hover\\:accent-pink-500:hover"));
@@ -12570,6 +12737,7 @@ mod tests {
                 "caret-purple-500/[37%]".to_string(),
                 "caret-purple-500/(--my-opacity)".to_string(),
                 "caret-[#50d71e]".to_string(),
+                "caret-[color:var(--tool-accent)]".to_string(),
                 "caret-(--my-caret-color)".to_string(),
                 "md:caret-lime-600".to_string(),
             ],
@@ -12603,6 +12771,10 @@ mod tests {
         ));
         assert!(result.css.contains(".caret-\\[#50d71e\\]"));
         assert!(result.css.contains("caret-color: #50d71e"));
+        assert!(result
+            .css
+            .contains(".caret-\\[color\\:var\\(--tool-accent\\)\\]"));
+        assert!(result.css.contains("caret-color: var(--tool-accent)"));
         assert!(result.css.contains(".caret-\\(--my-caret-color\\)"));
         assert!(result.css.contains("caret-color: var(--my-caret-color)"));
         assert!(result.css.contains(".md\\:caret-lime-600"));
@@ -13123,6 +13295,8 @@ mod tests {
                 "shadow-xl".to_string(),
                 "shadow-2xl".to_string(),
                 "shadow-none".to_string(),
+                "shadow-[0_0_20px_rgba(255,255,255,0.3)]".to_string(),
+                "shadow-(--portal-shadow)".to_string(),
             ],
             &config,
         );
@@ -13152,6 +13326,12 @@ mod tests {
             .contains("box-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))"));
         assert!(result.css.contains(".shadow-none"));
         assert!(result.css.contains("box-shadow: none"));
+        assert!(result
+            .css
+            .contains(".shadow-\\[0_0_20px_rgba\\(255\\,255\\,255\\,0.3\\)\\]"));
+        assert!(result.css.contains("box-shadow: 0 0 20px rgba(255,255,255,0.3)"));
+        assert!(result.css.contains(".shadow-\\(--portal-shadow\\)"));
+        assert!(result.css.contains("box-shadow: var(--portal-shadow)"));
     }
 
     #[test]
@@ -13265,6 +13445,7 @@ mod tests {
                 "ring-rose-500/30".to_string(),
                 "ring-(--my-ring-color)".to_string(),
                 "ring-[#243c5a]".to_string(),
+                "ring-[color:var(--tool-danger)]".to_string(),
             ],
             &config,
         );
@@ -13280,6 +13461,10 @@ mod tests {
         assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
         assert!(result.css.contains(".ring-\\[#243c5a\\]"));
         assert!(result.css.contains("--tw-ring-color: #243c5a"));
+        assert!(result
+            .css
+            .contains(".ring-\\[color\\:var\\(--tool-danger\\)\\]"));
+        assert!(result.css.contains("--tw-ring-color: var(--tool-danger)"));
     }
 
     #[test]
@@ -16985,6 +17170,7 @@ mod tests {
         };
         let result = generate(
             &[
+                "transform".to_string(),
                 "transform-none".to_string(),
                 "transform-gpu".to_string(),
                 "transform-cpu".to_string(),
@@ -16994,6 +17180,10 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".transform"));
+        assert!(result.css.contains(
+            "transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+        ));
         assert!(result.css.contains(".transform-none"));
         assert!(result.css.contains("transform: none"));
         assert!(result.css.contains(".transform-gpu"));

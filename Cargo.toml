@@ -1,7 +1,7 @@
 [package]
 name = "ironframe"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 authors = ["Finite Field, K.K."]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/finitefield-org/ironframe"
