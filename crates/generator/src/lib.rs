@@ -283,6 +283,26 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         "bg-blue-800" => rule(".bg-blue-800", "background-color:#1e40af", config),
         "bg-blue-900" => rule(".bg-blue-900", "background-color:#1e3a8a", config),
         _ => generate_text_shadow_rule(base, config)
+            .or_else(|| generate_drop_shadow_rule(base, config))
+            .or_else(|| generate_backdrop_blur_rule(base, config))
+            .or_else(|| generate_backdrop_brightness_rule(base, config))
+            .or_else(|| generate_backdrop_contrast_rule(base, config))
+            .or_else(|| generate_backdrop_grayscale_rule(base, config))
+            .or_else(|| generate_backdrop_hue_rotate_rule(base, config))
+            .or_else(|| generate_backdrop_invert_rule(base, config))
+            .or_else(|| generate_backdrop_opacity_rule(base, config))
+            .or_else(|| generate_backdrop_saturate_rule(base, config))
+            .or_else(|| generate_backdrop_sepia_rule(base, config))
+            .or_else(|| generate_blur_rule(base, config))
+            .or_else(|| generate_brightness_rule(base, config))
+            .or_else(|| generate_contrast_rule(base, config))
+            .or_else(|| generate_grayscale_rule(base, config))
+            .or_else(|| generate_hue_rotate_rule(base, config))
+            .or_else(|| generate_invert_rule(base, config))
+            .or_else(|| generate_saturate_rule(base, config))
+            .or_else(|| generate_sepia_rule(base, config))
+            .or_else(|| generate_backdrop_filter_rule(base, config))
+            .or_else(|| generate_filter_rule(base, config))
             .or_else(|| generate_text_arbitrary_color_rule(base, config))
             .or_else(|| generate_text_palette_color_rule(base, config))
             .or_else(|| generate_background_arbitrary_color_rule(base, config))
@@ -374,6 +394,868 @@ fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
         if is_color_like_value(raw) {
             return rule(&selector, &format!("color:{}", raw), config);
         }
+    }
+
+    None
+}
+
+fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "filter-none" {
+        return rule(&selector, "filter:none", config);
+    }
+
+    if let Some(raw) = class.strip_prefix("filter-[").and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:{}", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("filter-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:var({})", raw), config);
+    }
+
+    None
+}
+
+fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "blur-none" {
+        return rule(&selector, "filter:blur(0)", config);
+    }
+
+    if let Some(raw) = class.strip_prefix("blur-[").and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:blur({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("blur-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:blur(var({}))", raw), config);
+    }
+
+    let scale = class.strip_prefix("blur-")?;
+    if scale.is_empty() {
+        return None;
+    }
+    rule(&selector, &format!("filter:blur(var(--blur-{}))", scale), config)
+}
+
+fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "drop-shadow-none" {
+        return rule(&selector, "filter:drop-shadow(0 0 #0000)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("drop-shadow-(color:")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-drop-shadow-color:var({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("drop-shadow-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:drop-shadow({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("drop-shadow-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() || raw.starts_with("color:") {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:drop-shadow(var({}))", raw),
+            config,
+        );
+    }
+
+    let raw = class.strip_prefix("drop-shadow-")?;
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => Some("inherit".to_string()),
+        "current" => Some("currentColor".to_string()),
+        "transparent" => Some("transparent".to_string()),
+        "black" => Some("var(--color-black)".to_string()),
+        "white" => Some("var(--color-white)".to_string()),
+        _ if token.contains('-') => Some(format!("var(--color-{})", token)),
+        _ => None,
+    };
+
+    if let Some(color) = color_value {
+        if let Some(opacity_raw) = opacity {
+            let opacity_value = parse_color_opacity_value(opacity_raw)?;
+            return rule(
+                &selector,
+                &format!(
+                    "--tw-drop-shadow-color:color-mix(in oklab,{} {},transparent)",
+                    color, opacity_value
+                ),
+                config,
+            );
+        }
+        return rule(&selector, &format!("--tw-drop-shadow-color:{}", color), config);
+    }
+
+    if !token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "filter:drop-shadow(var(--drop-shadow-{}));--tw-drop-shadow-color:color-mix(in oklab,currentColor {},transparent)",
+                token, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(
+        &selector,
+        &format!("filter:drop-shadow(var(--drop-shadow-{}))", token),
+        config,
+    )
+}
+
+fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-blur-none" {
+        return rule(&selector, "backdrop-filter:blur(0)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-blur-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("backdrop-filter:blur({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-blur-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:blur(var({}))", raw),
+            config,
+        );
+    }
+
+    let scale = class.strip_prefix("backdrop-blur-")?;
+    if scale.is_empty() {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:blur(var(--blur-{}))", scale),
+        config,
+    )
+}
+
+fn generate_backdrop_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-brightness-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:brightness({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-brightness-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:brightness(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-brightness-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:brightness({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-contrast-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:contrast({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-contrast-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:contrast(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-contrast-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:contrast({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-grayscale" {
+        return rule(&selector, "backdrop-filter:grayscale(100%)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-grayscale-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:grayscale({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-grayscale-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:grayscale(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-grayscale-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:grayscale({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-hue-rotate-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:hue-rotate({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-hue-rotate-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:hue-rotate(var({}))", raw),
+            config,
+        );
+    }
+
+    if let Some(number) = class.strip_prefix("backdrop-hue-rotate-") {
+        if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:hue-rotate({}deg)", number),
+            config,
+        );
+    }
+
+    if let Some(number) = class.strip_prefix("-backdrop-hue-rotate-") {
+        if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:hue-rotate(calc({}deg * -1))", number),
+            config,
+        );
+    }
+
+    None
+}
+
+fn generate_backdrop_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-invert" {
+        return rule(&selector, "backdrop-filter:invert(100%)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-invert-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:invert({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-invert-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:invert(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-invert-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:invert({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-opacity-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:opacity({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-opacity-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:opacity(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-opacity-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:opacity({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-saturate-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:saturate({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-saturate-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:saturate(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-saturate-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:saturate({}%)", number),
+        config,
+    )
+}
+
+fn generate_backdrop_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-sepia" {
+        return rule(&selector, "backdrop-filter:sepia(100%)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-sepia-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:sepia({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-sepia-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("backdrop-filter:sepia(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("backdrop-sepia-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("backdrop-filter:sepia({}%)", number),
+        config,
+    )
+}
+
+fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("brightness-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:brightness({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("brightness-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:brightness(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("brightness-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("filter:brightness({}%)", number),
+        config,
+    )
+}
+
+fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("contrast-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:contrast({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("contrast-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:contrast(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("contrast-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("filter:contrast({}%)", number),
+        config,
+    )
+}
+
+fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "grayscale" {
+        return rule(&selector, "filter:grayscale(100%)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("grayscale-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:grayscale({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("grayscale-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:grayscale(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("grayscale-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("filter:grayscale({}%)", number),
+        config,
+    )
+}
+
+fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("hue-rotate-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:hue-rotate({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("hue-rotate-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:hue-rotate(var({}))", raw),
+            config,
+        );
+    }
+
+    if let Some(number) = class.strip_prefix("hue-rotate-") {
+        if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:hue-rotate({}deg)", number),
+            config,
+        );
+    }
+
+    if let Some(number) = class.strip_prefix("-hue-rotate-") {
+        if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:hue-rotate(calc({}deg * -1))", number),
+            config,
+        );
+    }
+
+    None
+}
+
+fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "invert" {
+        return rule(&selector, "filter:invert(100%)", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("invert-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:invert({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("invert-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:invert(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("invert-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(&selector, &format!("filter:invert({}%)", number), config)
+}
+
+fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("saturate-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:saturate({})", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("saturate-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("filter:saturate(var({}))", raw),
+            config,
+        );
+    }
+
+    let number = class.strip_prefix("saturate-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(
+        &selector,
+        &format!("filter:saturate({}%)", number),
+        config,
+    )
+}
+
+fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "sepia" {
+        return rule(&selector, "filter:sepia(100%)", config);
+    }
+
+    if let Some(raw) = class.strip_prefix("sepia-[").and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:sepia({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("sepia-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("filter:sepia(var({}))", raw), config);
+    }
+
+    let number = class.strip_prefix("sepia-")?;
+    if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    rule(&selector, &format!("filter:sepia({}%)", number), config)
+}
+
+fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "backdrop-filter-none" {
+        return rule(&selector, "backdrop-filter:none", config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-filter-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("backdrop-filter:{}", raw), config);
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("backdrop-filter-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("backdrop-filter:var({})", raw), config);
     }
 
     None
@@ -5124,6 +6006,751 @@ mod tests {
         assert!(result.css.contains("content: var(--my-content)"));
         assert!(result.css.contains(".before\\:content-\\['x'\\]:before"));
         assert!(result.css.contains(".md\\:before\\:content-\\['Desktop'\\]:before"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_filter_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "filter-none".to_string(),
+                "filter-[url('filters.svg#filter-id')]".to_string(),
+                "filter-(--my-filter)".to_string(),
+                "hover:filter-none".to_string(),
+                "md:filter-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".filter-none"));
+        assert!(result.css.contains("filter: none"));
+        assert!(result
+            .css
+            .contains(".filter-\\[url\\('filters.svg#filter-id'\\)\\]"));
+        assert!(result.css.contains("filter: url('filters.svg#filter-id')"));
+        assert!(result.css.contains(".filter-\\(--my-filter\\)"));
+        assert!(result.css.contains("filter: var(--my-filter)"));
+        assert!(result.css.contains(".hover\\:filter-none:hover"));
+        assert!(result.css.contains(".md\\:filter-none"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_blur_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "blur-none".to_string(),
+                "blur-xs".to_string(),
+                "blur-sm".to_string(),
+                "blur-lg".to_string(),
+                "blur-2xl".to_string(),
+                "blur-2xs".to_string(),
+                "blur-[2px]".to_string(),
+                "blur-(--my-blur)".to_string(),
+                "md:blur-lg".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".blur-none"));
+        assert!(result.css.contains("filter: blur(0)"));
+        assert!(result.css.contains(".blur-xs"));
+        assert!(result.css.contains("filter: blur(var(--blur-xs))"));
+        assert!(result.css.contains(".blur-sm"));
+        assert!(result.css.contains("filter: blur(var(--blur-sm))"));
+        assert!(result.css.contains(".blur-lg"));
+        assert!(result.css.contains("filter: blur(var(--blur-lg))"));
+        assert!(result.css.contains(".blur-2xl"));
+        assert!(result.css.contains("filter: blur(var(--blur-2xl))"));
+        assert!(result.css.contains(".blur-2xs"));
+        assert!(result.css.contains("filter: blur(var(--blur-2xs))"));
+        assert!(result.css.contains(".blur-\\[2px\\]"));
+        assert!(result.css.contains("filter: blur(2px)"));
+        assert!(result.css.contains(".blur-\\(--my-blur\\)"));
+        assert!(result.css.contains("filter: blur(var(--my-blur))"));
+        assert!(result.css.contains(".md\\:blur-lg"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_brightness_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "brightness-50".to_string(),
+                "brightness-100".to_string(),
+                "brightness-125".to_string(),
+                "brightness-200".to_string(),
+                "brightness-[1.75]".to_string(),
+                "brightness-(--my-brightness)".to_string(),
+                "md:brightness-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".brightness-50"));
+        assert!(result.css.contains("filter: brightness(50%)"));
+        assert!(result.css.contains(".brightness-100"));
+        assert!(result.css.contains("filter: brightness(100%)"));
+        assert!(result.css.contains(".brightness-125"));
+        assert!(result.css.contains("filter: brightness(125%)"));
+        assert!(result.css.contains(".brightness-200"));
+        assert!(result.css.contains("filter: brightness(200%)"));
+        assert!(result.css.contains(".brightness-\\[1.75\\]"));
+        assert!(result.css.contains("filter: brightness(1.75)"));
+        assert!(result.css.contains(".brightness-\\(--my-brightness\\)"));
+        assert!(result.css.contains("filter: brightness(var(--my-brightness))"));
+        assert!(result.css.contains(".md\\:brightness-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_contrast_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "contrast-50".to_string(),
+                "contrast-100".to_string(),
+                "contrast-125".to_string(),
+                "contrast-200".to_string(),
+                "contrast-[.25]".to_string(),
+                "contrast-(--my-contrast)".to_string(),
+                "md:contrast-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".contrast-50"));
+        assert!(result.css.contains("filter: contrast(50%)"));
+        assert!(result.css.contains(".contrast-100"));
+        assert!(result.css.contains("filter: contrast(100%)"));
+        assert!(result.css.contains(".contrast-125"));
+        assert!(result.css.contains("filter: contrast(125%)"));
+        assert!(result.css.contains(".contrast-200"));
+        assert!(result.css.contains("filter: contrast(200%)"));
+        assert!(result.css.contains(".contrast-\\[.25\\]"));
+        assert!(result.css.contains("filter: contrast(.25)"));
+        assert!(result.css.contains(".contrast-\\(--my-contrast\\)"));
+        assert!(result.css.contains("filter: contrast(var(--my-contrast))"));
+        assert!(result.css.contains(".md\\:contrast-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_drop_shadow_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "drop-shadow-none".to_string(),
+                "drop-shadow-md".to_string(),
+                "drop-shadow-3xl".to_string(),
+                "drop-shadow-[0_35px_35px_rgba(0,0,0,0.25)]".to_string(),
+                "drop-shadow-(--my-drop-shadow)".to_string(),
+                "drop-shadow-(color:--my-shadow-color)".to_string(),
+                "drop-shadow-indigo-500".to_string(),
+                "drop-shadow-cyan-500/50".to_string(),
+                "drop-shadow-xl/25".to_string(),
+                "md:drop-shadow-xl".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".drop-shadow-none"));
+        assert!(result.css.contains("filter: drop-shadow(0 0 #0000)"));
+        assert!(result.css.contains(".drop-shadow-md"));
+        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-md))"));
+        assert!(result.css.contains(".drop-shadow-3xl"));
+        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-3xl))"));
+        assert!(
+            result
+                .css
+                .contains(".drop-shadow-\\[0_35px_35px_rgba\\(0\\,0\\,0\\,0.25\\)\\]")
+        );
+        assert!(result.css.contains("filter: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))"));
+        assert!(result.css.contains(".drop-shadow-\\(--my-drop-shadow\\)"));
+        assert!(result
+            .css
+            .contains("filter: drop-shadow(var(--my-drop-shadow))"));
+        assert!(result
+            .css
+            .contains(".drop-shadow-\\(color\\:--my-shadow-color\\)"));
+        assert!(result
+            .css
+            .contains("--tw-drop-shadow-color: var(--my-shadow-color)"));
+        assert!(result.css.contains(".drop-shadow-indigo-500"));
+        assert!(result
+            .css
+            .contains("--tw-drop-shadow-color: var(--color-indigo-500)"));
+        assert!(result.css.contains(".drop-shadow-cyan-500\\/50"));
+        assert!(result.css.contains(
+            "--tw-drop-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
+        ));
+        assert!(result.css.contains(".drop-shadow-xl\\/25"));
+        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-xl))"));
+        assert!(result.css.contains(
+            "--tw-drop-shadow-color: color-mix(in oklab,currentColor 25%,transparent)"
+        ));
+        assert!(result.css.contains(".md\\:drop-shadow-xl"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_grayscale_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "grayscale".to_string(),
+                "grayscale-0".to_string(),
+                "grayscale-25".to_string(),
+                "grayscale-50".to_string(),
+                "grayscale-[0.5]".to_string(),
+                "grayscale-(--my-grayscale)".to_string(),
+                "md:grayscale-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".grayscale"));
+        assert!(result.css.contains("filter: grayscale(100%)"));
+        assert!(result.css.contains(".grayscale-0"));
+        assert!(result.css.contains("filter: grayscale(0%)"));
+        assert!(result.css.contains(".grayscale-25"));
+        assert!(result.css.contains("filter: grayscale(25%)"));
+        assert!(result.css.contains(".grayscale-50"));
+        assert!(result.css.contains("filter: grayscale(50%)"));
+        assert!(result.css.contains(".grayscale-\\[0.5\\]"));
+        assert!(result.css.contains("filter: grayscale(0.5)"));
+        assert!(result.css.contains(".grayscale-\\(--my-grayscale\\)"));
+        assert!(result.css.contains("filter: grayscale(var(--my-grayscale))"));
+        assert!(result.css.contains(".md\\:grayscale-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_hue_rotate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "hue-rotate-15".to_string(),
+                "hue-rotate-90".to_string(),
+                "hue-rotate-180".to_string(),
+                "hue-rotate-270".to_string(),
+                "-hue-rotate-15".to_string(),
+                "-hue-rotate-45".to_string(),
+                "-hue-rotate-90".to_string(),
+                "hue-rotate-[3.142rad]".to_string(),
+                "hue-rotate-(--my-hue-rotate)".to_string(),
+                "md:hue-rotate-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".hue-rotate-15"));
+        assert!(result.css.contains("filter: hue-rotate(15deg)"));
+        assert!(result.css.contains(".hue-rotate-90"));
+        assert!(result.css.contains("filter: hue-rotate(90deg)"));
+        assert!(result.css.contains(".hue-rotate-180"));
+        assert!(result.css.contains("filter: hue-rotate(180deg)"));
+        assert!(result.css.contains(".hue-rotate-270"));
+        assert!(result.css.contains("filter: hue-rotate(270deg)"));
+        assert!(result.css.contains(".-hue-rotate-15"));
+        assert!(result.css.contains("filter: hue-rotate(calc(15deg * -1))"));
+        assert!(result.css.contains(".-hue-rotate-45"));
+        assert!(result.css.contains("filter: hue-rotate(calc(45deg * -1))"));
+        assert!(result.css.contains(".-hue-rotate-90"));
+        assert!(result.css.contains("filter: hue-rotate(calc(90deg * -1))"));
+        assert!(result.css.contains(".hue-rotate-\\[3.142rad\\]"));
+        assert!(result.css.contains("filter: hue-rotate(3.142rad)"));
+        assert!(result.css.contains(".hue-rotate-\\(--my-hue-rotate\\)"));
+        assert!(result.css.contains("filter: hue-rotate(var(--my-hue-rotate))"));
+        assert!(result.css.contains(".md\\:hue-rotate-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_invert_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "invert".to_string(),
+                "invert-0".to_string(),
+                "invert-20".to_string(),
+                "invert-[.25]".to_string(),
+                "invert-(--my-inversion)".to_string(),
+                "md:invert-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".invert"));
+        assert!(result.css.contains("filter: invert(100%)"));
+        assert!(result.css.contains(".invert-0"));
+        assert!(result.css.contains("filter: invert(0%)"));
+        assert!(result.css.contains(".invert-20"));
+        assert!(result.css.contains("filter: invert(20%)"));
+        assert!(result.css.contains(".invert-\\[.25\\]"));
+        assert!(result.css.contains("filter: invert(.25)"));
+        assert!(result.css.contains(".invert-\\(--my-inversion\\)"));
+        assert!(result.css.contains("filter: invert(var(--my-inversion))"));
+        assert!(result.css.contains(".md\\:invert-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_saturate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "saturate-50".to_string(),
+                "saturate-100".to_string(),
+                "saturate-150".to_string(),
+                "saturate-200".to_string(),
+                "saturate-[.25]".to_string(),
+                "saturate-(--my-saturation)".to_string(),
+                "md:saturate-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".saturate-50"));
+        assert!(result.css.contains("filter: saturate(50%)"));
+        assert!(result.css.contains(".saturate-100"));
+        assert!(result.css.contains("filter: saturate(100%)"));
+        assert!(result.css.contains(".saturate-150"));
+        assert!(result.css.contains("filter: saturate(150%)"));
+        assert!(result.css.contains(".saturate-200"));
+        assert!(result.css.contains("filter: saturate(200%)"));
+        assert!(result.css.contains(".saturate-\\[.25\\]"));
+        assert!(result.css.contains("filter: saturate(.25)"));
+        assert!(result.css.contains(".saturate-\\(--my-saturation\\)"));
+        assert!(result.css.contains("filter: saturate(var(--my-saturation))"));
+        assert!(result.css.contains(".md\\:saturate-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_sepia_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "sepia".to_string(),
+                "sepia-0".to_string(),
+                "sepia-50".to_string(),
+                "sepia-[.25]".to_string(),
+                "sepia-(--my-sepia)".to_string(),
+                "md:sepia-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".sepia"));
+        assert!(result.css.contains("filter: sepia(100%)"));
+        assert!(result.css.contains(".sepia-0"));
+        assert!(result.css.contains("filter: sepia(0%)"));
+        assert!(result.css.contains(".sepia-50"));
+        assert!(result.css.contains("filter: sepia(50%)"));
+        assert!(result.css.contains(".sepia-\\[.25\\]"));
+        assert!(result.css.contains("filter: sepia(.25)"));
+        assert!(result.css.contains(".sepia-\\(--my-sepia\\)"));
+        assert!(result.css.contains("filter: sepia(var(--my-sepia))"));
+        assert!(result.css.contains(".md\\:sepia-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_filter_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-filter-none".to_string(),
+                "backdrop-filter-[url('filters.svg#filter-id')]".to_string(),
+                "backdrop-filter-(--my-backdrop-filter)".to_string(),
+                "hover:backdrop-filter-none".to_string(),
+                "md:backdrop-filter-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-filter-none"));
+        assert!(result.css.contains("backdrop-filter: none"));
+        assert!(result
+            .css
+            .contains(".backdrop-filter-\\[url\\('filters.svg#filter-id'\\)\\]"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: url('filters.svg#filter-id')"));
+        assert!(result.css.contains(".backdrop-filter-\\(--my-backdrop-filter\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: var(--my-backdrop-filter)"));
+        assert!(result
+            .css
+            .contains(".hover\\:backdrop-filter-none:hover"));
+        assert!(result.css.contains(".md\\:backdrop-filter-none"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_blur_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-blur-none".to_string(),
+                "backdrop-blur-sm".to_string(),
+                "backdrop-blur-md".to_string(),
+                "backdrop-blur-lg".to_string(),
+                "backdrop-blur-2xs".to_string(),
+                "backdrop-blur-[2px]".to_string(),
+                "backdrop-blur-(--my-backdrop-blur)".to_string(),
+                "md:backdrop-blur-lg".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-blur-none"));
+        assert!(result.css.contains("backdrop-filter: blur(0)"));
+        assert!(result.css.contains(".backdrop-blur-sm"));
+        assert!(result.css.contains("backdrop-filter: blur(var(--blur-sm))"));
+        assert!(result.css.contains(".backdrop-blur-md"));
+        assert!(result.css.contains("backdrop-filter: blur(var(--blur-md))"));
+        assert!(result.css.contains(".backdrop-blur-lg"));
+        assert!(result.css.contains("backdrop-filter: blur(var(--blur-lg))"));
+        assert!(result.css.contains(".backdrop-blur-2xs"));
+        assert!(result.css.contains("backdrop-filter: blur(var(--blur-2xs))"));
+        assert!(result.css.contains(".backdrop-blur-\\[2px\\]"));
+        assert!(result.css.contains("backdrop-filter: blur(2px)"));
+        assert!(result.css.contains(".backdrop-blur-\\(--my-backdrop-blur\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: blur(var(--my-backdrop-blur))"));
+        assert!(result.css.contains(".md\\:backdrop-blur-lg"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_brightness_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-brightness-50".to_string(),
+                "backdrop-brightness-110".to_string(),
+                "backdrop-brightness-150".to_string(),
+                "backdrop-brightness-[1.75]".to_string(),
+                "backdrop-brightness-(--my-backdrop-brightness)".to_string(),
+                "md:backdrop-brightness-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-brightness-50"));
+        assert!(result.css.contains("backdrop-filter: brightness(50%)"));
+        assert!(result.css.contains(".backdrop-brightness-110"));
+        assert!(result.css.contains("backdrop-filter: brightness(110%)"));
+        assert!(result.css.contains(".backdrop-brightness-150"));
+        assert!(result.css.contains("backdrop-filter: brightness(150%)"));
+        assert!(result.css.contains(".backdrop-brightness-\\[1.75\\]"));
+        assert!(result.css.contains("backdrop-filter: brightness(1.75)"));
+        assert!(result
+            .css
+            .contains(".backdrop-brightness-\\(--my-backdrop-brightness\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: brightness(var(--my-backdrop-brightness))"));
+        assert!(result.css.contains(".md\\:backdrop-brightness-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_contrast_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-contrast-50".to_string(),
+                "backdrop-contrast-125".to_string(),
+                "backdrop-contrast-200".to_string(),
+                "backdrop-contrast-[.25]".to_string(),
+                "backdrop-contrast-(--my-backdrop-contrast)".to_string(),
+                "md:backdrop-contrast-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-contrast-50"));
+        assert!(result.css.contains("backdrop-filter: contrast(50%)"));
+        assert!(result.css.contains(".backdrop-contrast-125"));
+        assert!(result.css.contains("backdrop-filter: contrast(125%)"));
+        assert!(result.css.contains(".backdrop-contrast-200"));
+        assert!(result.css.contains("backdrop-filter: contrast(200%)"));
+        assert!(result.css.contains(".backdrop-contrast-\\[.25\\]"));
+        assert!(result.css.contains("backdrop-filter: contrast(.25)"));
+        assert!(result
+            .css
+            .contains(".backdrop-contrast-\\(--my-backdrop-contrast\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: contrast(var(--my-backdrop-contrast))"));
+        assert!(result.css.contains(".md\\:backdrop-contrast-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_grayscale_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-grayscale".to_string(),
+                "backdrop-grayscale-0".to_string(),
+                "backdrop-grayscale-50".to_string(),
+                "backdrop-grayscale-200".to_string(),
+                "backdrop-grayscale-[0.5]".to_string(),
+                "backdrop-grayscale-(--my-backdrop-grayscale)".to_string(),
+                "md:backdrop-grayscale-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-grayscale"));
+        assert!(result.css.contains("backdrop-filter: grayscale(100%)"));
+        assert!(result.css.contains(".backdrop-grayscale-0"));
+        assert!(result.css.contains("backdrop-filter: grayscale(0%)"));
+        assert!(result.css.contains(".backdrop-grayscale-50"));
+        assert!(result.css.contains("backdrop-filter: grayscale(50%)"));
+        assert!(result.css.contains(".backdrop-grayscale-200"));
+        assert!(result.css.contains("backdrop-filter: grayscale(200%)"));
+        assert!(result.css.contains(".backdrop-grayscale-\\[0.5\\]"));
+        assert!(result.css.contains("backdrop-filter: grayscale(0.5)"));
+        assert!(result
+            .css
+            .contains(".backdrop-grayscale-\\(--my-backdrop-grayscale\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: grayscale(var(--my-backdrop-grayscale))"));
+        assert!(result.css.contains(".md\\:backdrop-grayscale-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_hue_rotate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-hue-rotate-90".to_string(),
+                "backdrop-hue-rotate-180".to_string(),
+                "backdrop-hue-rotate-270".to_string(),
+                "-backdrop-hue-rotate-15".to_string(),
+                "-backdrop-hue-rotate-45".to_string(),
+                "-backdrop-hue-rotate-90".to_string(),
+                "backdrop-hue-rotate-[3.142rad]".to_string(),
+                "backdrop-hue-rotate-(--my-backdrop-hue-rotation)".to_string(),
+                "md:backdrop-hue-rotate-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-hue-rotate-90"));
+        assert!(result.css.contains("backdrop-filter: hue-rotate(90deg)"));
+        assert!(result.css.contains(".backdrop-hue-rotate-180"));
+        assert!(result.css.contains("backdrop-filter: hue-rotate(180deg)"));
+        assert!(result.css.contains(".backdrop-hue-rotate-270"));
+        assert!(result.css.contains("backdrop-filter: hue-rotate(270deg)"));
+        assert!(result.css.contains(".-backdrop-hue-rotate-15"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: hue-rotate(calc(15deg * -1))"));
+        assert!(result.css.contains(".-backdrop-hue-rotate-45"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: hue-rotate(calc(45deg * -1))"));
+        assert!(result.css.contains(".-backdrop-hue-rotate-90"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: hue-rotate(calc(90deg * -1))"));
+        assert!(result.css.contains(".backdrop-hue-rotate-\\[3.142rad\\]"));
+        assert!(result.css.contains("backdrop-filter: hue-rotate(3.142rad)"));
+        assert!(result
+            .css
+            .contains(".backdrop-hue-rotate-\\(--my-backdrop-hue-rotation\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: hue-rotate(var(--my-backdrop-hue-rotation))"));
+        assert!(result.css.contains(".md\\:backdrop-hue-rotate-0"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_invert_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-invert".to_string(),
+                "backdrop-invert-0".to_string(),
+                "backdrop-invert-65".to_string(),
+                "backdrop-invert-[.25]".to_string(),
+                "backdrop-invert-(--my-backdrop-inversion)".to_string(),
+                "md:backdrop-invert".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-invert"));
+        assert!(result.css.contains("backdrop-filter: invert(100%)"));
+        assert!(result.css.contains(".backdrop-invert-0"));
+        assert!(result.css.contains("backdrop-filter: invert(0%)"));
+        assert!(result.css.contains(".backdrop-invert-65"));
+        assert!(result.css.contains("backdrop-filter: invert(65%)"));
+        assert!(result.css.contains(".backdrop-invert-\\[.25\\]"));
+        assert!(result.css.contains("backdrop-filter: invert(.25)"));
+        assert!(result
+            .css
+            .contains(".backdrop-invert-\\(--my-backdrop-inversion\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: invert(var(--my-backdrop-inversion))"));
+        assert!(result.css.contains(".md\\:backdrop-invert"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_opacity_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-opacity-10".to_string(),
+                "backdrop-opacity-60".to_string(),
+                "backdrop-opacity-95".to_string(),
+                "backdrop-opacity-100".to_string(),
+                "backdrop-opacity-[.15]".to_string(),
+                "backdrop-opacity-(--my-backdrop-filter-opacity)".to_string(),
+                "md:backdrop-opacity-60".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-opacity-10"));
+        assert!(result.css.contains("backdrop-filter: opacity(10%)"));
+        assert!(result.css.contains(".backdrop-opacity-60"));
+        assert!(result.css.contains("backdrop-filter: opacity(60%)"));
+        assert!(result.css.contains(".backdrop-opacity-95"));
+        assert!(result.css.contains("backdrop-filter: opacity(95%)"));
+        assert!(result.css.contains(".backdrop-opacity-100"));
+        assert!(result.css.contains("backdrop-filter: opacity(100%)"));
+        assert!(result.css.contains(".backdrop-opacity-\\[.15\\]"));
+        assert!(result.css.contains("backdrop-filter: opacity(.15)"));
+        assert!(result
+            .css
+            .contains(".backdrop-opacity-\\(--my-backdrop-filter-opacity\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: opacity(var(--my-backdrop-filter-opacity))"));
+        assert!(result.css.contains(".md\\:backdrop-opacity-60"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_saturate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-saturate-50".to_string(),
+                "backdrop-saturate-125".to_string(),
+                "backdrop-saturate-200".to_string(),
+                "backdrop-saturate-[.25]".to_string(),
+                "backdrop-saturate-(--my-backdrop-saturation)".to_string(),
+                "md:backdrop-saturate-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-saturate-50"));
+        assert!(result.css.contains("backdrop-filter: saturate(50%)"));
+        assert!(result.css.contains(".backdrop-saturate-125"));
+        assert!(result.css.contains("backdrop-filter: saturate(125%)"));
+        assert!(result.css.contains(".backdrop-saturate-200"));
+        assert!(result.css.contains("backdrop-filter: saturate(200%)"));
+        assert!(result.css.contains(".backdrop-saturate-\\[.25\\]"));
+        assert!(result.css.contains("backdrop-filter: saturate(.25)"));
+        assert!(result
+            .css
+            .contains(".backdrop-saturate-\\(--my-backdrop-saturation\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: saturate(var(--my-backdrop-saturation))"));
+        assert!(result.css.contains(".md\\:backdrop-saturate-150"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_backdrop_sepia_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backdrop-sepia".to_string(),
+                "backdrop-sepia-0".to_string(),
+                "backdrop-sepia-50".to_string(),
+                "backdrop-sepia-[.25]".to_string(),
+                "backdrop-sepia-(--my-backdrop-sepia)".to_string(),
+                "md:backdrop-sepia-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backdrop-sepia"));
+        assert!(result.css.contains("backdrop-filter: sepia(100%)"));
+        assert!(result.css.contains(".backdrop-sepia-0"));
+        assert!(result.css.contains("backdrop-filter: sepia(0%)"));
+        assert!(result.css.contains(".backdrop-sepia-50"));
+        assert!(result.css.contains("backdrop-filter: sepia(50%)"));
+        assert!(result.css.contains(".backdrop-sepia-\\[.25\\]"));
+        assert!(result.css.contains("backdrop-filter: sepia(.25)"));
+        assert!(result
+            .css
+            .contains(".backdrop-sepia-\\(--my-backdrop-sepia\\)"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: sepia(var(--my-backdrop-sepia))"));
+        assert!(result.css.contains(".md\\:backdrop-sepia-0"));
         assert!(result.css.contains("@media (min-width: 768px)"));
     }
 
