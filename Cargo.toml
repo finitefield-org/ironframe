@@ -1,0 +1,19 @@
+[workspace]
+members = [
+  "crates/core",
+  "crates/scanner",
+  "crates/generator",
+  "crates/config",
+  "crates/cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/finitefield-org/tailwind-rust"
+homepage = "https://github.com/finitefield-org/tailwind-rust"
+readme = "README.md"
+description = "Rust implementation aiming for Tailwind CSS v4.1-equivalent functionality."
+

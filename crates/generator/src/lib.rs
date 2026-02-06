@@ -1,0 +1,7900 @@
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratorConfig {
+    pub minify: bool,
+    pub colors: BTreeMap<String, BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GenerationResult {
+    pub css: String,
+    pub class_count: usize,
+}
+
+pub fn generate(_classes: &[String], _config: &GeneratorConfig) -> GenerationResult {
+    let mut rules = Vec::new();
+    let mut count = 0;
+
+    for class in _classes {
+        if let Some(rule) = generate_rule(class, _config) {
+            rules.push(rule);
+            count += 1;
+        }
+    }
+
+    let css = if _config.minify {
+        rules.join("")
+    } else {
+        rules.join("\n")
+    };
+
+    GenerationResult {
+        css,
+        class_count: count,
+    }
+}
+
+pub fn emit_css(result: &GenerationResult) -> String {
+    result.css.clone()
+}
+
+fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let (variants, base) = parse_variants(class);
+    let rule = generate_color_rule(base, config).or_else(|| match base {
+        "font-thin" => rule(".font-thin", "font-weight:100", config),
+        "font-extralight" => rule(".font-extralight", "font-weight:200", config),
+        "font-light" => rule(".font-light", "font-weight:300", config),
+        "font-normal" => rule(".font-normal", "font-weight:400", config),
+        "font-medium" => rule(".font-medium", "font-weight:500", config),
+        "font-semibold" => rule(".font-semibold", "font-weight:600", config),
+        "font-bold" => rule(".font-bold", "font-weight:700", config),
+        "font-extrabold" => rule(".font-extrabold", "font-weight:800", config),
+        "font-black" => rule(".font-black", "font-weight:900", config),
+        "italic" => rule(".italic", "font-style:italic", config),
+        "not-italic" => rule(".not-italic", "font-style:normal", config),
+        "antialiased" => rule(
+            ".antialiased",
+            "-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale",
+            config,
+        ),
+        "subpixel-antialiased" => rule(
+            ".subpixel-antialiased",
+            "-webkit-font-smoothing:auto;-moz-osx-font-smoothing:auto",
+            config,
+        ),
+        "normal-nums" => rule(".normal-nums", "font-variant-numeric:normal", config),
+        "ordinal" => rule(".ordinal", "font-variant-numeric:ordinal", config),
+        "slashed-zero" => rule(".slashed-zero", "font-variant-numeric:slashed-zero", config),
+        "lining-nums" => rule(".lining-nums", "font-variant-numeric:lining-nums", config),
+        "oldstyle-nums" => rule(".oldstyle-nums", "font-variant-numeric:oldstyle-nums", config),
+        "proportional-nums" => rule(
+            ".proportional-nums",
+            "font-variant-numeric:proportional-nums",
+            config,
+        ),
+        "tabular-nums" => rule(".tabular-nums", "font-variant-numeric:tabular-nums", config),
+        "diagonal-fractions" => rule(
+            ".diagonal-fractions",
+            "font-variant-numeric:diagonal-fractions",
+            config,
+        ),
+        "stacked-fractions" => rule(
+            ".stacked-fractions",
+            "font-variant-numeric:stacked-fractions",
+            config,
+        ),
+        "list-inside" => rule(".list-inside", "list-style-position:inside", config),
+        "list-outside" => rule(".list-outside", "list-style-position:outside", config),
+        "text-left" => rule(".text-left", "text-align:left", config),
+        "text-center" => rule(".text-center", "text-align:center", config),
+        "text-right" => rule(".text-right", "text-align:right", config),
+        "text-justify" => rule(".text-justify", "text-align:justify", config),
+        "text-start" => rule(".text-start", "text-align:start", config),
+        "text-end" => rule(".text-end", "text-align:end", config),
+        "text-inherit" => rule(".text-inherit", "color:inherit", config),
+        "text-current" => rule(".text-current", "color:currentColor", config),
+        "text-transparent" => rule(".text-transparent", "color:transparent", config),
+        "text-black" => rule(".text-black", "color:var(--color-black)", config),
+        "text-white" => rule(".text-white", "color:var(--color-white)", config),
+        "uppercase" => rule(".uppercase", "text-transform:uppercase", config),
+        "lowercase" => rule(".lowercase", "text-transform:lowercase", config),
+        "capitalize" => rule(".capitalize", "text-transform:capitalize", config),
+        "normal-case" => rule(".normal-case", "text-transform:none", config),
+        "truncate" => rule(
+            ".truncate",
+            "overflow:hidden;text-overflow:ellipsis;white-space:nowrap",
+            config,
+        ),
+        "text-ellipsis" => rule(".text-ellipsis", "text-overflow:ellipsis", config),
+        "text-clip" => rule(".text-clip", "text-overflow:clip", config),
+        "text-wrap" => rule(".text-wrap", "text-wrap:wrap", config),
+        "text-nowrap" => rule(".text-nowrap", "text-wrap:nowrap", config),
+        "text-balance" => rule(".text-balance", "text-wrap:balance", config),
+        "text-pretty" => rule(".text-pretty", "text-wrap:pretty", config),
+        "whitespace-normal" => rule(".whitespace-normal", "white-space:normal", config),
+        "whitespace-nowrap" => rule(".whitespace-nowrap", "white-space:nowrap", config),
+        "whitespace-pre" => rule(".whitespace-pre", "white-space:pre", config),
+        "whitespace-pre-line" => rule(".whitespace-pre-line", "white-space:pre-line", config),
+        "whitespace-pre-wrap" => rule(".whitespace-pre-wrap", "white-space:pre-wrap", config),
+        "whitespace-break-spaces" => {
+            rule(".whitespace-break-spaces", "white-space:break-spaces", config)
+        }
+        "break-normal" => rule(".break-normal", "word-break:normal", config),
+        "break-all" => rule(".break-all", "word-break:break-all", config),
+        "break-keep" => rule(".break-keep", "word-break:keep-all", config),
+        "wrap-break-word" => rule(".wrap-break-word", "overflow-wrap:break-word", config),
+        "wrap-anywhere" => rule(".wrap-anywhere", "overflow-wrap:anywhere", config),
+        "wrap-normal" => rule(".wrap-normal", "overflow-wrap:normal", config),
+        "hyphens-none" => rule(".hyphens-none", "hyphens:none", config),
+        "hyphens-manual" => rule(".hyphens-manual", "hyphens:manual", config),
+        "hyphens-auto" => rule(".hyphens-auto", "hyphens:auto", config),
+        "content-none" => rule(".content-none", "content:none", config),
+        "underline" => rule(".underline", "text-decoration-line:underline", config),
+        "overline" => rule(".overline", "text-decoration-line:overline", config),
+        "line-through" => rule(".line-through", "text-decoration-line:line-through", config),
+        "no-underline" => rule(".no-underline", "text-decoration-line:none", config),
+        "decoration-solid" => rule(".decoration-solid", "text-decoration-style:solid", config),
+        "decoration-double" => {
+            rule(".decoration-double", "text-decoration-style:double", config)
+        }
+        "decoration-dotted" => {
+            rule(".decoration-dotted", "text-decoration-style:dotted", config)
+        }
+        "decoration-dashed" => {
+            rule(".decoration-dashed", "text-decoration-style:dashed", config)
+        }
+        "decoration-wavy" => rule(".decoration-wavy", "text-decoration-style:wavy", config),
+        "decoration-auto" => {
+            rule(".decoration-auto", "text-decoration-thickness:auto", config)
+        }
+        "decoration-from-font" => rule(
+            ".decoration-from-font",
+            "text-decoration-thickness:from-font",
+            config,
+        ),
+        "leading-none" => rule(".leading-none", "line-height:1", config),
+        "leading-tight" => rule(".leading-tight", "line-height:1.25", config),
+        "leading-normal" => rule(".leading-normal", "line-height:1.5", config),
+        "leading-relaxed" => rule(".leading-relaxed", "line-height:1.625", config),
+        "leading-loose" => rule(".leading-loose", "line-height:2", config),
+        "text-gray-50" => rule(".text-gray-50", "color:#f9fafb", config),
+        "text-gray-100" => rule(".text-gray-100", "color:#f3f4f6", config),
+        "text-gray-200" => rule(".text-gray-200", "color:#e5e7eb", config),
+        "text-gray-300" => rule(".text-gray-300", "color:#d1d5db", config),
+        "text-gray-400" => rule(".text-gray-400", "color:#9ca3af", config),
+        "text-gray-500" => rule(".text-gray-500", "color:#6b7280", config),
+        "text-gray-600" => rule(".text-gray-600", "color:#4b5563", config),
+        "text-gray-700" => rule(".text-gray-700", "color:#374151", config),
+        "text-gray-800" => rule(".text-gray-800", "color:#1f2937", config),
+        "text-gray-900" => rule(".text-gray-900", "color:#111827", config),
+        "text-blue-50" => rule(".text-blue-50", "color:#eff6ff", config),
+        "text-blue-100" => rule(".text-blue-100", "color:#dbeafe", config),
+        "text-blue-200" => rule(".text-blue-200", "color:#bfdbfe", config),
+        "text-blue-300" => rule(".text-blue-300", "color:#93c5fd", config),
+        "text-blue-400" => rule(".text-blue-400", "color:#60a5fa", config),
+        "text-blue-500" => rule(".text-blue-500", "color:#3b82f6", config),
+        "text-blue-600" => rule(".text-blue-600", "color:#2563eb", config),
+        "text-blue-700" => rule(".text-blue-700", "color:#1d4ed8", config),
+        "text-blue-800" => rule(".text-blue-800", "color:#1e40af", config),
+        "text-blue-900" => rule(".text-blue-900", "color:#1e3a8a", config),
+        "inset-0" => rule(".inset-0", "inset:0px", config),
+        "inset-x-0" => rule(".inset-x-0", "left:0px;right:0px", config),
+        "inset-y-0" => rule(".inset-y-0", "top:0px;bottom:0px", config),
+        "top-0" => rule(".top-0", "top:0px", config),
+        "right-0" => rule(".right-0", "right:0px", config),
+        "bottom-0" => rule(".bottom-0", "bottom:0px", config),
+        "left-0" => rule(".left-0", "left:0px", config),
+        "shadow-sm" => rule(
+            ".shadow-sm",
+            "box-shadow:0 1px 2px 0 rgba(0,0,0,0.05)",
+            config,
+        ),
+        "shadow" => rule(
+            ".shadow",
+            "box-shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px 0 rgba(0,0,0,0.06)",
+            config,
+        ),
+        "shadow-md" => rule(
+            ".shadow-md",
+            "box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06)",
+            config,
+        ),
+        "shadow-lg" => rule(
+            ".shadow-lg",
+            "box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05)",
+            config,
+        ),
+        "shadow-xl" => rule(
+            ".shadow-xl",
+            "box-shadow:0 20px 25px -5px rgba(0,0,0,0.1),0 10px 10px -5px rgba(0,0,0,0.04)",
+            config,
+        ),
+        "shadow-2xl" => rule(
+            ".shadow-2xl",
+            "box-shadow:0 25px 50px -12px rgba(0,0,0,0.25)",
+            config,
+        ),
+        "shadow-none" => rule(".shadow-none", "box-shadow:none", config),
+        "ring-0" => rule(".ring-0", "box-shadow:0 0 0 0 rgba(59,130,246,0.5)", config),
+        "ring-1" => rule(".ring-1", "box-shadow:0 0 0 1px rgba(59,130,246,0.5)", config),
+        "ring-2" => rule(".ring-2", "box-shadow:0 0 0 2px rgba(59,130,246,0.5)", config),
+        "ring-4" => rule(".ring-4", "box-shadow:0 0 0 4px rgba(59,130,246,0.5)", config),
+        "ring-8" => rule(".ring-8", "box-shadow:0 0 0 8px rgba(59,130,246,0.5)", config),
+        "ring" => rule(".ring", "box-shadow:0 0 0 3px rgba(59,130,246,0.5)", config),
+        "bg-fixed" => rule(".bg-fixed", "background-attachment:fixed", config),
+        "bg-local" => rule(".bg-local", "background-attachment:local", config),
+        "bg-scroll" => rule(".bg-scroll", "background-attachment:scroll", config),
+        "bg-clip-border" => rule(".bg-clip-border", "background-clip:border-box", config),
+        "bg-clip-padding" => rule(".bg-clip-padding", "background-clip:padding-box", config),
+        "bg-clip-content" => rule(".bg-clip-content", "background-clip:content-box", config),
+        "bg-clip-text" => rule(".bg-clip-text", "background-clip:text", config),
+        "bg-origin-border" => rule(".bg-origin-border", "background-origin:border-box", config),
+        "bg-origin-padding" => {
+            rule(".bg-origin-padding", "background-origin:padding-box", config)
+        }
+        "bg-origin-content" => {
+            rule(".bg-origin-content", "background-origin:content-box", config)
+        }
+        "bg-top-left" => rule(".bg-top-left", "background-position:top left", config),
+        "bg-top" => rule(".bg-top", "background-position:top", config),
+        "bg-top-right" => rule(".bg-top-right", "background-position:top right", config),
+        "bg-left" => rule(".bg-left", "background-position:left", config),
+        "bg-center" => rule(".bg-center", "background-position:center", config),
+        "bg-right" => rule(".bg-right", "background-position:right", config),
+        "bg-bottom-left" => rule(".bg-bottom-left", "background-position:bottom left", config),
+        "bg-bottom" => rule(".bg-bottom", "background-position:bottom", config),
+        "bg-bottom-right" => {
+            rule(".bg-bottom-right", "background-position:bottom right", config)
+        }
+        "bg-repeat" => rule(".bg-repeat", "background-repeat:repeat", config),
+        "bg-repeat-x" => rule(".bg-repeat-x", "background-repeat:repeat-x", config),
+        "bg-repeat-y" => rule(".bg-repeat-y", "background-repeat:repeat-y", config),
+        "bg-repeat-space" => rule(".bg-repeat-space", "background-repeat:space", config),
+        "bg-repeat-round" => rule(".bg-repeat-round", "background-repeat:round", config),
+        "bg-no-repeat" => rule(".bg-no-repeat", "background-repeat:no-repeat", config),
+        "bg-auto" => rule(".bg-auto", "background-size:auto", config),
+        "bg-cover" => rule(".bg-cover", "background-size:cover", config),
+        "bg-contain" => rule(".bg-contain", "background-size:contain", config),
+        "bg-inherit" => rule(".bg-inherit", "background-color:inherit", config),
+        "bg-current" => rule(".bg-current", "background-color:currentColor", config),
+        "bg-transparent" => rule(".bg-transparent", "background-color:transparent", config),
+        "bg-black" => rule(".bg-black", "background-color:var(--color-black)", config),
+        "bg-white" => rule(".bg-white", "background-color:var(--color-white)", config),
+        "bg-red-500" => rule(".bg-red-500", "background-color:#ef4444", config),
+        "bg-gray-50" => rule(".bg-gray-50", "background-color:#f9fafb", config),
+        "bg-gray-100" => rule(".bg-gray-100", "background-color:#f3f4f6", config),
+        "bg-gray-200" => rule(".bg-gray-200", "background-color:#e5e7eb", config),
+        "bg-gray-300" => rule(".bg-gray-300", "background-color:#d1d5db", config),
+        "bg-gray-400" => rule(".bg-gray-400", "background-color:#9ca3af", config),
+        "bg-gray-500" => rule(".bg-gray-500", "background-color:#6b7280", config),
+        "bg-gray-600" => rule(".bg-gray-600", "background-color:#4b5563", config),
+        "bg-gray-700" => rule(".bg-gray-700", "background-color:#374151", config),
+        "bg-gray-800" => rule(".bg-gray-800", "background-color:#1f2937", config),
+        "bg-gray-900" => rule(".bg-gray-900", "background-color:#111827", config),
+        "bg-blue-50" => rule(".bg-blue-50", "background-color:#eff6ff", config),
+        "bg-blue-100" => rule(".bg-blue-100", "background-color:#dbeafe", config),
+        "bg-blue-200" => rule(".bg-blue-200", "background-color:#bfdbfe", config),
+        "bg-blue-300" => rule(".bg-blue-300", "background-color:#93c5fd", config),
+        "bg-blue-400" => rule(".bg-blue-400", "background-color:#60a5fa", config),
+        "bg-blue-500" => rule(".bg-blue-500", "background-color:#3b82f6", config),
+        "bg-blue-600" => rule(".bg-blue-600", "background-color:#2563eb", config),
+        "bg-blue-700" => rule(".bg-blue-700", "background-color:#1d4ed8", config),
+        "bg-blue-800" => rule(".bg-blue-800", "background-color:#1e40af", config),
+        "bg-blue-900" => rule(".bg-blue-900", "background-color:#1e3a8a", config),
+        _ => generate_text_shadow_rule(base, config)
+            .or_else(|| generate_text_arbitrary_color_rule(base, config))
+            .or_else(|| generate_text_palette_color_rule(base, config))
+            .or_else(|| generate_background_arbitrary_color_rule(base, config))
+            .or_else(|| generate_background_palette_color_rule(base, config))
+            .or_else(|| generate_background_position_rule(base, config))
+            .or_else(|| generate_background_size_rule(base, config))
+            .or_else(|| generate_background_image_rule(base, config))
+            .or_else(|| generate_content_rule(base, config))
+            .or_else(|| generate_decoration_thickness_rule(base, config))
+            .or_else(|| generate_decoration_arbitrary_color_rule(base, config))
+            .or_else(|| generate_decoration_palette_color_rule(base, config))
+            .or_else(|| generate_list_style_type_rule(base, config))
+            .or_else(|| generate_list_style_image_rule(base, config))
+            .or_else(|| generate_line_clamp_rule(base, config))
+            .or_else(|| generate_tracking_rule(base, config))
+            .or_else(|| generate_text_indent_rule(base, config))
+            .or_else(|| generate_underline_offset_rule(base, config))
+            .or_else(|| generate_vertical_align_rule(base, config))
+            .or_else(|| generate_font_stretch_rule(base, config))
+            .or_else(|| generate_font_weight_rule(base, config))
+            .or_else(|| generate_leading_rule(base, config))
+            .or_else(|| generate_text_size_rule(base, config))
+            .or_else(|| generate_font_family_rule(base, config))
+            .or_else(|| generate_spacing_rule(base, config))
+            .or_else(|| generate_aspect_ratio_rule(base, config))
+            .or_else(|| generate_columns_rule(base, config))
+            .or_else(|| generate_break_before_rule(base, config))
+            .or_else(|| generate_break_after_rule(base, config))
+            .or_else(|| generate_break_inside_rule(base, config))
+            .or_else(|| generate_box_decoration_rule(base, config))
+            .or_else(|| generate_box_sizing_rule(base, config))
+            .or_else(|| generate_border_width_rule(base, config))
+            .or_else(|| generate_divide_width_rule(base, config))
+            .or_else(|| generate_border_style_rule(base, config))
+            .or_else(|| generate_border_color_rule(base, config))
+            .or_else(|| generate_border_radius_rule(base, config))
+            .or_else(|| generate_outline_style_rule(base, config))
+            .or_else(|| generate_outline_offset_rule(base, config))
+            .or_else(|| generate_outline_color_rule(base, config))
+            .or_else(|| generate_outline_width_rule(base, config))
+            .or_else(|| generate_float_rule(base, config))
+            .or_else(|| generate_clear_rule(base, config))
+            .or_else(|| generate_isolation_rule(base, config))
+            .or_else(|| generate_object_fit_rule(base, config))
+            .or_else(|| generate_object_position_rule(base, config))
+            .or_else(|| generate_overscroll_rule(base, config))
+            .or_else(|| generate_inset_rule(base, config))
+            .or_else(|| generate_z_index_rule(base, config))
+            .or_else(|| generate_visibility_rule(base, config))
+            .or_else(|| generate_flex_basis_rule(base, config))
+            .or_else(|| generate_flex_shorthand_rule(base, config))
+            .or_else(|| generate_flex_grow_rule(base, config))
+            .or_else(|| generate_flex_shrink_rule(base, config))
+            .or_else(|| generate_order_rule(base, config))
+            .or_else(|| generate_grid_template_columns_rule(base, config))
+            .or_else(|| generate_grid_auto_flow_rule(base, config))
+            .or_else(|| generate_grid_auto_columns_rule(base, config))
+            .or_else(|| generate_grid_auto_rows_rule(base, config))
+            .or_else(|| generate_grid_column_rule(base, config))
+            .or_else(|| generate_grid_row_rule(base, config))
+            .or_else(|| generate_layout_rule(base, config)),
+    });
+
+    apply_variants(&variants, class, base, rule, config.minify)
+}
+
+fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("text-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.starts_with("length:") {
+            return None;
+        }
+        return rule(&selector, &format!("color:var({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("text-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(&selector, &format!("color:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "content-none" {
+        return rule(&selector, "content:none", config);
+    }
+    if let Some(raw) = class.strip_prefix("content-[").and_then(|v| v.strip_suffix(']')) {
+        let value = normalize_content_value(raw);
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("content:{}", value), config);
+    }
+    if let Some(raw) = class.strip_prefix("content-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("content:var({})", raw), config);
+    }
+    None
+}
+
+fn generate_background_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("bg-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.starts_with("image:") {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("background-color:var({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("bg-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(
+                &selector,
+                &format!("background-color:{}", raw),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("bg-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = match raw.split_once('/') {
+        Some((token, opacity)) => (token, Some(opacity)),
+        None => (raw, None),
+    };
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if token.starts_with("linear-")
+                || token == "radial"
+                || token.starts_with("radial-")
+                || token.starts_with("conic-")
+                || token.starts_with("position-")
+                || token.starts_with("size-")
+            {
+                return None;
+            }
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "background-color:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("background-color:{}", color_value), config)
+}
+
+fn generate_background_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if let Some(raw) = class
+        .strip_prefix("bg-position-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("background-position:var({})", raw),
+            config,
+        );
+    }
+    if let Some(raw) = class
+        .strip_prefix("bg-position-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("background-position:{}", raw),
+            config,
+        );
+    }
+    None
+}
+
+fn generate_background_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if let Some(raw) = class
+        .strip_prefix("bg-size-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("background-size:var({})", raw), config);
+    }
+    if let Some(raw) = class
+        .strip_prefix("bg-size-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("background-size:{}", raw), config);
+    }
+    None
+}
+
+fn generate_background_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "bg-none" {
+        return rule(&selector, "background-image:none", config);
+    }
+    if let Some(raw) = class.strip_prefix("bg-[").and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("background-image:{}", raw), config);
+    }
+    if let Some(raw) = class
+        .strip_prefix("bg-(image:")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        return rule(&selector, &format!("background-image:var({})", raw), config);
+    }
+
+    if let Some(rest) = class.strip_prefix("bg-linear-to-") {
+        let (dir, mode) = split_slash_modifier(rest);
+        let to = match dir {
+            "t" => "to top",
+            "tr" => "to top right",
+            "r" => "to right",
+            "br" => "to bottom right",
+            "b" => "to bottom",
+            "bl" => "to bottom left",
+            "l" => "to left",
+            "tl" => "to top left",
+            _ => return None,
+        };
+        let direction = if let Some(m) = mode {
+            format!("{} in {}", to, m)
+        } else {
+            to.to_string()
+        };
+        return rule(
+            &selector,
+            &format!(
+                "background-image:linear-gradient({}, var(--tw-gradient-stops))",
+                direction
+            ),
+            config,
+        );
+    }
+
+    if let Some(rest) = class.strip_prefix("bg-linear-") {
+        if let Some(value) = rest.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:linear-gradient(var(--tw-gradient-stops, {}))",
+                    value
+                ),
+                config,
+            );
+        }
+        if let Some(value) = rest.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:linear-gradient(var(--tw-gradient-stops, var({})))",
+                    value
+                ),
+                config,
+            );
+        }
+        if let Some(angle) = parse_gradient_angle(rest) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:linear-gradient({} in oklab, var(--tw-gradient-stops))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(rest) = class.strip_prefix("-bg-linear-") {
+        if let Some(angle) = parse_gradient_angle(rest) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:linear-gradient(-{} in oklab, var(--tw-gradient-stops))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+
+    if class == "bg-radial" {
+        return rule(
+            &selector,
+            "background-image:radial-gradient(in oklab, var(--tw-gradient-stops))",
+            config,
+        );
+    }
+    if let Some(rest) = class.strip_prefix("bg-radial-") {
+        if let Some(value) = rest.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:radial-gradient(var(--tw-gradient-stops, {}))",
+                    value
+                ),
+                config,
+            );
+        }
+        if let Some(value) = rest.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:radial-gradient(var(--tw-gradient-stops, var({})))",
+                    value
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(rest) = class.strip_prefix("bg-conic-") {
+        if let Some(value) = rest.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("background-image:{}", value), config);
+        }
+        if let Some(value) = rest.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!("background-image:var({})", value),
+                config,
+            );
+        }
+        if let Some(angle) = parse_gradient_angle(rest) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:conic-gradient(from {} in oklab, var(--tw-gradient-stops))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(rest) = class.strip_prefix("-bg-conic-") {
+        if let Some(angle) = parse_gradient_angle(rest) {
+            return rule(
+                &selector,
+                &format!(
+                    "background-image:conic-gradient(from -{} in oklab, var(--tw-gradient-stops))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("from-") {
+        return gradient_stop_rule(&selector, "from", raw, config);
+    }
+    if let Some(raw) = class.strip_prefix("via-") {
+        return gradient_stop_rule(&selector, "via", raw, config);
+    }
+    if let Some(raw) = class.strip_prefix("to-") {
+        return gradient_stop_rule(&selector, "to", raw, config);
+    }
+
+    None
+}
+
+fn split_slash_modifier(raw: &str) -> (&str, Option<&str>) {
+    if let Some((left, right)) = raw.split_once('/') {
+        (left, Some(right))
+    } else {
+        (raw, None)
+    }
+}
+
+fn parse_gradient_angle(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("{}deg", raw));
+    }
+    if raw.ends_with("deg")
+        && raw[..raw.len() - 3]
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '.')
+    {
+        return Some(raw.to_string());
+    }
+    None
+}
+
+fn gradient_stop_rule(
+    selector: &str,
+    kind: &str,
+    raw: &str,
+    config: &GeneratorConfig,
+) -> Option<String> {
+    let (prop_color, prop_pos) = match kind {
+        "from" => ("--tw-gradient-from", "--tw-gradient-from-position"),
+        "via" => ("--tw-gradient-via", "--tw-gradient-via-position"),
+        "to" => ("--tw-gradient-to", "--tw-gradient-to-position"),
+        _ => return None,
+    };
+    if let Some(value) = raw.strip_suffix('%') {
+        if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit() || c == '.') {
+            return rule(selector, &format!("{}:{}%", prop_pos, value), config);
+        }
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(selector, &format!("{}:{}", prop_color, value), config);
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(selector, &format!("{}:var({})", prop_color, value), config);
+    }
+    let color_value = match raw {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !raw.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", raw)
+        }
+    };
+    rule(selector, &format!("{}:{}", prop_color, color_value), config)
+}
+
+fn normalize_content_value(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            if let Some(next) = chars.next() {
+                if next == '_' {
+                    out.push('_');
+                } else {
+                    out.push('\\');
+                    out.push(next);
+                }
+            } else {
+                out.push('\\');
+            }
+            continue;
+        }
+        if ch == '_' {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn is_color_like_value(raw: &str) -> bool {
+    let lower = raw.to_ascii_lowercase();
+    raw.starts_with('#')
+        || lower.starts_with("rgb(")
+        || lower.starts_with("rgba(")
+        || lower.starts_with("hsl(")
+        || lower.starts_with("hsla(")
+        || lower.starts_with("hwb(")
+        || lower.starts_with("lab(")
+        || lower.starts_with("lch(")
+        || lower.starts_with("oklab(")
+        || lower.starts_with("oklch(")
+        || lower.starts_with("color(")
+        || lower.starts_with("var(")
+        || lower == "currentcolor"
+        || lower == "transparent"
+        || lower == "inherit"
+}
+
+fn generate_decoration_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("decoration-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.starts_with("length:") {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("text-decoration-color:var({})", raw),
+            config,
+        );
+    }
+
+    if let Some(raw) = class
+        .strip_prefix("decoration-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if is_color_like_value(raw) {
+            return rule(
+                &selector,
+                &format!("text-decoration-color:{}", raw),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_decoration_thickness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("decoration-")?;
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return rule(
+            &selector,
+            &format!("text-decoration-thickness:{}px", raw),
+            config,
+        );
+    }
+    if let Some(value) = raw.strip_prefix("(length:").and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("text-decoration-thickness:var({})", value),
+            config,
+        );
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() || is_color_like_value(value) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("text-decoration-thickness:{}", value),
+            config,
+        );
+    }
+    None
+}
+
+fn generate_underline_offset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "underline-offset-auto" {
+        return rule(&selector, "text-underline-offset:auto", config);
+    }
+    if let Some(raw) = class.strip_prefix("underline-offset-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("text-underline-offset:{}px", raw),
+                config,
+            );
+        }
+        if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("text-underline-offset:var({})", value),
+                config,
+            );
+        }
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("text-underline-offset:{}", value),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class.strip_prefix("-underline-offset-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("text-underline-offset:calc({}px * -1)", raw),
+                config,
+            );
+        }
+    }
+    None
+}
+
+fn generate_text_indent_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if let Some(raw) = class.strip_prefix("indent-") {
+        if raw == "px" {
+            return rule(&selector, "text-indent:1px", config);
+        }
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("text-indent:calc(var(--spacing) * {})", raw),
+                config,
+            );
+        }
+        if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(&selector, &format!("text-indent:var({})", value), config);
+        }
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(&selector, &format!("text-indent:{}", value), config);
+        }
+    }
+    if let Some(raw) = class.strip_prefix("-indent-") {
+        if raw == "px" {
+            return rule(&selector, "text-indent:-1px", config);
+        }
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("text-indent:calc(var(--spacing) * -{})", raw),
+                config,
+            );
+        }
+    }
+    None
+}
+
+fn generate_vertical_align_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "align-baseline" => return rule(&selector, "vertical-align:baseline", config),
+        "align-top" => return rule(&selector, "vertical-align:top", config),
+        "align-middle" => return rule(&selector, "vertical-align:middle", config),
+        "align-bottom" => return rule(&selector, "vertical-align:bottom", config),
+        "align-text-top" => return rule(&selector, "vertical-align:text-top", config),
+        "align-text-bottom" => return rule(&selector, "vertical-align:text-bottom", config),
+        "align-sub" => return rule(&selector, "vertical-align:sub", config),
+        "align-super" => return rule(&selector, "vertical-align:super", config),
+        _ => {}
+    }
+    if let Some(raw) = class.strip_prefix("align-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("vertical-align:var({})", raw), config);
+    }
+    if let Some(raw) = class.strip_prefix("align-[").and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("vertical-align:{}", raw), config);
+    }
+    None
+}
+
+fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("decoration-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = match raw.split_once('/') {
+        Some((token, opacity)) => (token, Some(opacity)),
+        None => (raw, None),
+    };
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "text-decoration-color:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(
+        &selector,
+        &format!("text-decoration-color:{}", color_value),
+        config,
+    )
+}
+
+fn text_shadow_preset_layers(token: &str) -> Option<(&'static [&'static str], &'static str)> {
+    match token {
+        "2xs" => Some((&["0px 1px 0px"], "0.15")),
+        "xs" => Some((&["0px 1px 1px"], "0.2")),
+        "sm" => Some((&["0px 1px 0px", "0px 1px 1px", "0px 2px 2px"], "0.075")),
+        "md" => Some((&["0px 1px 1px", "0px 1px 2px", "0px 2px 4px"], "0.1")),
+        "lg" => Some((&["0px 1px 2px", "0px 3px 2px", "0px 4px 8px"], "0.1")),
+        _ => None,
+    }
+}
+
+fn build_text_shadow_preset_value(layers: &[&str], default_opacity: &str) -> String {
+    layers
+        .iter()
+        .map(|layer| {
+            format!(
+                "{} var(--tw-shadow-color,rgb(0 0 0 / {}))",
+                layer, default_opacity
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn parse_text_shadow_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return Some(format!(
+            "color-mix(in oklab,{} {},transparent)",
+            color_value, opacity_value
+        ));
+    }
+
+    Some(color_value)
+}
+
+fn generate_text_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "text-shadow-none" {
+        return rule(&selector, "text-shadow:none", config);
+    }
+    if class == "text-shadow-inherit" {
+        return rule(&selector, "--tw-shadow-color:inherit", config);
+    }
+
+    let raw = class.strip_prefix("text-shadow-")?;
+
+    if let Some(value) = raw
+        .strip_prefix("(color:")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-shadow-color:var({})", value),
+            config,
+        );
+    }
+
+    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("text-shadow:var({})", value), config);
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("text-shadow:{}", value), config);
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    if let Some((layers, default_opacity)) = text_shadow_preset_layers(token) {
+        let preset_value = build_text_shadow_preset_value(layers, default_opacity);
+        if let Some(opacity_raw) = opacity {
+            let opacity_value = parse_color_opacity_value(opacity_raw)?;
+            return rule(
+                &selector,
+                &format!(
+                    "--tw-shadow-color:rgb(0 0 0 / {});text-shadow:{}",
+                    opacity_value, preset_value
+                ),
+                config,
+            );
+        }
+        return rule(&selector, &format!("text-shadow:{}", preset_value), config);
+    }
+
+    if let Some(value) = parse_text_shadow_color_value(raw) {
+        return rule(&selector, &format!("--tw-shadow-color:{}", value), config);
+    }
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "--tw-shadow-color:rgb(0 0 0 / {});text-shadow:var(--text-shadow-{})",
+                opacity_value, token
+            ),
+            config,
+        );
+    }
+
+    rule(
+        &selector,
+        &format!("text-shadow:var(--text-shadow-{})", token),
+        config,
+    )
+}
+
+fn generate_text_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    if class.starts_with("text-shadow-") {
+        return None;
+    }
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("text-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = match raw.split_once('/') {
+        Some((token, opacity)) => (token, Some(opacity)),
+        None => (raw, None),
+    };
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "color:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("color:{}", color_value), config)
+}
+
+fn parse_color_opacity_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("{}%", raw));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    None
+}
+
+fn generate_list_style_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "list-disc" => return rule(&selector, "list-style-type:disc", config),
+        "list-decimal" => return rule(&selector, "list-style-type:decimal", config),
+        "list-none" => return rule(&selector, "list-style-type:none", config),
+        _ => {}
+    }
+    if let Some(raw) = class.strip_prefix("list-[") {
+        if let Some(value) = raw.strip_suffix(']') {
+            return rule(&selector, &format!("list-style-type:{}", value), config);
+        }
+    }
+    if let Some(raw) = class.strip_prefix("list-(") {
+        if let Some(custom) = raw.strip_suffix(')') {
+            return rule(&selector, &format!("list-style-type:var({})", custom), config);
+        }
+    }
+    None
+}
+
+fn generate_list_style_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "list-image-none" {
+        return rule(&selector, "list-style-image:none", config);
+    }
+    if let Some(raw) = class.strip_prefix("list-image-[") {
+        if let Some(value) = raw.strip_suffix(']') {
+            return rule(&selector, &format!("list-style-image:{}", value), config);
+        }
+    }
+    if let Some(raw) = class.strip_prefix("list-image-(") {
+        if let Some(custom) = raw.strip_suffix(')') {
+            return rule(&selector, &format!("list-style-image:var({})", custom), config);
+        }
+    }
+    None
+}
+
+fn generate_line_clamp_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "line-clamp-none" {
+        return rule(
+            &selector,
+            "overflow:visible;display:block;-webkit-box-orient:horizontal;-webkit-line-clamp:unset",
+            config,
+        );
+    }
+    if let Some(raw) = class.strip_prefix("line-clamp-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:{}",
+                    raw
+                ),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(
+                &selector,
+                &format!(
+                    "overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:{}",
+                    custom
+                ),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!(
+                    "overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var({})",
+                    custom
+                ),
+                config,
+            );
+        }
+    }
+    None
+}
+
+fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("text-[") {
+        if let Some(value) = raw.strip_suffix(']') {
+            return rule(&selector, &format!("font-size:{}", value), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("text-(length:") {
+        if let Some(custom) = raw.strip_suffix(')') {
+            return rule(&selector, &format!("font-size:var({})", custom), config);
+        }
+    }
+
+    let Some(token) = class.strip_prefix("text-") else {
+        return None;
+    };
+    if token.is_empty() {
+        return None;
+    }
+    if matches!(token, "left" | "center" | "right" | "justify") {
+        return None;
+    }
+    if let Some((size, line_raw)) = token.split_once('/') {
+        if size.is_empty() || line_raw.is_empty() {
+            return None;
+        }
+        let line_height = if line_raw.chars().all(|c| c.is_ascii_digit()) {
+            format!("calc(var(--spacing) * {})", line_raw)
+        } else if let Some(custom) = line_raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+        {
+            format!("var({})", custom)
+        } else if let Some(custom) = line_raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+        {
+            custom.to_string()
+        } else {
+            return None;
+        };
+        return rule(
+            &selector,
+            &format!("font-size:var(--text-{});line-height:{}", size, line_height),
+            config,
+        );
+    }
+
+    if token.contains('-') {
+        return None;
+    }
+
+    rule(
+        &selector,
+        &format!(
+            "font-size:var(--text-{});line-height:var(--text-{}--line-height)",
+            token, token
+        ),
+        config,
+    )
+}
+
+fn generate_leading_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let Some(raw) = class.strip_prefix("leading-") else {
+        return None;
+    };
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return rule(
+            &selector,
+            &format!("line-height:calc(var(--spacing) * {})", raw),
+            config,
+        );
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("line-height:var({})", custom), config);
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("line-height:{}", custom), config);
+    }
+    None
+}
+
+fn generate_font_family_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class.starts_with("font-stretch-") {
+        return None;
+    }
+    match class {
+        "font-sans" => return rule(&selector, "font-family:var(--font-sans)", config),
+        "font-serif" => return rule(&selector, "font-family:var(--font-serif)", config),
+        "font-mono" => return rule(&selector, "font-family:var(--font-mono)", config),
+        _ => {}
+    }
+
+    if let Some(raw) = class.strip_prefix("font-[") {
+        if let Some(value) = raw.strip_suffix(']') {
+            return rule(&selector, &format!("font-family:{}", value), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("font-(family-name:") {
+        if let Some(custom) = raw.strip_suffix(')') {
+            return rule(&selector, &format!("font-family:var({})", custom), config);
+        }
+    }
+
+    if let Some(token) = class.strip_prefix("font-") {
+        if !token.is_empty()
+            && !matches!(
+                token,
+                "thin"
+                    | "extralight"
+                    | "light"
+                    | "normal"
+                    | "medium"
+                    | "semibold"
+                    | "bold"
+                    | "extrabold"
+                    | "black"
+            )
+        {
+            return rule(&selector, &format!("font-family:var(--font-{})", token), config);
+        }
+    }
+
+    None
+}
+
+fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+    let Some(raw) = raw_class.strip_prefix("tracking-") else {
+        return None;
+    };
+
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        let value = if negative {
+            format!("calc({} * -1)", custom)
+        } else {
+            custom.to_string()
+        };
+        return rule(&selector, &format!("letter-spacing:{}", value), config);
+    }
+
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        let variable = format!("var({})", custom);
+        let value = if negative {
+            format!("calc({} * -1)", variable)
+        } else {
+            variable
+        };
+        return rule(&selector, &format!("letter-spacing:{}", value), config);
+    }
+
+    if raw.is_empty() {
+        return None;
+    }
+
+    let value = if negative {
+        format!("calc(var(--tracking-{}) * -1)", raw)
+    } else {
+        format!("var(--tracking-{})", raw)
+    };
+    rule(&selector, &format!("letter-spacing:{}", value), config)
+}
+
+fn generate_font_stretch_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let Some(raw) = class.strip_prefix("font-stretch-") else {
+        return None;
+    };
+
+    let value = match raw {
+        "ultra-condensed" => "ultra-condensed".to_string(),
+        "extra-condensed" => "extra-condensed".to_string(),
+        "condensed" => "condensed".to_string(),
+        "semi-condensed" => "semi-condensed".to_string(),
+        "normal" => "normal".to_string(),
+        "semi-expanded" => "semi-expanded".to_string(),
+        "expanded" => "expanded".to_string(),
+        "extra-expanded" => "extra-expanded".to_string(),
+        "ultra-expanded" => "ultra-expanded".to_string(),
+        _ => {
+            if raw.ends_with('%')
+                && raw.len() > 1
+                && raw[..raw.len() - 1]
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '.')
+            {
+                raw.to_string()
+            } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+                custom.to_string()
+            } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+                format!("var({})", custom)
+            } else {
+                return None;
+            }
+        }
+    };
+
+    rule(&selector, &format!("font-stretch:{}", value), config)
+}
+
+fn generate_font_weight_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("font-[") {
+        if let Some(value) = raw.strip_suffix(']') {
+            if value.chars().all(|c| c.is_ascii_digit()) && !value.is_empty() {
+                return rule(&selector, &format!("font-weight:{}", value), config);
+            }
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("font-(weight:") {
+        if let Some(custom) = raw.strip_suffix(')') {
+            return rule(&selector, &format!("font-weight:var({})", custom), config);
+        }
+    }
+
+    if let Some(token) = class.strip_prefix("font-") {
+        if token == "extrablack" {
+            return rule(
+                &selector,
+                &format!("font-weight:var(--font-weight-{})", token),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    for (prefix, property) in [
+        ("p-", "padding"),
+        ("px-", "padding-inline"),
+        ("py-", "padding-block"),
+        ("pt-", "padding-top"),
+        ("pr-", "padding-right"),
+        ("pb-", "padding-bottom"),
+        ("pl-", "padding-left"),
+        ("ps-", "padding-inline-start"),
+        ("pe-", "padding-inline-end"),
+    ] {
+        if let Some(raw) = class.strip_prefix(prefix) {
+            if let Some(value) = parse_spacing_value(raw) {
+                let declarations = format!("{}:{}", property, value);
+                return rule(&selector, &declarations, config);
+            }
+        }
+    }
+
+    for (prefix, property) in [
+        ("m-", "margin"),
+        ("mx-", "margin-inline"),
+        ("my-", "margin-block"),
+        ("mt-", "margin-top"),
+        ("mr-", "margin-right"),
+        ("mb-", "margin-bottom"),
+        ("ml-", "margin-left"),
+        ("ms-", "margin-inline-start"),
+        ("me-", "margin-inline-end"),
+    ] {
+        if let Some(raw) = raw_class.strip_prefix(prefix) {
+            if let Some(value) = parse_margin_value(raw, negative) {
+                let declarations = format!("{}:{}", property, value);
+                return rule(&selector, &declarations, config);
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_spacing_value(raw: &str) -> Option<String> {
+    if raw == "px" {
+        return Some("1px".to_string());
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(format!("calc(var(--spacing) * {})", raw));
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return Some(custom.to_string());
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return Some(format!("var({})", custom));
+    }
+    None
+}
+
+fn parse_margin_value(raw: &str, negative: bool) -> Option<String> {
+    if raw == "auto" {
+        return if negative {
+            None
+        } else {
+            Some("auto".to_string())
+        };
+    }
+    if raw == "px" {
+        return Some(if negative { "-1px" } else { "1px" }.to_string());
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(if negative {
+            format!("calc(var(--spacing) * -{})", raw)
+        } else {
+            format!("calc(var(--spacing) * {})", raw)
+        });
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return Some(if negative {
+            format!("calc({} * -1)", custom)
+        } else {
+            custom.to_string()
+        });
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        let variable = format!("var({})", custom);
+        return Some(if negative {
+            format!("calc({} * -1)", variable)
+        } else {
+            variable
+        });
+    }
+    None
+}
+
+fn parse_space_value(raw: &str, negative: bool) -> Option<String> {
+    if raw == "px" {
+        return Some(if negative { "-1px" } else { "1px" }.to_string());
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(if negative {
+            format!("calc(var(--spacing) * -{})", raw)
+        } else {
+            format!("calc(var(--spacing) * {})", raw)
+        });
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return Some(if negative {
+            format!("calc({} * -1)", custom)
+        } else {
+            custom.to_string()
+        });
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        let variable = format!("var({})", custom);
+        return Some(if negative {
+            format!("calc({} * -1)", variable)
+        } else {
+            variable
+        });
+    }
+    None
+}
+
+fn generate_layout_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "block" => rule(&selector, "display:block", config),
+        "inline-block" => rule(&selector, "display:inline-block", config),
+        "inline" => rule(&selector, "display:inline", config),
+        "flow-root" => rule(&selector, "display:flow-root", config),
+        "flex" => rule(&selector, "display:flex", config),
+        "inline-flex" => rule(&selector, "display:inline-flex", config),
+        "grid" => rule(&selector, "display:grid", config),
+        "inline-grid" => rule(&selector, "display:inline-grid", config),
+        "contents" => rule(&selector, "display:contents", config),
+        "table" => rule(&selector, "display:table", config),
+        "table-row" => rule(&selector, "display:table-row", config),
+        "table-cell" => rule(&selector, "display:table-cell", config),
+        "table-caption" => rule(&selector, "display:table-caption", config),
+        "table-column" => rule(&selector, "display:table-column", config),
+        "table-column-group" => rule(&selector, "display:table-column-group", config),
+        "table-header-group" => rule(&selector, "display:table-header-group", config),
+        "table-row-group" => rule(&selector, "display:table-row-group", config),
+        "table-footer-group" => rule(&selector, "display:table-footer-group", config),
+        "sr-only" => rule(
+            &selector,
+            "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0",
+            config,
+        ),
+        "not-sr-only" => rule(
+            &selector,
+            "position:static;width:auto;height:auto;padding:0;margin:0;overflow:visible;clip:auto;white-space:normal",
+            config,
+        ),
+        "hidden" => rule(&selector, "display:none", config),
+        "static" => rule(&selector, "position:static", config),
+        "fixed" => rule(&selector, "position:fixed", config),
+        "absolute" => rule(&selector, "position:absolute", config),
+        "relative" => rule(&selector, "position:relative", config),
+        "sticky" => rule(&selector, "position:sticky", config),
+        "w-full" => rule(&selector, "width:100%", config),
+        "h-full" => rule(&selector, "height:100%", config),
+        "w-screen" => rule(&selector, "width:100vw", config),
+        "h-screen" => rule(&selector, "height:100vh", config),
+        "min-h-screen" => rule(&selector, "min-height:100vh", config),
+        "flex-1" => rule(&selector, "flex:1 1 0%", config),
+        "flex-none" => rule(&selector, "flex:none", config),
+        "flex-row" => rule(&selector, "flex-direction:row", config),
+        "flex-row-reverse" => rule(&selector, "flex-direction:row-reverse", config),
+        "flex-col" => rule(&selector, "flex-direction:column", config),
+        "flex-col-reverse" => rule(&selector, "flex-direction:column-reverse", config),
+        "flex-nowrap" => rule(&selector, "flex-wrap:nowrap", config),
+        "flex-wrap" => rule(&selector, "flex-wrap:wrap", config),
+        "flex-wrap-reverse" => rule(&selector, "flex-wrap:wrap-reverse", config),
+        "justify-start" => rule(&selector, "justify-content:flex-start", config),
+        "justify-center" => rule(&selector, "justify-content:center", config),
+        "justify-center-safe" => rule(&selector, "justify-content:safe center", config),
+        "justify-end" => rule(&selector, "justify-content:flex-end", config),
+        "justify-end-safe" => rule(&selector, "justify-content:safe flex-end", config),
+        "justify-between" => rule(&selector, "justify-content:space-between", config),
+        "justify-around" => rule(&selector, "justify-content:space-around", config),
+        "justify-evenly" => rule(&selector, "justify-content:space-evenly", config),
+        "justify-stretch" => rule(&selector, "justify-content:stretch", config),
+        "justify-baseline" => rule(&selector, "justify-content:baseline", config),
+        "justify-normal" => rule(&selector, "justify-content:normal", config),
+        "justify-items-start" => rule(&selector, "justify-items:start", config),
+        "justify-items-end" => rule(&selector, "justify-items:end", config),
+        "justify-items-end-safe" => rule(&selector, "justify-items:safe end", config),
+        "justify-items-center" => rule(&selector, "justify-items:center", config),
+        "justify-items-center-safe" => rule(&selector, "justify-items:safe center", config),
+        "justify-items-stretch" => rule(&selector, "justify-items:stretch", config),
+        "justify-items-normal" => rule(&selector, "justify-items:normal", config),
+        "justify-self-auto" => rule(&selector, "justify-self:auto", config),
+        "justify-self-start" => rule(&selector, "justify-self:start", config),
+        "justify-self-center" => rule(&selector, "justify-self:center", config),
+        "justify-self-center-safe" => rule(&selector, "justify-self:safe center", config),
+        "justify-self-end" => rule(&selector, "justify-self:end", config),
+        "justify-self-end-safe" => rule(&selector, "justify-self:safe end", config),
+        "justify-self-stretch" => rule(&selector, "justify-self:stretch", config),
+        "content-normal" => rule(&selector, "align-content:normal", config),
+        "content-center" => rule(&selector, "align-content:center", config),
+        "content-start" => rule(&selector, "align-content:flex-start", config),
+        "content-end" => rule(&selector, "align-content:flex-end", config),
+        "content-between" => rule(&selector, "align-content:space-between", config),
+        "content-around" => rule(&selector, "align-content:space-around", config),
+        "content-evenly" => rule(&selector, "align-content:space-evenly", config),
+        "content-baseline" => rule(&selector, "align-content:baseline", config),
+        "content-stretch" => rule(&selector, "align-content:stretch", config),
+        "place-content-center" => rule(&selector, "place-content:center", config),
+        "place-content-center-safe" => rule(&selector, "place-content:safe center", config),
+        "place-content-start" => rule(&selector, "place-content:start", config),
+        "place-content-end" => rule(&selector, "place-content:end", config),
+        "place-content-end-safe" => rule(&selector, "place-content:safe end", config),
+        "place-content-between" => rule(&selector, "place-content:space-between", config),
+        "place-content-around" => rule(&selector, "place-content:space-around", config),
+        "place-content-evenly" => rule(&selector, "place-content:space-evenly", config),
+        "place-content-baseline" => rule(&selector, "place-content:baseline", config),
+        "place-content-stretch" => rule(&selector, "place-content:stretch", config),
+        "place-items-start" => rule(&selector, "place-items:start", config),
+        "place-items-end" => rule(&selector, "place-items:end", config),
+        "place-items-end-safe" => rule(&selector, "place-items:safe end", config),
+        "place-items-center" => rule(&selector, "place-items:center", config),
+        "place-items-center-safe" => rule(&selector, "place-items:safe center", config),
+        "place-items-baseline" => rule(&selector, "place-items:baseline", config),
+        "place-items-stretch" => rule(&selector, "place-items:stretch", config),
+        "place-self-auto" => rule(&selector, "place-self:auto", config),
+        "place-self-start" => rule(&selector, "place-self:start", config),
+        "place-self-end" => rule(&selector, "place-self:end", config),
+        "place-self-end-safe" => rule(&selector, "place-self:safe end", config),
+        "place-self-center" => rule(&selector, "place-self:center", config),
+        "place-self-center-safe" => rule(&selector, "place-self:safe center", config),
+        "place-self-stretch" => rule(&selector, "place-self:stretch", config),
+        "items-start" => rule(&selector, "align-items:flex-start", config),
+        "items-center" => rule(&selector, "align-items:center", config),
+        "items-end" => rule(&selector, "align-items:flex-end", config),
+        "items-end-safe" => rule(&selector, "align-items:safe flex-end", config),
+        "items-center-safe" => rule(&selector, "align-items:safe center", config),
+        "items-baseline" => rule(&selector, "align-items:baseline", config),
+        "items-baseline-last" => rule(&selector, "align-items:last baseline", config),
+        "items-stretch" => rule(&selector, "align-items:stretch", config),
+        "self-auto" => rule(&selector, "align-self:auto", config),
+        "self-start" => rule(&selector, "align-self:flex-start", config),
+        "self-end" => rule(&selector, "align-self:flex-end", config),
+        "self-end-safe" => rule(&selector, "align-self:safe flex-end", config),
+        "self-center" => rule(&selector, "align-self:center", config),
+        "self-center-safe" => rule(&selector, "align-self:safe center", config),
+        "self-stretch" => rule(&selector, "align-self:stretch", config),
+        "self-baseline" => rule(&selector, "align-self:baseline", config),
+        "self-baseline-last" => rule(&selector, "align-self:last baseline", config),
+        "overflow-auto" => rule(&selector, "overflow:auto", config),
+        "overflow-hidden" => rule(&selector, "overflow:hidden", config),
+        "overflow-clip" => rule(&selector, "overflow:clip", config),
+        "overflow-visible" => rule(&selector, "overflow:visible", config),
+        "overflow-scroll" => rule(&selector, "overflow:scroll", config),
+        "overflow-x-auto" => rule(&selector, "overflow-x:auto", config),
+        "overflow-y-auto" => rule(&selector, "overflow-y:auto", config),
+        "overflow-x-hidden" => rule(&selector, "overflow-x:hidden", config),
+        "overflow-y-hidden" => rule(&selector, "overflow-y:hidden", config),
+        "overflow-x-clip" => rule(&selector, "overflow-x:clip", config),
+        "overflow-y-clip" => rule(&selector, "overflow-y:clip", config),
+        "overflow-x-visible" => rule(&selector, "overflow-x:visible", config),
+        "overflow-y-visible" => rule(&selector, "overflow-y:visible", config),
+        "overflow-x-scroll" => rule(&selector, "overflow-x:scroll", config),
+        "overflow-y-scroll" => rule(&selector, "overflow-y:scroll", config),
+        _ => generate_sizing_rule(class, config)
+            .or_else(|| generate_gap_rule(class, config))
+            .or_else(|| generate_space_rule(class, config)),
+    }
+}
+
+fn generate_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "container" {
+        if config.minify {
+            return Some(".container{width:100%}@media (min-width: 40rem){.container{max-width:40rem}}@media (min-width: 48rem){.container{max-width:48rem}}@media (min-width: 64rem){.container{max-width:64rem}}@media (min-width: 80rem){.container{max-width:80rem}}@media (min-width: 96rem){.container{max-width:96rem}}".to_string());
+        }
+        return Some(".container { width: 100%; }\n@media (min-width: 40rem) { .container { max-width: 40rem; } }\n@media (min-width: 48rem) { .container { max-width: 48rem; } }\n@media (min-width: 64rem) { .container { max-width: 64rem; } }\n@media (min-width: 80rem) { .container { max-width: 80rem; } }\n@media (min-width: 96rem) { .container { max-width: 96rem; } }".to_string());
+    }
+
+    if let Some(raw) = class.strip_prefix("max-w-") {
+        let declarations = match raw {
+            "none" => "max-width:none".to_string(),
+            "px" => "max-width:1px".to_string(),
+            "full" => "max-width:100%".to_string(),
+            "screen" => "max-width:100vw".to_string(),
+            "dvw" => "max-width:100dvw".to_string(),
+            "dvh" => "max-width:100dvh".to_string(),
+            "lvw" => "max-width:100lvw".to_string(),
+            "lvh" => "max-width:100lvh".to_string(),
+            "svw" => "max-width:100svw".to_string(),
+            "svh" => "max-width:100svh".to_string(),
+            "min" => "max-width:min-content".to_string(),
+            "max" => "max-width:max-content".to_string(),
+            "fit" => "max-width:fit-content".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("max-width:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("max-width:calc({} * 100%)", raw)
+                } else if is_container_token(raw) {
+                    format!("max-width:var(--container-{})", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("max-width:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("max-width:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("min-w-") {
+        let declarations = match raw {
+            "auto" => "min-width:auto".to_string(),
+            "px" => "min-width:1px".to_string(),
+            "full" => "min-width:100%".to_string(),
+            "screen" => "min-width:100vw".to_string(),
+            "dvw" => "min-width:100dvw".to_string(),
+            "dvh" => "min-width:100dvh".to_string(),
+            "lvw" => "min-width:100lvw".to_string(),
+            "lvh" => "min-width:100lvh".to_string(),
+            "svw" => "min-width:100svw".to_string(),
+            "svh" => "min-width:100svh".to_string(),
+            "min" => "min-width:min-content".to_string(),
+            "max" => "min-width:max-content".to_string(),
+            "fit" => "min-width:fit-content".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("min-width:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("min-width:calc({} * 100%)", raw)
+                } else if is_container_token(raw) {
+                    format!("min-width:var(--container-{})", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("min-width:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("min-width:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("min-h-") {
+        let declarations = match raw {
+            "auto" => "min-height:auto".to_string(),
+            "px" => "min-height:1px".to_string(),
+            "full" => "min-height:100%".to_string(),
+            "screen" => "min-height:100vh".to_string(),
+            "dvh" => "min-height:100dvh".to_string(),
+            "dvw" => "min-height:100dvw".to_string(),
+            "lvh" => "min-height:100lvh".to_string(),
+            "lvw" => "min-height:100lvw".to_string(),
+            "svh" => "min-height:100svh".to_string(),
+            "svw" => "min-height:100svw".to_string(),
+            "min" => "min-height:min-content".to_string(),
+            "max" => "min-height:max-content".to_string(),
+            "fit" => "min-height:fit-content".to_string(),
+            "lh" => "min-height:1lh".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("min-height:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("min-height:calc({} * 100%)", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("min-height:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("min-height:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("max-h-") {
+        let declarations = match raw {
+            "none" => "max-height:none".to_string(),
+            "px" => "max-height:1px".to_string(),
+            "full" => "max-height:100%".to_string(),
+            "screen" => "max-height:100vh".to_string(),
+            "dvh" => "max-height:100dvh".to_string(),
+            "dvw" => "max-height:100dvw".to_string(),
+            "lvh" => "max-height:100lvh".to_string(),
+            "lvw" => "max-height:100lvw".to_string(),
+            "svh" => "max-height:100svh".to_string(),
+            "svw" => "max-height:100svw".to_string(),
+            "min" => "max-height:min-content".to_string(),
+            "max" => "max-height:max-content".to_string(),
+            "fit" => "max-height:fit-content".to_string(),
+            "lh" => "max-height:1lh".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("max-height:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("max-height:calc({} * 100%)", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("max-height:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("max-height:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("w-") {
+        let declarations = match raw {
+            "auto" => "width:auto".to_string(),
+            "px" => "width:1px".to_string(),
+            "full" => "width:100%".to_string(),
+            "screen" => "width:100vw".to_string(),
+            "dvw" => "width:100dvw".to_string(),
+            "dvh" => "width:100dvh".to_string(),
+            "lvw" => "width:100lvw".to_string(),
+            "lvh" => "width:100lvh".to_string(),
+            "svw" => "width:100svw".to_string(),
+            "svh" => "width:100svh".to_string(),
+            "min" => "width:min-content".to_string(),
+            "max" => "width:max-content".to_string(),
+            "fit" => "width:fit-content".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("width:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("width:calc({} * 100%)", raw)
+                } else if is_container_token(raw) {
+                    format!("width:var(--container-{})", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("width:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("width:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("h-") {
+        let declarations = match raw {
+            "auto" => "height:auto".to_string(),
+            "px" => "height:1px".to_string(),
+            "full" => "height:100%".to_string(),
+            "screen" => "height:100vh".to_string(),
+            "dvh" => "height:100dvh".to_string(),
+            "dvw" => "height:100dvw".to_string(),
+            "lvh" => "height:100lvh".to_string(),
+            "lvw" => "height:100lvw".to_string(),
+            "svh" => "height:100svh".to_string(),
+            "svw" => "height:100svw".to_string(),
+            "min" => "height:min-content".to_string(),
+            "max" => "height:max-content".to_string(),
+            "fit" => "height:fit-content".to_string(),
+            "lh" => "height:1lh".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("height:calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("height:calc({} * 100%)", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    format!("height:{}", custom)
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("height:var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("size-") {
+        let value = match raw {
+            "auto" => "auto".to_string(),
+            "px" => "1px".to_string(),
+            "full" => "100%".to_string(),
+            "dvw" => "100dvw".to_string(),
+            "dvh" => "100dvh".to_string(),
+            "lvw" => "100lvw".to_string(),
+            "lvh" => "100lvh".to_string(),
+            "svw" => "100svw".to_string(),
+            "svh" => "100svh".to_string(),
+            "min" => "min-content".to_string(),
+            "max" => "max-content".to_string(),
+            "fit" => "fit-content".to_string(),
+            _ => {
+                if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+                    format!("calc(var(--spacing) * {})", raw)
+                } else if is_fraction(raw) {
+                    format!("calc({} * 100%)", raw)
+                } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
+                {
+                    custom.to_string()
+                } else if let Some(custom) =
+                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                {
+                    format!("var({})", custom)
+                } else {
+                    return None;
+                }
+            }
+        };
+        return rule(
+            &selector,
+            &format!("width:{};height:{}", value, value),
+            config,
+        );
+    }
+
+    None
+}
+
+fn generate_gap_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("gap-") {
+        if let Some(value) = spacing_scale(raw) {
+            return rule(&selector, &format!("gap:{}", value), config);
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("gap:{}", custom), config);
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(&selector, &format!("gap:var({})", custom), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("gap-x-") {
+        if let Some(value) = spacing_scale(raw) {
+            return rule(&selector, &format!("column-gap:{}", value), config);
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("column-gap:{}", custom), config);
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(&selector, &format!("column-gap:var({})", custom), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("gap-y-") {
+        if let Some(value) = spacing_scale(raw) {
+            return rule(&selector, &format!("row-gap:{}", value), config);
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("row-gap:{}", custom), config);
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(&selector, &format!("row-gap:var({})", custom), config);
+        }
+    }
+
+    None
+}
+
+fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "space-x-reverse" {
+        return rule(
+            &format!("{} > :not(:last-child)", selector),
+            "--tw-space-x-reverse:1",
+            config,
+        );
+    }
+    if class == "space-y-reverse" {
+        return rule(
+            &format!("{} > :not(:last-child)", selector),
+            "--tw-space-y-reverse:1",
+            config,
+        );
+    }
+
+    let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    if let Some(raw) = raw_class.strip_prefix("space-x-") {
+        let value = parse_space_value(raw, negative)?;
+        return rule(
+            &format!("{} > :not(:last-child)", selector),
+            &format!(
+                "--tw-space-x-reverse:0;margin-inline-start:calc({} * var(--tw-space-x-reverse));margin-inline-end:calc({} * calc(1 - var(--tw-space-x-reverse)))",
+                value, value
+            ),
+            config,
+        );
+    }
+
+    if let Some(raw) = raw_class.strip_prefix("space-y-") {
+        let value = parse_space_value(raw, negative)?;
+        return rule(
+            &format!("{} > :not(:last-child)", selector),
+            &format!(
+                "--tw-space-y-reverse:0;margin-block-start:calc({} * var(--tw-space-y-reverse));margin-block-end:calc({} * calc(1 - var(--tw-space-y-reverse)))",
+                value, value
+            ),
+            config,
+        );
+    }
+
+    None
+}
+
+fn generate_aspect_ratio_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "aspect-square" => rule(&selector, "aspect-ratio:1 / 1", config),
+        "aspect-video" => rule(&selector, "aspect-ratio:var(--aspect-video)", config),
+        "aspect-auto" => rule(&selector, "aspect-ratio:auto", config),
+        _ => {
+            if let Some(custom) = class
+                .strip_prefix("aspect-(")
+                .and_then(|value| value.strip_suffix(')'))
+            {
+                return rule(&selector, &format!("aspect-ratio:var({})", custom), config);
+            }
+            if let Some(raw) = class
+                .strip_prefix("aspect-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                return rule(&selector, &format!("aspect-ratio:{}", raw), config);
+            }
+            if let Some(ratio) = class.strip_prefix("aspect-") {
+                if ratio.contains('/') && !ratio.is_empty() {
+                    return rule(&selector, &format!("aspect-ratio:{}", ratio), config);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn generate_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if let Some(value) = class
+        .strip_prefix("columns-[")
+        .and_then(|raw| raw.strip_suffix(']'))
+    {
+        return rule(&selector, &format!("columns:{}", value), config);
+    }
+    if let Some(custom) = class
+        .strip_prefix("columns-(")
+        .and_then(|raw| raw.strip_suffix(')'))
+    {
+        return rule(&selector, &format!("columns:var({})", custom), config);
+    }
+    if let Some(raw) = class.strip_prefix("columns-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(&selector, &format!("columns:{}", raw), config);
+        }
+        if is_container_token(raw) {
+            return rule(&selector, &format!("columns:var(--container-{})", raw), config);
+        }
+    }
+    None
+}
+
+fn generate_break_after_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "break-after-auto" => rule(&selector, "break-after:auto", config),
+        "break-after-avoid" => rule(&selector, "break-after:avoid", config),
+        "break-after-all" => rule(&selector, "break-after:all", config),
+        "break-after-avoid-page" => rule(&selector, "break-after:avoid-page", config),
+        "break-after-page" => rule(&selector, "break-after:page", config),
+        "break-after-left" => rule(&selector, "break-after:left", config),
+        "break-after-right" => rule(&selector, "break-after:right", config),
+        "break-after-column" => rule(&selector, "break-after:column", config),
+        _ => None,
+    }
+}
+
+fn generate_break_before_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "break-before-auto" => rule(&selector, "break-before:auto", config),
+        "break-before-avoid" => rule(&selector, "break-before:avoid", config),
+        "break-before-all" => rule(&selector, "break-before:all", config),
+        "break-before-avoid-page" => rule(&selector, "break-before:avoid-page", config),
+        "break-before-page" => rule(&selector, "break-before:page", config),
+        "break-before-left" => rule(&selector, "break-before:left", config),
+        "break-before-right" => rule(&selector, "break-before:right", config),
+        "break-before-column" => rule(&selector, "break-before:column", config),
+        _ => None,
+    }
+}
+
+fn generate_break_inside_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "break-inside-auto" => rule(&selector, "break-inside:auto", config),
+        "break-inside-avoid" => rule(&selector, "break-inside:avoid", config),
+        "break-inside-avoid-page" => rule(&selector, "break-inside:avoid-page", config),
+        "break-inside-avoid-column" => rule(&selector, "break-inside:avoid-column", config),
+        _ => None,
+    }
+}
+
+fn generate_box_decoration_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "box-decoration-clone" => rule(&selector, "box-decoration-break:clone", config),
+        "box-decoration-slice" => rule(&selector, "box-decoration-break:slice", config),
+        _ => None,
+    }
+}
+
+fn generate_box_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "box-border" => rule(&selector, "box-sizing:border-box", config),
+        "box-content" => rule(&selector, "box-sizing:content-box", config),
+        _ => None,
+    }
+}
+
+fn generate_float_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "float-right" => rule(&selector, "float:right", config),
+        "float-left" => rule(&selector, "float:left", config),
+        "float-start" => rule(&selector, "float:inline-start", config),
+        "float-end" => rule(&selector, "float:inline-end", config),
+        "float-none" => rule(&selector, "float:none", config),
+        _ => None,
+    }
+}
+
+fn generate_clear_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "clear-left" => rule(&selector, "clear:left", config),
+        "clear-right" => rule(&selector, "clear:right", config),
+        "clear-both" => rule(&selector, "clear:both", config),
+        "clear-start" => rule(&selector, "clear:inline-start", config),
+        "clear-end" => rule(&selector, "clear:inline-end", config),
+        "clear-none" => rule(&selector, "clear:none", config),
+        _ => None,
+    }
+}
+
+fn generate_isolation_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "isolate" => rule(&selector, "isolation:isolate", config),
+        "isolation-auto" => rule(&selector, "isolation:auto", config),
+        _ => None,
+    }
+}
+
+fn generate_object_fit_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "object-contain" => rule(&selector, "object-fit:contain", config),
+        "object-cover" => rule(&selector, "object-fit:cover", config),
+        "object-fill" => rule(&selector, "object-fit:fill", config),
+        "object-none" => rule(&selector, "object-fit:none", config),
+        "object-scale-down" => rule(&selector, "object-fit:scale-down", config),
+        _ => None,
+    }
+}
+
+fn generate_object_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "object-top-left" => rule(&selector, "object-position:top left", config),
+        "object-top" => rule(&selector, "object-position:top", config),
+        "object-top-right" => rule(&selector, "object-position:top right", config),
+        "object-left" => rule(&selector, "object-position:left", config),
+        "object-center" => rule(&selector, "object-position:center", config),
+        "object-right" => rule(&selector, "object-position:right", config),
+        "object-bottom-left" => rule(&selector, "object-position:bottom left", config),
+        "object-bottom" => rule(&selector, "object-position:bottom", config),
+        "object-bottom-right" => rule(&selector, "object-position:bottom right", config),
+        _ => {
+            if let Some(custom) = class
+                .strip_prefix("object-(")
+                .and_then(|raw| raw.strip_suffix(')'))
+            {
+                return rule(&selector, &format!("object-position:var({})", custom), config);
+            }
+            if let Some(raw) = class
+                .strip_prefix("object-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                return rule(&selector, &format!("object-position:{}", raw), config);
+            }
+            None
+        }
+    }
+}
+
+fn generate_overscroll_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "overscroll-auto" => rule(&selector, "overscroll-behavior:auto", config),
+        "overscroll-contain" => rule(&selector, "overscroll-behavior:contain", config),
+        "overscroll-none" => rule(&selector, "overscroll-behavior:none", config),
+        "overscroll-x-auto" => rule(&selector, "overscroll-behavior-x:auto", config),
+        "overscroll-x-contain" => rule(&selector, "overscroll-behavior-x:contain", config),
+        "overscroll-x-none" => rule(&selector, "overscroll-behavior-x:none", config),
+        "overscroll-y-auto" => rule(&selector, "overscroll-behavior-y:auto", config),
+        "overscroll-y-contain" => rule(&selector, "overscroll-behavior-y:contain", config),
+        "overscroll-y-none" => rule(&selector, "overscroll-behavior-y:none", config),
+        _ => None,
+    }
+}
+
+fn generate_inset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let (negative, raw) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    let (key, token) = parse_inset_key_and_token(raw)?;
+    let value = parse_inset_value(token, negative)?;
+    let declarations = inset_declarations(key, &value)?;
+    rule(&selector, &declarations, config)
+}
+
+fn generate_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "visible" => rule(&selector, "visibility:visible", config),
+        "invisible" => rule(&selector, "visibility:hidden", config),
+        "collapse" => rule(&selector, "visibility:collapse", config),
+        _ => None,
+    }
+}
+
+fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "z-auto" {
+        return rule(&selector, "z-index:auto", config);
+    }
+    if let Some(num) = class.strip_prefix("z-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("z-index:{}", num), config);
+        }
+    }
+    if let Some(num) = class.strip_prefix("-z-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("z-index:-{}", num), config);
+        }
+    }
+    if let Some(raw) = class.strip_prefix("z-[").and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("z-index:{}", raw), config);
+    }
+    if let Some(custom) = class.strip_prefix("z-(").and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("z-index:var({})", custom), config);
+    }
+    None
+}
+
+fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let Some(raw) = class.strip_prefix("basis-") else {
+        return None;
+    };
+
+    if raw == "auto" {
+        return rule(&selector, "flex-basis:auto", config);
+    }
+    if raw == "full" {
+        return rule(&selector, "flex-basis:100%", config);
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("flex-basis:{}", custom), config);
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("flex-basis:var({})", custom), config);
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return rule(
+            &selector,
+            &format!("flex-basis:calc(var(--spacing) * {})", raw),
+            config,
+        );
+    }
+    if is_fraction(raw) {
+        return rule(&selector, &format!("flex-basis:calc({} * 100%)", raw), config);
+    }
+    if is_container_token(raw) {
+        return rule(&selector, &format!("flex-basis:var(--container-{})", raw), config);
+    }
+
+    None
+}
+
+fn generate_flex_shorthand_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let Some(raw) = class.strip_prefix("flex-") else {
+        return None;
+    };
+
+    if matches!(
+        raw,
+        "row" | "row-reverse" | "col" | "col-reverse" | "wrap" | "wrap-reverse" | "nowrap"
+    ) {
+        return None;
+    }
+    if raw == "auto" {
+        return rule(&selector, "flex:auto", config);
+    }
+    if raw == "initial" {
+        return rule(&selector, "flex:0 auto", config);
+    }
+    if raw == "none" {
+        return rule(&selector, "flex:none", config);
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("flex:{}", custom), config);
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("flex:var({})", custom), config);
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return rule(&selector, &format!("flex:{}", raw), config);
+    }
+    if is_fraction(raw) {
+        return rule(&selector, &format!("flex:calc({} * 100%)", raw), config);
+    }
+    None
+}
+
+fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "grow" {
+        return rule(&selector, "flex-grow:1", config);
+    }
+    let Some(raw) = class.strip_prefix("grow-") else {
+        return None;
+    };
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return rule(&selector, &format!("flex-grow:{}", raw), config);
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("flex-grow:{}", custom), config);
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("flex-grow:var({})", custom), config);
+    }
+    None
+}
+
+fn generate_flex_shrink_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "shrink" {
+        return rule(&selector, "flex-shrink:1", config);
+    }
+    let Some(raw) = class.strip_prefix("shrink-") else {
+        return None;
+    };
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return rule(&selector, &format!("flex-shrink:{}", raw), config);
+    }
+    if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("flex-shrink:{}", custom), config);
+    }
+    if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("flex-shrink:var({})", custom), config);
+    }
+    None
+}
+
+fn generate_order_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "order-first" => return rule(&selector, "order:-9999", config),
+        "order-last" => return rule(&selector, "order:9999", config),
+        "order-none" => return rule(&selector, "order:0", config),
+        _ => {}
+    }
+
+    if let Some(num) = class.strip_prefix("order-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("order:{}", num), config);
+        }
+        if let Some(raw) = num.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("order:{}", raw), config);
+        }
+        if let Some(custom) = num.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(&selector, &format!("order:var({})", custom), config);
+        }
+    }
+
+    if let Some(num) = class.strip_prefix("-order-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("order:calc({} * -1)", num), config);
+        }
+    }
+
+    None
+}
+
+fn generate_grid_template_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "grid-cols-none" {
+        return rule(&selector, "grid-template-columns:none", config);
+    }
+    if class == "grid-cols-subgrid" {
+        return rule(&selector, "grid-template-columns:subgrid", config);
+    }
+    if let Some(raw) = class.strip_prefix("grid-cols-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("grid-template-columns:repeat({}, minmax(0, 1fr))", raw),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(&selector, &format!("grid-template-columns:{}", custom), config);
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!("grid-template-columns:var({})", custom),
+                config,
+            );
+        }
+    }
+    None
+}
+
+fn generate_grid_auto_flow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "grid-flow-row" => rule(&selector, "grid-auto-flow:row", config),
+        "grid-flow-col" => rule(&selector, "grid-auto-flow:column", config),
+        "grid-flow-dense" => rule(&selector, "grid-auto-flow:dense", config),
+        "grid-flow-row-dense" => rule(&selector, "grid-auto-flow:row dense", config),
+        "grid-flow-col-dense" => rule(&selector, "grid-auto-flow:column dense", config),
+        _ => None,
+    }
+}
+
+fn generate_grid_auto_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "auto-cols-auto" => rule(&selector, "grid-auto-columns:auto", config),
+        "auto-cols-min" => rule(&selector, "grid-auto-columns:min-content", config),
+        "auto-cols-max" => rule(&selector, "grid-auto-columns:max-content", config),
+        "auto-cols-fr" => rule(&selector, "grid-auto-columns:minmax(0, 1fr)", config),
+        _ => {
+            if let Some(custom) = class
+                .strip_prefix("auto-cols-(")
+                .and_then(|v| v.strip_suffix(')'))
+            {
+                return rule(&selector, &format!("grid-auto-columns:var({})", custom), config);
+            }
+            if let Some(custom) = class
+                .strip_prefix("auto-cols-[")
+                .and_then(|v| v.strip_suffix(']'))
+            {
+                return rule(&selector, &format!("grid-auto-columns:{}", custom), config);
+            }
+            None
+        }
+    }
+}
+
+fn generate_grid_auto_rows_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "auto-rows-auto" => rule(&selector, "grid-auto-rows:auto", config),
+        "auto-rows-min" => rule(&selector, "grid-auto-rows:min-content", config),
+        "auto-rows-max" => rule(&selector, "grid-auto-rows:max-content", config),
+        "auto-rows-fr" => rule(&selector, "grid-auto-rows:minmax(0, 1fr)", config),
+        _ => {
+            if let Some(custom) = class
+                .strip_prefix("auto-rows-(")
+                .and_then(|v| v.strip_suffix(')'))
+            {
+                return rule(&selector, &format!("grid-auto-rows:var({})", custom), config);
+            }
+            if let Some(custom) = class
+                .strip_prefix("auto-rows-[")
+                .and_then(|v| v.strip_suffix(']'))
+            {
+                return rule(&selector, &format!("grid-auto-rows:{}", custom), config);
+            }
+            None
+        }
+    }
+}
+
+fn parse_border_width_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("{}px", raw));
+    }
+    if let Some(value) = raw
+        .strip_prefix("(length:")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() || is_color_like_value(value) {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "border" {
+        return rule(&selector, "border-width:1px", config);
+    }
+
+    for (utility, property) in [
+        ("border-x", "border-inline-width"),
+        ("border-y", "border-block-width"),
+        ("border-s", "border-inline-start-width"),
+        ("border-e", "border-inline-end-width"),
+        ("border-t", "border-top-width"),
+        ("border-r", "border-right-width"),
+        ("border-b", "border-bottom-width"),
+        ("border-l", "border-left-width"),
+    ] {
+        if class == utility {
+            return rule(&selector, &format!("{}:1px", property), config);
+        }
+    }
+
+    for (prefix, property) in [
+        ("border-x-", "border-inline-width"),
+        ("border-y-", "border-block-width"),
+        ("border-s-", "border-inline-start-width"),
+        ("border-e-", "border-inline-end-width"),
+        ("border-t-", "border-top-width"),
+        ("border-r-", "border-right-width"),
+        ("border-b-", "border-bottom-width"),
+        ("border-l-", "border-left-width"),
+        ("border-", "border-width"),
+    ] {
+        if let Some(raw) = class.strip_prefix(prefix) {
+            if let Some(value) = parse_border_width_value(raw) {
+                return rule(&selector, &format!("{}:{}", property, value), config);
+            }
+        }
+    }
+
+    None
+}
+
+fn generate_divide_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let child_selector = format!("{} > :not(:last-child)", selector);
+
+    if class == "divide-x-reverse" {
+        return rule(&child_selector, "--tw-divide-x-reverse:1", config);
+    }
+    if class == "divide-y-reverse" {
+        return rule(&child_selector, "--tw-divide-y-reverse:1", config);
+    }
+
+    if class == "divide-x" {
+        return rule(
+            &child_selector,
+            "--tw-divide-x-reverse:0;border-inline-start-width:calc(1px * var(--tw-divide-x-reverse));border-inline-end-width:calc(1px * calc(1 - var(--tw-divide-x-reverse)))",
+            config,
+        );
+    }
+    if class == "divide-y" {
+        return rule(
+            &child_selector,
+            "--tw-divide-y-reverse:0;border-block-start-width:calc(1px * var(--tw-divide-y-reverse));border-block-end-width:calc(1px * calc(1 - var(--tw-divide-y-reverse)))",
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("divide-x-") {
+        if let Some(value) = parse_border_width_value(raw) {
+            return rule(
+                &child_selector,
+                &format!(
+                    "--tw-divide-x-reverse:0;border-inline-start-width:calc({} * var(--tw-divide-x-reverse));border-inline-end-width:calc({} * calc(1 - var(--tw-divide-x-reverse)))",
+                    value, value
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("divide-y-") {
+        if let Some(value) = parse_border_width_value(raw) {
+            return rule(
+                &child_selector,
+                &format!(
+                    "--tw-divide-y-reverse:0;border-block-start-width:calc({} * var(--tw-divide-y-reverse));border-block-end-width:calc({} * calc(1 - var(--tw-divide-y-reverse)))",
+                    value, value
+                ),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_border_style_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let value = match class {
+        "border-solid" | "divide-solid" => "solid",
+        "border-dashed" | "divide-dashed" => "dashed",
+        "border-dotted" | "divide-dotted" => "dotted",
+        "border-double" | "divide-double" => "double",
+        "border-hidden" | "divide-hidden" => "hidden",
+        "border-none" | "divide-none" => "none",
+        _ => return None,
+    };
+
+    let selector = format!(".{}", escape_selector(class));
+    if class.starts_with("divide-") {
+        return rule(
+            &format!("{} > :not(:last-child)", selector),
+            &format!("border-style:{}", value),
+            config,
+        );
+    }
+    rule(&selector, &format!("border-style:{}", value), config)
+}
+
+fn parse_border_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() || !is_color_like_value(value) {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return Some(format!(
+            "color-mix(in oklab,{} {},transparent)",
+            color_value, opacity_value
+        ));
+    }
+
+    Some(color_value)
+}
+
+fn generate_border_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    for (prefix, property, child_only) in [
+        ("border-x-", "border-inline-color", false),
+        ("border-y-", "border-block-color", false),
+        ("border-s-", "border-inline-start-color", false),
+        ("border-e-", "border-inline-end-color", false),
+        ("border-t-", "border-top-color", false),
+        ("border-r-", "border-right-color", false),
+        ("border-b-", "border-bottom-color", false),
+        ("border-l-", "border-left-color", false),
+        ("border-", "border-color", false),
+        ("divide-", "border-color", true),
+    ] {
+        if let Some(raw) = class.strip_prefix(prefix) {
+            let value = parse_border_color_value(raw)?;
+            let target = if child_only {
+                format!("{} > :not(:last-child)", selector)
+            } else {
+                selector.clone()
+            };
+            return rule(&target, &format!("{}:{}", property, value), config);
+        }
+    }
+
+    None
+}
+
+fn parse_outline_width_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("{}px", raw));
+    }
+    if let Some(value) = raw
+        .strip_prefix("(length:")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() || is_color_like_value(value) {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn parse_outline_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() || !is_color_like_value(value) {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+
+    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        if value.is_empty() || value.starts_with("length:") {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return Some(format!(
+            "color-mix(in oklab,{} {},transparent)",
+            color_value, opacity_value
+        ));
+    }
+
+    Some(color_value)
+}
+
+fn generate_outline_offset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("outline-offset-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(&selector, &format!("outline-offset:{}px", raw), config);
+        }
+        if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(&selector, &format!("outline-offset:var({})", value), config);
+        }
+        if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(&selector, &format!("outline-offset:{}", value), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("-outline-offset-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("outline-offset:calc({}px * -1)", raw),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_outline_style_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let declarations = match class {
+        "outline-solid" => "outline-style:solid",
+        "outline-dashed" => "outline-style:dashed",
+        "outline-dotted" => "outline-style:dotted",
+        "outline-double" => "outline-style:double",
+        "outline-none" => "outline-style:none",
+        "outline-hidden" => "outline:2px solid transparent;outline-offset:2px",
+        _ => return None,
+    };
+    rule(&selector, declarations, config)
+}
+
+fn generate_outline_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("outline-")?;
+    let value = parse_outline_color_value(raw)?;
+    rule(&selector, &format!("outline-color:{}", value), config)
+}
+
+fn generate_outline_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    if class == "outline" {
+        return rule(&selector, "outline-width:1px", config);
+    }
+    let raw = class.strip_prefix("outline-")?;
+    let value = parse_outline_width_value(raw)?;
+    rule(&selector, &format!("outline-width:{}", value), config)
+}
+
+fn generate_border_radius_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let raw = if class == "rounded" {
+        "md"
+    } else {
+        class.strip_prefix("rounded-")?
+    };
+    let selector = format!(".{}", escape_selector(class));
+
+    let targets = if let Some((target, rest)) = raw.split_once('-') {
+        if rest.is_empty() {
+            return None;
+        }
+        if let Some(props) = radius_target_properties(target) {
+            (props, rest)
+        } else {
+            (&["border-radius"][..], raw)
+        }
+    } else {
+        (&["border-radius"][..], raw)
+    };
+
+    let value = parse_radius_value(targets.1)?;
+    let declarations = targets
+        .0
+        .iter()
+        .map(|prop| format!("{}:{}", prop, value))
+        .collect::<Vec<_>>()
+        .join(";");
+    rule(&selector, &declarations, config)
+}
+
+fn parse_radius_value(raw: &str) -> Option<String> {
+    if raw == "none" {
+        return Some("0".to_string());
+    }
+    if raw == "full" {
+        return Some("calc(infinity * 1px)".to_string());
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    if raw
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Some(format!("var(--radius-{})", raw));
+    }
+    None
+}
+
+fn radius_target_properties(target: &str) -> Option<&'static [&'static str]> {
+    match target {
+        "s" => Some(&["border-start-start-radius", "border-end-start-radius"]),
+        "e" => Some(&["border-start-end-radius", "border-end-end-radius"]),
+        "t" => Some(&["border-top-left-radius", "border-top-right-radius"]),
+        "r" => Some(&["border-top-right-radius", "border-bottom-right-radius"]),
+        "b" => Some(&["border-bottom-right-radius", "border-bottom-left-radius"]),
+        "l" => Some(&["border-top-left-radius", "border-bottom-left-radius"]),
+        "ss" => Some(&["border-start-start-radius"]),
+        "se" => Some(&["border-start-end-radius"]),
+        "ee" => Some(&["border-end-end-radius"]),
+        "es" => Some(&["border-end-start-radius"]),
+        "tl" => Some(&["border-top-left-radius"]),
+        "tr" => Some(&["border-top-right-radius"]),
+        "br" => Some(&["border-bottom-right-radius"]),
+        "bl" => Some(&["border-bottom-left-radius"]),
+        _ => None,
+    }
+}
+
+fn generate_grid_column_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "col-span-full" {
+        return rule(&selector, "grid-column:1 / -1", config);
+    }
+    if let Some(raw) = class.strip_prefix("col-span-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("grid-column:span {} / span {}", raw, raw),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(
+                &selector,
+                &format!("grid-column:span {} / span {}", custom, custom),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!(
+                    "grid-column:span var({}) / span var({})",
+                    custom, custom
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(value) = parse_grid_line_value(class, "col-start-") {
+        return rule(&selector, &format!("grid-column-start:{}", value), config);
+    }
+    if let Some(value) = parse_grid_line_value(class, "col-end-") {
+        return rule(&selector, &format!("grid-column-end:{}", value), config);
+    }
+
+    if class == "col-auto" {
+        return rule(&selector, "grid-column:auto", config);
+    }
+    if let Some(num) = class.strip_prefix("col-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("grid-column:{}", num), config);
+        }
+    }
+    if let Some(num) = class.strip_prefix("-col-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("grid-column:calc({} * -1)", num), config);
+        }
+    }
+
+    if let Some(custom) = class.strip_prefix("col-(").and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("grid-column:var({})", custom), config);
+    }
+    if let Some(custom) = class.strip_prefix("col-[").and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("grid-column:{}", custom), config);
+    }
+
+    None
+}
+
+fn generate_grid_row_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "row-span-full" {
+        return rule(&selector, "grid-row:1 / -1", config);
+    }
+    if let Some(raw) = class.strip_prefix("row-span-") {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("grid-row:span {} / span {}", raw, raw),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return rule(
+                &selector,
+                &format!("grid-row:span {} / span {}", custom, custom),
+                config,
+            );
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return rule(
+                &selector,
+                &format!("grid-row:span var({}) / span var({})", custom, custom),
+                config,
+            );
+        }
+    }
+
+    if let Some(value) = parse_grid_line_value(class, "row-start-") {
+        return rule(&selector, &format!("grid-row-start:{}", value), config);
+    }
+    if let Some(value) = parse_grid_line_value(class, "row-end-") {
+        return rule(&selector, &format!("grid-row-end:{}", value), config);
+    }
+
+    if class == "row-auto" {
+        return rule(&selector, "grid-row:auto", config);
+    }
+    if let Some(num) = class.strip_prefix("row-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("grid-row:{}", num), config);
+        }
+    }
+    if let Some(num) = class.strip_prefix("-row-") {
+        if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
+            return rule(&selector, &format!("grid-row:calc({} * -1)", num), config);
+        }
+    }
+
+    if let Some(custom) = class.strip_prefix("row-(").and_then(|v| v.strip_suffix(')')) {
+        return rule(&selector, &format!("grid-row:var({})", custom), config);
+    }
+    if let Some(custom) = class.strip_prefix("row-[").and_then(|v| v.strip_suffix(']')) {
+        return rule(&selector, &format!("grid-row:{}", custom), config);
+    }
+
+    None
+}
+
+fn parse_grid_line_value(class: &str, prefix: &str) -> Option<String> {
+    if let Some(raw) = class.strip_prefix(prefix) {
+        if raw == "auto" {
+            return Some("auto".to_string());
+        }
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return Some(raw.to_string());
+        }
+        if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            return Some(custom.to_string());
+        }
+        if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            return Some(format!("var({})", custom));
+        }
+    }
+
+    let negative_prefix = format!("-{}", prefix);
+    if let Some(raw) = class.strip_prefix(&negative_prefix) {
+        if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+            return Some(format!("calc({} * -1)", raw));
+        }
+    }
+
+    None
+}
+
+fn parse_inset_key_and_token(raw: &str) -> Option<(&str, &str)> {
+    for key in [
+        "inset-x", "inset-y", "inset", "start", "end", "top", "right", "bottom", "left",
+    ] {
+        let prefix = format!("{}-", key);
+        if let Some(token) = raw.strip_prefix(&prefix) {
+            return Some((key, token));
+        }
+    }
+    None
+}
+
+fn parse_inset_value(token: &str, negative: bool) -> Option<String> {
+    let base = if token == "px" {
+        "1px".to_string()
+    } else if token == "full" {
+        "100%".to_string()
+    } else if token == "auto" {
+        if negative {
+            return None;
+        }
+        "auto".to_string()
+    } else if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        custom.to_string()
+    } else if let Some(custom_prop) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        format!("var({})", custom_prop)
+    } else if token.chars().all(|c| c.is_ascii_digit()) {
+        if negative {
+            format!("calc(var(--spacing) * -{})", token)
+        } else {
+            format!("calc(var(--spacing) * {})", token)
+        }
+    } else if is_fraction(token) {
+        if negative {
+            format!("calc({} * -100%)", token)
+        } else {
+            format!("calc({} * 100%)", token)
+        }
+    } else {
+        return None;
+    };
+
+    if negative && !token.chars().all(|c| c.is_ascii_digit()) && !is_fraction(token) {
+        return Some(format!("calc({} * -1)", base));
+    }
+    Some(base)
+}
+
+fn is_fraction(token: &str) -> bool {
+    let mut parts = token.split('/');
+    let Some(a) = parts.next() else { return false };
+    let Some(b) = parts.next() else { return false };
+    parts.next().is_none()
+        && !a.is_empty()
+        && !b.is_empty()
+        && a.chars().all(|c| c.is_ascii_digit())
+        && b.chars().all(|c| c.is_ascii_digit())
+}
+
+fn inset_declarations(key: &str, value: &str) -> Option<String> {
+    let declarations = match key {
+        "inset" => format!("inset:{}", value),
+        "inset-x" => format!("left:{};right:{}", value, value),
+        "inset-y" => format!("top:{};bottom:{}", value, value),
+        "start" => format!("inset-inline-start:{}", value),
+        "end" => format!("inset-inline-end:{}", value),
+        "top" => format!("top:{}", value),
+        "right" => format!("right:{}", value),
+        "bottom" => format!("bottom:{}", value),
+        "left" => format!("left:{}", value),
+        _ => return None,
+    };
+    Some(declarations)
+}
+
+fn is_container_token(token: &str) -> bool {
+    matches!(
+        token,
+        "3xs"
+            | "4xs"
+            | "2xs"
+            | "xs"
+            | "sm"
+            | "md"
+            | "lg"
+            | "xl"
+            | "2xl"
+            | "3xl"
+            | "4xl"
+            | "5xl"
+            | "6xl"
+            | "7xl"
+    )
+}
+
+fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    if class.starts_with("text-shadow-") {
+        return None;
+    }
+    let (prefix, color, shade) = split_color_class(class)?;
+    let map = config.colors.get(color)?;
+    let value = map.get(shade)?;
+    let selector = format!(".{}", escape_selector(class));
+    let declarations = match prefix {
+        "text" => format!("color:{}", value),
+        "bg" => format!("background-color:{}", value),
+        "border" => format!("border-color:{}", value),
+        "decoration" => format!("text-decoration-color:{}", value),
+        _ => return None,
+    };
+    rule(&selector, &declarations, config)
+}
+
+fn split_color_class(class: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = class.splitn(2, '-');
+    let prefix = parts.next()?;
+    let rest = parts.next()?;
+    let mut color_parts = rest.rsplitn(2, '-');
+    let shade = color_parts.next()?;
+    let color = color_parts.next()?;
+    if shade.is_empty() || color.is_empty() {
+        return None;
+    }
+    Some((prefix, color, shade))
+}
+
+fn parse_variants(class: &str) -> (Vec<&str>, &str) {
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut split_indices = Vec::new();
+
+    for (idx, ch) in class.char_indices() {
+        match ch {
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ':' if paren_depth == 0 && bracket_depth == 0 => split_indices.push(idx),
+            _ => {}
+        }
+    }
+
+    if split_indices.is_empty() {
+        return (Vec::new(), class);
+    }
+    let mut variants = Vec::new();
+    let mut start = 0usize;
+    for idx in split_indices {
+        variants.push(&class[start..idx]);
+        start = idx + 1;
+    }
+    (variants, &class[start..])
+}
+
+fn apply_variants(
+    variants: &[&str],
+    full_class: &str,
+    base_class: &str,
+    rule: Option<String>,
+    minify: bool,
+) -> Option<String> {
+    let Some(rule) = rule else {
+        return None;
+    };
+    if variants.is_empty() {
+        return Some(rule);
+    }
+
+    let class_selector = format!(".{}", escape_selector(full_class));
+    let mut selector = class_selector;
+    let mut media_queries = Vec::new();
+    for variant in variants {
+        match *variant {
+            "dark" => selector = format!(".dark {}", selector),
+            "focus" => selector = format!("{}:focus", selector),
+            "focus-within" => selector = format!("{}:focus-within", selector),
+            "disabled" => selector = format!("{}:disabled", selector),
+            "hover" => selector = format!("{}:hover", selector),
+            "active" => selector = format!("{}:active", selector),
+            "before" => selector = format!("{}:before", selector),
+            "after" => selector = format!("{}:after", selector),
+            "sm" => media_queries.push("(min-width: 640px)"),
+            "md" => media_queries.push("(min-width: 768px)"),
+            "lg" => media_queries.push("(min-width: 1024px)"),
+            "xl" => media_queries.push("(min-width: 1280px)"),
+            "2xl" => media_queries.push("(min-width: 1536px)"),
+            _ => return None,
+        }
+    }
+
+    if let Some(start) = rule.find('{') {
+        let header = rule[..start].trim_end();
+        let declarations = &rule[start..];
+        let first_selector = header.split_whitespace().next()?;
+        let expected_base_selector = format!(".{}", escape_selector(base_class));
+        if first_selector != expected_base_selector {
+            return None;
+        }
+        let replaced_header = header.replacen(first_selector, &selector, 1);
+        let mut combined = format!("{}{}", replaced_header, declarations);
+        for query in media_queries {
+            combined = wrap_media(query, &combined, minify);
+        }
+        return Some(combined);
+    }
+
+    None
+}
+
+fn escape_selector(class: &str) -> String {
+    class
+        .replace('\\', "\\\\")
+        .replace(':', "\\:")
+        .replace('/', "\\/")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+        .replace('(', "\\(")
+        .replace(')', "\\)")
+        .replace('+', "\\+")
+        .replace(',', "\\,")
+        .replace('%', "\\%")
+}
+
+fn wrap_media(query: &str, rule: &str, minify: bool) -> String {
+    if minify {
+        format!("@media {}{{{}}}", query, rule)
+    } else {
+        format!("@media {} {{ {} }}", query, rule)
+    }
+}
+
+fn spacing_scale(key: &str) -> Option<&'static str> {
+    match key {
+        "0" => Some("0rem"),
+        "1" => Some("0.25rem"),
+        "2" => Some("0.5rem"),
+        "3" => Some("0.75rem"),
+        "4" => Some("1rem"),
+        "5" => Some("1.25rem"),
+        "6" => Some("1.5rem"),
+        "8" => Some("2rem"),
+        "10" => Some("2.5rem"),
+        "12" => Some("3rem"),
+        "16" => Some("4rem"),
+        _ => None,
+    }
+}
+
+fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<String> {
+    let formatted = format_declarations(declarations, config.minify);
+    if formatted.is_empty() {
+        return None;
+    }
+    if config.minify {
+        return Some(format!("{}{{{}}}", selector, formatted));
+    }
+    Some(format!("{} {{ {}; }}", selector, formatted))
+}
+
+fn format_declarations(declarations: &str, minify: bool) -> String {
+    let mut parts = Vec::new();
+    for decl in declarations.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        let mut iter = decl.splitn(2, ':');
+        let Some(name) = iter.next() else { continue };
+        let Some(value) = iter.next() else { continue };
+        if minify {
+            parts.push(format!("{}:{}", name.trim(), value.trim()));
+        } else {
+            parts.push(format!("{}: {}", name.trim(), value.trim()));
+        }
+    }
+    if minify {
+        parts.join(";")
+    } else {
+        parts.join("; ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{generate, GeneratorConfig};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn generates_p4_rule() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["p-4".to_string()], &config);
+        assert!(result.css.contains(".p-4"));
+        assert!(result.css.contains("padding: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn generates_multiple_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "p-4".to_string(),
+                "m-4".to_string(),
+                "text-sm".to_string(),
+                "bg-red-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".m-4"));
+        assert!(result.css.contains("margin: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".text-sm"));
+        assert!(result.css.contains("font-size: var(--text-sm)"));
+        assert!(result.css.contains(".bg-red-500"));
+        assert!(result.css.contains("background-color: #ef4444"));
+    }
+
+    #[test]
+    fn generates_spacing_scale() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["p-2".to_string(), "m-6".to_string()], &config);
+        assert!(result.css.contains(".p-2"));
+        assert!(result.css.contains("padding: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".m-6"));
+        assert!(result.css.contains("margin: calc(var(--spacing) * 6)"));
+    }
+
+    #[test]
+    fn generates_padding_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "p-px".to_string(),
+                "p-[5px]".to_string(),
+                "p-(--my-padding)".to_string(),
+                "px-4".to_string(),
+                "py-2".to_string(),
+                "pt-6".to_string(),
+                "pr-px".to_string(),
+                "pb-[3vh]".to_string(),
+                "pl-(--pad-left)".to_string(),
+                "ps-8".to_string(),
+                "pe-1".to_string(),
+                "md:py-8".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".p-px"));
+        assert!(result.css.contains("padding: 1px"));
+        assert!(result.css.contains(".p-\\[5px\\]"));
+        assert!(result.css.contains("padding: 5px"));
+        assert!(result.css.contains(".p-\\(--my-padding\\)"));
+        assert!(result.css.contains("padding: var(--my-padding)"));
+        assert!(result.css.contains(".px-4"));
+        assert!(result.css.contains("padding-inline: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".py-2"));
+        assert!(result.css.contains("padding-block: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".pt-6"));
+        assert!(result.css.contains("padding-top: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".pr-px"));
+        assert!(result.css.contains("padding-right: 1px"));
+        assert!(result.css.contains(".pb-\\[3vh\\]"));
+        assert!(result.css.contains("padding-bottom: 3vh"));
+        assert!(result.css.contains(".pl-\\(--pad-left\\)"));
+        assert!(result.css.contains("padding-left: var(--pad-left)"));
+        assert!(result.css.contains(".ps-8"));
+        assert!(result.css.contains("padding-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".pe-1"));
+        assert!(result.css.contains("padding-inline-end: calc(var(--spacing) * 1)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:py-8"));
+    }
+
+    #[test]
+    fn generates_margin_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "m-auto".to_string(),
+                "m-px".to_string(),
+                "-m-px".to_string(),
+                "m-4".to_string(),
+                "-m-4".to_string(),
+                "m-[5px]".to_string(),
+                "-m-[5px]".to_string(),
+                "m-(--my-margin)".to_string(),
+                "-m-(--my-margin)".to_string(),
+                "mx-8".to_string(),
+                "-mx-2".to_string(),
+                "my-3".to_string(),
+                "-my-1".to_string(),
+                "mt-6".to_string(),
+                "-mr-3".to_string(),
+                "mb-auto".to_string(),
+                "ml-px".to_string(),
+                "ms-4".to_string(),
+                "-me-2".to_string(),
+                "md:mt-8".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".m-auto"));
+        assert!(result.css.contains("margin: auto"));
+        assert!(result.css.contains(".m-px"));
+        assert!(result.css.contains("margin: 1px"));
+        assert!(result.css.contains(".-m-px"));
+        assert!(result.css.contains("margin: -1px"));
+        assert!(result.css.contains(".m-4"));
+        assert!(result.css.contains("margin: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".-m-4"));
+        assert!(result.css.contains("margin: calc(var(--spacing) * -4)"));
+        assert!(result.css.contains(".m-\\[5px\\]"));
+        assert!(result.css.contains("margin: 5px"));
+        assert!(result.css.contains(".-m-\\[5px\\]"));
+        assert!(result.css.contains("margin: calc(5px * -1)"));
+        assert!(result.css.contains(".m-\\(--my-margin\\)"));
+        assert!(result.css.contains("margin: var(--my-margin)"));
+        assert!(result.css.contains(".-m-\\(--my-margin\\)"));
+        assert!(result.css.contains("margin: calc(var(--my-margin) * -1)"));
+        assert!(result.css.contains(".mx-8"));
+        assert!(result.css.contains("margin-inline: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".-mx-2"));
+        assert!(result.css.contains("margin-inline: calc(var(--spacing) * -2)"));
+        assert!(result.css.contains(".my-3"));
+        assert!(result.css.contains("margin-block: calc(var(--spacing) * 3)"));
+        assert!(result.css.contains(".-my-1"));
+        assert!(result.css.contains("margin-block: calc(var(--spacing) * -1)"));
+        assert!(result.css.contains(".mt-6"));
+        assert!(result.css.contains("margin-top: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".-mr-3"));
+        assert!(result.css.contains("margin-right: calc(var(--spacing) * -3)"));
+        assert!(result.css.contains(".mb-auto"));
+        assert!(result.css.contains("margin-bottom: auto"));
+        assert!(result.css.contains(".ml-px"));
+        assert!(result.css.contains("margin-left: 1px"));
+        assert!(result.css.contains(".ms-4"));
+        assert!(result.css.contains("margin-inline-start: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".-me-2"));
+        assert!(result.css.contains("margin-inline-end: calc(var(--spacing) * -2)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:mt-8"));
+    }
+
+    #[test]
+    fn generates_typography_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "text-xs".to_string(),
+                "text-sm".to_string(),
+                "text-base".to_string(),
+                "text-lg".to_string(),
+                "text-xl".to_string(),
+                "text-2xl".to_string(),
+                "text-3xl".to_string(),
+                "text-4xl".to_string(),
+                "text-5xl".to_string(),
+                "text-6xl".to_string(),
+                "text-7xl".to_string(),
+                "text-8xl".to_string(),
+                "text-9xl".to_string(),
+                "text-tiny".to_string(),
+                "text-[14px]".to_string(),
+                "text-(length:--my-text-size)".to_string(),
+                "text-base/6".to_string(),
+                "text-sm/(--my-line-height)".to_string(),
+                "text-lg/[1.75]".to_string(),
+                "md:text-base".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".text-xs"));
+        assert!(result.css.contains("font-size: var(--text-xs)"));
+        assert!(result.css.contains("line-height: var(--text-xs--line-height)"));
+        assert!(result.css.contains(".text-sm"));
+        assert!(result.css.contains("font-size: var(--text-sm)"));
+        assert!(result.css.contains(".text-base"));
+        assert!(result.css.contains("font-size: var(--text-base)"));
+        assert!(result.css.contains(".text-lg"));
+        assert!(result.css.contains("font-size: var(--text-lg)"));
+        assert!(result.css.contains(".text-xl"));
+        assert!(result.css.contains("font-size: var(--text-xl)"));
+        assert!(result.css.contains(".text-2xl"));
+        assert!(result.css.contains("font-size: var(--text-2xl)"));
+        assert!(result.css.contains(".text-3xl"));
+        assert!(result.css.contains("font-size: var(--text-3xl)"));
+        assert!(result.css.contains(".text-4xl"));
+        assert!(result.css.contains("font-size: var(--text-4xl)"));
+        assert!(result.css.contains(".text-5xl"));
+        assert!(result.css.contains("font-size: var(--text-5xl)"));
+        assert!(result.css.contains(".text-6xl"));
+        assert!(result.css.contains("font-size: var(--text-6xl)"));
+        assert!(result.css.contains(".text-7xl"));
+        assert!(result.css.contains("font-size: var(--text-7xl)"));
+        assert!(result.css.contains(".text-8xl"));
+        assert!(result.css.contains("font-size: var(--text-8xl)"));
+        assert!(result.css.contains(".text-9xl"));
+        assert!(result.css.contains("font-size: var(--text-9xl)"));
+        assert!(result.css.contains(".text-tiny"));
+        assert!(result.css.contains("font-size: var(--text-tiny)"));
+        assert!(result.css.contains(".text-\\[14px\\]"));
+        assert!(result.css.contains("font-size: 14px"));
+        assert!(result.css.contains(".text-\\(length\\:--my-text-size\\)"));
+        assert!(result.css.contains("font-size: var(--my-text-size)"));
+        assert!(result.css.contains(".text-base\\/6"));
+        assert!(result.css.contains("font-size: var(--text-base)"));
+        assert!(result.css.contains("line-height: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".text-sm\\/\\(--my-line-height\\)"));
+        assert!(result.css.contains("line-height: var(--my-line-height)"));
+        assert!(result.css.contains(".text-lg\\/\\[1.75\\]"));
+        assert!(result.css.contains("line-height: 1.75"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:text-base"));
+    }
+
+    #[test]
+    fn generates_font_family_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "font-sans".to_string(),
+                "font-serif".to_string(),
+                "font-mono".to_string(),
+                "font-display".to_string(),
+                "font-(family-name:--my-font)".to_string(),
+                "font-[Open_Sans]".to_string(),
+                "font-bold".to_string(),
+                "md:font-serif".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".font-sans"));
+        assert!(result.css.contains("font-family: var(--font-sans)"));
+        assert!(result.css.contains(".font-serif"));
+        assert!(result.css.contains("font-family: var(--font-serif)"));
+        assert!(result.css.contains(".font-mono"));
+        assert!(result.css.contains("font-family: var(--font-mono)"));
+        assert!(result.css.contains(".font-display"));
+        assert!(result.css.contains("font-family: var(--font-display)"));
+        assert!(result.css.contains(".font-\\(family-name\\:--my-font\\)"));
+        assert!(result.css.contains("font-family: var(--my-font)"));
+        assert!(result.css.contains(".font-\\[Open_Sans\\]"));
+        assert!(result.css.contains("font-family: Open_Sans"));
+        assert!(result.css.contains(".font-bold"));
+        assert!(result.css.contains("font-weight: 700"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:font-serif"));
+    }
+
+    #[test]
+    fn generates_font_weight_and_leading_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "font-thin".to_string(),
+                "font-extralight".to_string(),
+                "font-medium".to_string(),
+                "font-bold".to_string(),
+                "font-extrabold".to_string(),
+                "font-black".to_string(),
+                "font-[1000]".to_string(),
+                "font-(weight:--my-font-weight)".to_string(),
+                "font-extrablack".to_string(),
+                "md:font-bold".to_string(),
+                "leading-none".to_string(),
+                "leading-6".to_string(),
+                "leading-(--my-leading)".to_string(),
+                "leading-[1.5]".to_string(),
+                "leading-normal".to_string(),
+                "leading-loose".to_string(),
+                "md:leading-7".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".font-thin"));
+        assert!(result.css.contains("font-weight: 100"));
+        assert!(result.css.contains(".font-extralight"));
+        assert!(result.css.contains("font-weight: 200"));
+        assert!(result.css.contains(".font-medium"));
+        assert!(result.css.contains("font-weight: 500"));
+        assert!(result.css.contains(".font-bold"));
+        assert!(result.css.contains("font-weight: 700"));
+        assert!(result.css.contains(".font-extrabold"));
+        assert!(result.css.contains("font-weight: 800"));
+        assert!(result.css.contains(".font-black"));
+        assert!(result.css.contains("font-weight: 900"));
+        assert!(result.css.contains(".font-\\[1000\\]"));
+        assert!(result.css.contains("font-weight: 1000"));
+        assert!(result.css.contains(".font-\\(weight\\:--my-font-weight\\)"));
+        assert!(result.css.contains("font-weight: var(--my-font-weight)"));
+        assert!(result.css.contains(".font-extrablack"));
+        assert!(result.css.contains("font-weight: var(--font-weight-extrablack)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:font-bold"));
+        assert!(result.css.contains(".leading-none"));
+        assert!(result.css.contains("line-height: 1"));
+        assert!(result.css.contains(".leading-6"));
+        assert!(result.css.contains("line-height: calc(var(--spacing) * 6)"));
+        assert!(result.css.contains(".leading-\\(--my-leading\\)"));
+        assert!(result.css.contains("line-height: var(--my-leading)"));
+        assert!(result.css.contains(".leading-\\[1.5\\]"));
+        assert!(result.css.contains("line-height: 1.5"));
+        assert!(result.css.contains(".leading-normal"));
+        assert!(result.css.contains("line-height: 1.5"));
+        assert!(result.css.contains(".leading-loose"));
+        assert!(result.css.contains("line-height: 2"));
+        assert!(result.css.contains(".md\\:leading-7"));
+    }
+
+    #[test]
+    fn generates_font_smoothing_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "antialiased".to_string(),
+                "subpixel-antialiased".to_string(),
+                "md:subpixel-antialiased".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".antialiased"));
+        assert!(result.css.contains("-webkit-font-smoothing: antialiased"));
+        assert!(result.css.contains("-moz-osx-font-smoothing: grayscale"));
+        assert!(result.css.contains(".subpixel-antialiased"));
+        assert!(result.css.contains("-webkit-font-smoothing: auto"));
+        assert!(result.css.contains("-moz-osx-font-smoothing: auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:subpixel-antialiased"));
+    }
+
+    #[test]
+    fn generates_font_stretch_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "font-stretch-ultra-condensed".to_string(),
+                "font-stretch-extra-condensed".to_string(),
+                "font-stretch-condensed".to_string(),
+                "font-stretch-semi-condensed".to_string(),
+                "font-stretch-normal".to_string(),
+                "font-stretch-semi-expanded".to_string(),
+                "font-stretch-expanded".to_string(),
+                "font-stretch-extra-expanded".to_string(),
+                "font-stretch-ultra-expanded".to_string(),
+                "font-stretch-125%".to_string(),
+                "font-stretch-[66.66%]".to_string(),
+                "font-stretch-(--my-font-width)".to_string(),
+                "md:font-stretch-expanded".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".font-stretch-ultra-condensed"));
+        assert!(result.css.contains("font-stretch: ultra-condensed"));
+        assert!(result.css.contains(".font-stretch-extra-condensed"));
+        assert!(result.css.contains("font-stretch: extra-condensed"));
+        assert!(result.css.contains(".font-stretch-condensed"));
+        assert!(result.css.contains("font-stretch: condensed"));
+        assert!(result.css.contains(".font-stretch-semi-condensed"));
+        assert!(result.css.contains("font-stretch: semi-condensed"));
+        assert!(result.css.contains(".font-stretch-normal"));
+        assert!(result.css.contains("font-stretch: normal"));
+        assert!(result.css.contains(".font-stretch-semi-expanded"));
+        assert!(result.css.contains("font-stretch: semi-expanded"));
+        assert!(result.css.contains(".font-stretch-expanded"));
+        assert!(result.css.contains("font-stretch: expanded"));
+        assert!(result.css.contains(".font-stretch-extra-expanded"));
+        assert!(result.css.contains("font-stretch: extra-expanded"));
+        assert!(result.css.contains(".font-stretch-ultra-expanded"));
+        assert!(result.css.contains("font-stretch: ultra-expanded"));
+        assert!(result.css.contains(".font-stretch-125\\%"));
+        assert!(result.css.contains("font-stretch: 125%"));
+        assert!(result.css.contains(".font-stretch-\\[66.66\\%\\]"));
+        assert!(result.css.contains("font-stretch: 66.66%"));
+        assert!(result.css.contains(".font-stretch-\\(--my-font-width\\)"));
+        assert!(result.css.contains("font-stretch: var(--my-font-width)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:font-stretch-expanded"));
+    }
+
+    #[test]
+    fn generates_font_variant_numeric_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "normal-nums".to_string(),
+                "ordinal".to_string(),
+                "slashed-zero".to_string(),
+                "lining-nums".to_string(),
+                "oldstyle-nums".to_string(),
+                "proportional-nums".to_string(),
+                "tabular-nums".to_string(),
+                "diagonal-fractions".to_string(),
+                "stacked-fractions".to_string(),
+                "md:normal-nums".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".normal-nums"));
+        assert!(result.css.contains("font-variant-numeric: normal"));
+        assert!(result.css.contains(".ordinal"));
+        assert!(result.css.contains("font-variant-numeric: ordinal"));
+        assert!(result.css.contains(".slashed-zero"));
+        assert!(result.css.contains("font-variant-numeric: slashed-zero"));
+        assert!(result.css.contains(".lining-nums"));
+        assert!(result.css.contains("font-variant-numeric: lining-nums"));
+        assert!(result.css.contains(".oldstyle-nums"));
+        assert!(result.css.contains("font-variant-numeric: oldstyle-nums"));
+        assert!(result.css.contains(".proportional-nums"));
+        assert!(result.css.contains("font-variant-numeric: proportional-nums"));
+        assert!(result.css.contains(".tabular-nums"));
+        assert!(result.css.contains("font-variant-numeric: tabular-nums"));
+        assert!(result.css.contains(".diagonal-fractions"));
+        assert!(result.css.contains("font-variant-numeric: diagonal-fractions"));
+        assert!(result.css.contains(".stacked-fractions"));
+        assert!(result.css.contains("font-variant-numeric: stacked-fractions"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:normal-nums"));
+    }
+
+    #[test]
+    fn generates_tracking_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "tracking-tighter".to_string(),
+                "tracking-tight".to_string(),
+                "tracking-normal".to_string(),
+                "tracking-wide".to_string(),
+                "tracking-wider".to_string(),
+                "tracking-widest".to_string(),
+                "tracking-(--my-tracking)".to_string(),
+                "tracking-[.25em]".to_string(),
+                "-tracking-2".to_string(),
+                "md:tracking-wide".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".tracking-tighter"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-tighter)"));
+        assert!(result.css.contains(".tracking-tight"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-tight)"));
+        assert!(result.css.contains(".tracking-normal"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-normal)"));
+        assert!(result.css.contains(".tracking-wide"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-wide)"));
+        assert!(result.css.contains(".tracking-wider"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-wider)"));
+        assert!(result.css.contains(".tracking-widest"));
+        assert!(result.css.contains("letter-spacing: var(--tracking-widest)"));
+        assert!(result.css.contains(".tracking-\\(--my-tracking\\)"));
+        assert!(result.css.contains("letter-spacing: var(--my-tracking)"));
+        assert!(result.css.contains(".tracking-\\[.25em\\]"));
+        assert!(result.css.contains("letter-spacing: .25em"));
+        assert!(result.css.contains(".-tracking-2"));
+        assert!(result.css.contains("letter-spacing: calc(var(--tracking-2) * -1)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:tracking-wide"));
+    }
+
+    #[test]
+    fn generates_line_clamp_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "line-clamp-3".to_string(),
+                "line-clamp-none".to_string(),
+                "line-clamp-[calc(var(--characters)/100)]".to_string(),
+                "line-clamp-(--my-line-count)".to_string(),
+                "md:line-clamp-4".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".line-clamp-3"));
+        assert!(result.css.contains("overflow: hidden"));
+        assert!(result.css.contains("display: -webkit-box"));
+        assert!(result.css.contains("-webkit-box-orient: vertical"));
+        assert!(result.css.contains("-webkit-line-clamp: 3"));
+        assert!(result.css.contains(".line-clamp-none"));
+        assert!(result.css.contains("overflow: visible"));
+        assert!(result.css.contains("display: block"));
+        assert!(result.css.contains("-webkit-box-orient: horizontal"));
+        assert!(result.css.contains("-webkit-line-clamp: unset"));
+        assert!(result.css.contains(".line-clamp-\\[calc\\(var\\(--characters\\)\\/100\\)\\]"));
+        assert!(result
+            .css
+            .contains("-webkit-line-clamp: calc(var(--characters)/100)"));
+        assert!(result.css.contains(".line-clamp-\\(--my-line-count\\)"));
+        assert!(result.css.contains("-webkit-line-clamp: var(--my-line-count)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:line-clamp-4"));
+    }
+
+    #[test]
+    fn generates_list_style_image_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "list-image-none".to_string(),
+                "list-image-[url(/img/checkmark.png)]".to_string(),
+                "list-image-(--my-list-image)".to_string(),
+                "md:list-image-[url(/img/checkmark.png)]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".list-image-none"));
+        assert!(result.css.contains("list-style-image: none"));
+        assert!(result.css.contains(".list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]"));
+        assert!(result.css.contains("list-style-image: url(/img/checkmark.png)"));
+        assert!(result.css.contains(".list-image-\\(--my-list-image\\)"));
+        assert!(result.css.contains("list-style-image: var(--my-list-image)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result
+            .css
+            .contains(".md\\:list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]"));
+    }
+
+    #[test]
+    fn generates_list_style_position_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "list-inside".to_string(),
+                "list-outside".to_string(),
+                "md:list-inside".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".list-inside"));
+        assert!(result.css.contains("list-style-position: inside"));
+        assert!(result.css.contains(".list-outside"));
+        assert!(result.css.contains("list-style-position: outside"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:list-inside"));
+    }
+
+    #[test]
+    fn generates_list_style_type_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "list-disc".to_string(),
+                "list-decimal".to_string(),
+                "list-none".to_string(),
+                "list-[upper-roman]".to_string(),
+                "list-(--my-marker)".to_string(),
+                "md:list-disc".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".list-disc"));
+        assert!(result.css.contains("list-style-type: disc"));
+        assert!(result.css.contains(".list-decimal"));
+        assert!(result.css.contains("list-style-type: decimal"));
+        assert!(result.css.contains(".list-none"));
+        assert!(result.css.contains("list-style-type: none"));
+        assert!(result.css.contains(".list-\\[upper-roman\\]"));
+        assert!(result.css.contains("list-style-type: upper-roman"));
+        assert!(result.css.contains(".list-\\(--my-marker\\)"));
+        assert!(result.css.contains("list-style-type: var(--my-marker)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:list-disc"));
+    }
+
+    #[test]
+    fn generates_text_align_and_font_style_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "italic".to_string(),
+                "not-italic".to_string(),
+                "text-left".to_string(),
+                "text-center".to_string(),
+                "text-right".to_string(),
+                "text-justify".to_string(),
+                "text-start".to_string(),
+                "text-end".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".italic"));
+        assert!(result.css.contains("font-style: italic"));
+        assert!(result.css.contains(".not-italic"));
+        assert!(result.css.contains("font-style: normal"));
+        assert!(result.css.contains(".text-left"));
+        assert!(result.css.contains("text-align: left"));
+        assert!(result.css.contains(".text-center"));
+        assert!(result.css.contains("text-align: center"));
+        assert!(result.css.contains(".text-right"));
+        assert!(result.css.contains("text-align: right"));
+        assert!(result.css.contains(".text-justify"));
+        assert!(result.css.contains("text-align: justify"));
+        assert!(result.css.contains(".text-start"));
+        assert!(result.css.contains("text-align: start"));
+        assert!(result.css.contains(".text-end"));
+        assert!(result.css.contains("text-align: end"));
+    }
+
+    #[test]
+    fn generates_text_transform_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "uppercase".to_string(),
+                "lowercase".to_string(),
+                "capitalize".to_string(),
+                "normal-case".to_string(),
+                "md:uppercase".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".uppercase"));
+        assert!(result.css.contains("text-transform: uppercase"));
+        assert!(result.css.contains(".lowercase"));
+        assert!(result.css.contains("text-transform: lowercase"));
+        assert!(result.css.contains(".capitalize"));
+        assert!(result.css.contains("text-transform: capitalize"));
+        assert!(result.css.contains(".normal-case"));
+        assert!(result.css.contains("text-transform: none"));
+        assert!(result.css.contains(".md\\:uppercase"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_overflow_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "truncate".to_string(),
+                "text-ellipsis".to_string(),
+                "text-clip".to_string(),
+                "md:text-clip".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".truncate"));
+        assert!(result.css.contains("overflow: hidden"));
+        assert!(result.css.contains("text-overflow: ellipsis"));
+        assert!(result.css.contains("white-space: nowrap"));
+        assert!(result.css.contains(".text-ellipsis"));
+        assert!(result.css.contains(".text-clip"));
+        assert!(result.css.contains("text-overflow: clip"));
+        assert!(result.css.contains(".md\\:text-clip"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_wrap_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "text-wrap".to_string(),
+                "text-nowrap".to_string(),
+                "text-balance".to_string(),
+                "text-pretty".to_string(),
+                "md:text-balance".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".text-wrap"));
+        assert!(result.css.contains("text-wrap: wrap"));
+        assert!(result.css.contains(".text-nowrap"));
+        assert!(result.css.contains("text-wrap: nowrap"));
+        assert!(result.css.contains(".text-balance"));
+        assert!(result.css.contains("text-wrap: balance"));
+        assert!(result.css.contains(".text-pretty"));
+        assert!(result.css.contains("text-wrap: pretty"));
+        assert!(result.css.contains(".md\\:text-balance"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_whitespace_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "whitespace-normal".to_string(),
+                "whitespace-nowrap".to_string(),
+                "whitespace-pre".to_string(),
+                "whitespace-pre-line".to_string(),
+                "whitespace-pre-wrap".to_string(),
+                "whitespace-break-spaces".to_string(),
+                "md:whitespace-normal".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".whitespace-normal"));
+        assert!(result.css.contains("white-space: normal"));
+        assert!(result.css.contains(".whitespace-nowrap"));
+        assert!(result.css.contains("white-space: nowrap"));
+        assert!(result.css.contains(".whitespace-pre"));
+        assert!(result.css.contains("white-space: pre"));
+        assert!(result.css.contains(".whitespace-pre-line"));
+        assert!(result.css.contains("white-space: pre-line"));
+        assert!(result.css.contains(".whitespace-pre-wrap"));
+        assert!(result.css.contains("white-space: pre-wrap"));
+        assert!(result.css.contains(".whitespace-break-spaces"));
+        assert!(result.css.contains("white-space: break-spaces"));
+        assert!(result.css.contains(".md\\:whitespace-normal"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_word_break_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "break-normal".to_string(),
+                "break-all".to_string(),
+                "break-keep".to_string(),
+                "md:break-all".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".break-normal"));
+        assert!(result.css.contains("word-break: normal"));
+        assert!(result.css.contains(".break-all"));
+        assert!(result.css.contains("word-break: break-all"));
+        assert!(result.css.contains(".break-keep"));
+        assert!(result.css.contains("word-break: keep-all"));
+        assert!(result.css.contains(".md\\:break-all"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_overflow_wrap_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "wrap-break-word".to_string(),
+                "wrap-anywhere".to_string(),
+                "wrap-normal".to_string(),
+                "md:wrap-break-word".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".wrap-break-word"));
+        assert!(result.css.contains("overflow-wrap: break-word"));
+        assert!(result.css.contains(".wrap-anywhere"));
+        assert!(result.css.contains("overflow-wrap: anywhere"));
+        assert!(result.css.contains(".wrap-normal"));
+        assert!(result.css.contains("overflow-wrap: normal"));
+        assert!(result.css.contains(".md\\:wrap-break-word"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_hyphens_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "hyphens-none".to_string(),
+                "hyphens-manual".to_string(),
+                "hyphens-auto".to_string(),
+                "md:hyphens-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".hyphens-none"));
+        assert!(result.css.contains("hyphens: none"));
+        assert!(result.css.contains(".hyphens-manual"));
+        assert!(result.css.contains("hyphens: manual"));
+        assert!(result.css.contains(".hyphens-auto"));
+        assert!(result.css.contains("hyphens: auto"));
+        assert!(result.css.contains(".md\\:hyphens-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_content_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "content-none".to_string(),
+                "content-[attr(before)]".to_string(),
+                "content-['Hello_World']".to_string(),
+                "content-['Hello\\_World']".to_string(),
+                "content-(--my-content)".to_string(),
+                "before:content-['x']".to_string(),
+                "md:before:content-['Desktop']".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".content-none"));
+        assert!(result.css.contains("content: none"));
+        assert!(result.css.contains(".content-\\[attr\\(before\\)\\]"));
+        assert!(result.css.contains("content: attr(before)"));
+        assert!(result.css.contains(".content-\\['Hello_World'\\]"));
+        assert!(result.css.contains("content: 'Hello World'"));
+        assert!(result.css.contains(".content-\\['Hello\\\\_World'\\]"));
+        assert!(result.css.contains("content: 'Hello_World'"));
+        assert!(result.css.contains(".content-\\(--my-content\\)"));
+        assert!(result.css.contains("content: var(--my-content)"));
+        assert!(result.css.contains(".before\\:content-\\['x'\\]:before"));
+        assert!(result.css.contains(".md\\:before\\:content-\\['Desktop'\\]:before"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_indent_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "indent-8".to_string(),
+                "-indent-8".to_string(),
+                "indent-px".to_string(),
+                "-indent-px".to_string(),
+                "indent-(--my-indentation)".to_string(),
+                "indent-[50%]".to_string(),
+                "md:indent-8".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".indent-8"));
+        assert!(result.css.contains("text-indent: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".-indent-8"));
+        assert!(result.css.contains("text-indent: calc(var(--spacing) * -8)"));
+        assert!(result.css.contains(".indent-px"));
+        assert!(result.css.contains("text-indent: 1px"));
+        assert!(result.css.contains(".-indent-px"));
+        assert!(result.css.contains("text-indent: -1px"));
+        assert!(result.css.contains(".indent-\\(--my-indentation\\)"));
+        assert!(result.css.contains("text-indent: var(--my-indentation)"));
+        assert!(result.css.contains(".indent-\\[50\\%\\]"));
+        assert!(result.css.contains("text-indent: 50%"));
+        assert!(result.css.contains(".md\\:indent-8"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_vertical_align_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "align-baseline".to_string(),
+                "align-top".to_string(),
+                "align-middle".to_string(),
+                "align-bottom".to_string(),
+                "align-text-top".to_string(),
+                "align-text-bottom".to_string(),
+                "align-sub".to_string(),
+                "align-super".to_string(),
+                "align-(--my-alignment)".to_string(),
+                "align-[4px]".to_string(),
+                "md:align-top".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".align-baseline"));
+        assert!(result.css.contains("vertical-align: baseline"));
+        assert!(result.css.contains(".align-top"));
+        assert!(result.css.contains("vertical-align: top"));
+        assert!(result.css.contains(".align-middle"));
+        assert!(result.css.contains("vertical-align: middle"));
+        assert!(result.css.contains(".align-bottom"));
+        assert!(result.css.contains("vertical-align: bottom"));
+        assert!(result.css.contains(".align-text-top"));
+        assert!(result.css.contains("vertical-align: text-top"));
+        assert!(result.css.contains(".align-text-bottom"));
+        assert!(result.css.contains("vertical-align: text-bottom"));
+        assert!(result.css.contains(".align-sub"));
+        assert!(result.css.contains("vertical-align: sub"));
+        assert!(result.css.contains(".align-super"));
+        assert!(result.css.contains("vertical-align: super"));
+        assert!(result.css.contains(".align-\\(--my-alignment\\)"));
+        assert!(result.css.contains("vertical-align: var(--my-alignment)"));
+        assert!(result.css.contains(".align-\\[4px\\]"));
+        assert!(result.css.contains("vertical-align: 4px"));
+        assert!(result.css.contains(".md\\:align-top"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_decoration_line_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "underline".to_string(),
+                "overline".to_string(),
+                "line-through".to_string(),
+                "no-underline".to_string(),
+                "hover:underline".to_string(),
+                "md:no-underline".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".underline"));
+        assert!(result.css.contains("text-decoration-line: underline"));
+        assert!(result.css.contains(".overline"));
+        assert!(result.css.contains("text-decoration-line: overline"));
+        assert!(result.css.contains(".line-through"));
+        assert!(result.css.contains("text-decoration-line: line-through"));
+        assert!(result.css.contains(".no-underline"));
+        assert!(result.css.contains("text-decoration-line: none"));
+        assert!(result.css.contains(".hover\\:underline:hover"));
+        assert!(result.css.contains(".md\\:no-underline"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_decoration_style_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "decoration-solid".to_string(),
+                "decoration-double".to_string(),
+                "decoration-dotted".to_string(),
+                "decoration-dashed".to_string(),
+                "decoration-wavy".to_string(),
+                "md:decoration-dashed".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".decoration-solid"));
+        assert!(result.css.contains("text-decoration-style: solid"));
+        assert!(result.css.contains(".decoration-double"));
+        assert!(result.css.contains("text-decoration-style: double"));
+        assert!(result.css.contains(".decoration-dotted"));
+        assert!(result.css.contains("text-decoration-style: dotted"));
+        assert!(result.css.contains(".decoration-dashed"));
+        assert!(result.css.contains("text-decoration-style: dashed"));
+        assert!(result.css.contains(".decoration-wavy"));
+        assert!(result.css.contains("text-decoration-style: wavy"));
+        assert!(result.css.contains(".md\\:decoration-dashed"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_decoration_thickness_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "decoration-1".to_string(),
+                "decoration-2".to_string(),
+                "decoration-4".to_string(),
+                "decoration-auto".to_string(),
+                "decoration-from-font".to_string(),
+                "decoration-[0.25rem]".to_string(),
+                "decoration-(length:--my-decoration-thickness)".to_string(),
+                "md:decoration-4".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".decoration-1"));
+        assert!(result.css.contains("text-decoration-thickness: 1px"));
+        assert!(result.css.contains(".decoration-2"));
+        assert!(result.css.contains("text-decoration-thickness: 2px"));
+        assert!(result.css.contains(".decoration-4"));
+        assert!(result.css.contains("text-decoration-thickness: 4px"));
+        assert!(result.css.contains(".decoration-auto"));
+        assert!(result.css.contains("text-decoration-thickness: auto"));
+        assert!(result.css.contains(".decoration-from-font"));
+        assert!(result.css.contains("text-decoration-thickness: from-font"));
+        assert!(result.css.contains(".decoration-\\[0.25rem\\]"));
+        assert!(result.css.contains("text-decoration-thickness: 0.25rem"));
+        assert!(result
+            .css
+            .contains(".decoration-\\(length\\:--my-decoration-thickness\\)"));
+        assert!(result
+            .css
+            .contains("text-decoration-thickness: var(--my-decoration-thickness)"));
+        assert!(result.css.contains(".md\\:decoration-4"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_underline_offset_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "underline-offset-1".to_string(),
+                "underline-offset-2".to_string(),
+                "underline-offset-4".to_string(),
+                "underline-offset-8".to_string(),
+                "-underline-offset-2".to_string(),
+                "underline-offset-auto".to_string(),
+                "underline-offset-(--my-underline-offset)".to_string(),
+                "underline-offset-[3px]".to_string(),
+                "md:underline-offset-4".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".underline-offset-1"));
+        assert!(result.css.contains("text-underline-offset: 1px"));
+        assert!(result.css.contains(".underline-offset-2"));
+        assert!(result.css.contains("text-underline-offset: 2px"));
+        assert!(result.css.contains(".underline-offset-4"));
+        assert!(result.css.contains("text-underline-offset: 4px"));
+        assert!(result.css.contains(".underline-offset-8"));
+        assert!(result.css.contains("text-underline-offset: 8px"));
+        assert!(result.css.contains(".-underline-offset-2"));
+        assert!(result
+            .css
+            .contains("text-underline-offset: calc(2px * -1)"));
+        assert!(result.css.contains(".underline-offset-auto"));
+        assert!(result.css.contains("text-underline-offset: auto"));
+        assert!(result
+            .css
+            .contains(".underline-offset-\\(--my-underline-offset\\)"));
+        assert!(result
+            .css
+            .contains("text-underline-offset: var(--my-underline-offset)"));
+        assert!(result.css.contains(".underline-offset-\\[3px\\]"));
+        assert!(result.css.contains("text-underline-offset: 3px"));
+        assert!(result.css.contains(".md\\:underline-offset-4"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_z_index_and_inset_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "z-10".to_string(),
+                "z-50".to_string(),
+                "z-auto".to_string(),
+                "-z-10".to_string(),
+                "z-[calc(var(--index)+1)]".to_string(),
+                "z-(--my-z)".to_string(),
+                "inset-0".to_string(),
+                "top-0".to_string(),
+                "right-0".to_string(),
+                "bottom-0".to_string(),
+                "left-0".to_string(),
+                "inset-x-0".to_string(),
+                "inset-y-0".to_string(),
+                "md:z-50".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".z-10"));
+        assert!(result.css.contains("z-index: 10"));
+        assert!(result.css.contains(".z-50"));
+        assert!(result.css.contains("z-index: 50"));
+        assert!(result.css.contains(".z-auto"));
+        assert!(result.css.contains("z-index: auto"));
+        assert!(result.css.contains(".-z-10"));
+        assert!(result.css.contains("z-index: -10"));
+        assert!(result.css.contains(".z-\\[calc\\(var\\(--index\\)\\+1\\)\\]"));
+        assert!(result.css.contains("z-index: calc(var(--index)+1)"));
+        assert!(result.css.contains(".z-\\(--my-z\\)"));
+        assert!(result.css.contains("z-index: var(--my-z)"));
+        assert!(result.css.contains(".inset-0"));
+        assert!(result.css.contains("inset: 0px"));
+        assert!(result.css.contains(".top-0"));
+        assert!(result.css.contains("top: 0px"));
+        assert!(result.css.contains(".right-0"));
+        assert!(result.css.contains("right: 0px"));
+        assert!(result.css.contains(".bottom-0"));
+        assert!(result.css.contains("bottom: 0px"));
+        assert!(result.css.contains(".left-0"));
+        assert!(result.css.contains("left: 0px"));
+        assert!(result.css.contains(".inset-x-0"));
+        assert!(result.css.contains("left: 0px; right: 0px"));
+        assert!(result.css.contains(".inset-y-0"));
+        assert!(result.css.contains("top: 0px; bottom: 0px"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:z-50"));
+    }
+
+    #[test]
+    fn generates_gray_backgrounds() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["bg-gray-100".to_string(), "bg-gray-700".to_string()], &config);
+        assert!(result.css.contains(".bg-gray-100"));
+        assert!(result.css.contains("background-color: #f3f4f6"));
+        assert!(result.css.contains(".bg-gray-700"));
+        assert!(result.css.contains("background-color: #374151"));
+    }
+
+    #[test]
+    fn generates_blue_backgrounds() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["bg-blue-100".to_string(), "bg-blue-600".to_string()], &config);
+        assert!(result.css.contains(".bg-blue-100"));
+        assert!(result.css.contains("background-color: #dbeafe"));
+        assert!(result.css.contains(".bg-blue-600"));
+        assert!(result.css.contains("background-color: #2563eb"));
+    }
+
+    #[test]
+    fn generates_background_attachment_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-fixed".to_string(),
+                "bg-local".to_string(),
+                "bg-scroll".to_string(),
+                "md:bg-fixed".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-fixed"));
+        assert!(result.css.contains("background-attachment: fixed"));
+        assert!(result.css.contains(".bg-local"));
+        assert!(result.css.contains("background-attachment: local"));
+        assert!(result.css.contains(".bg-scroll"));
+        assert!(result.css.contains("background-attachment: scroll"));
+        assert!(result.css.contains(".md\\:bg-fixed"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_clip_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-clip-border".to_string(),
+                "bg-clip-padding".to_string(),
+                "bg-clip-content".to_string(),
+                "bg-clip-text".to_string(),
+                "md:bg-clip-padding".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-clip-border"));
+        assert!(result.css.contains("background-clip: border-box"));
+        assert!(result.css.contains(".bg-clip-padding"));
+        assert!(result.css.contains("background-clip: padding-box"));
+        assert!(result.css.contains(".bg-clip-content"));
+        assert!(result.css.contains("background-clip: content-box"));
+        assert!(result.css.contains(".bg-clip-text"));
+        assert!(result.css.contains("background-clip: text"));
+        assert!(result.css.contains(".md\\:bg-clip-padding"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_origin_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-origin-border".to_string(),
+                "bg-origin-padding".to_string(),
+                "bg-origin-content".to_string(),
+                "md:bg-origin-padding".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-origin-border"));
+        assert!(result.css.contains("background-origin: border-box"));
+        assert!(result.css.contains(".bg-origin-padding"));
+        assert!(result.css.contains("background-origin: padding-box"));
+        assert!(result.css.contains(".bg-origin-content"));
+        assert!(result.css.contains("background-origin: content-box"));
+        assert!(result.css.contains(".md\\:bg-origin-padding"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_position_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-top-left".to_string(),
+                "bg-top".to_string(),
+                "bg-top-right".to_string(),
+                "bg-left".to_string(),
+                "bg-center".to_string(),
+                "bg-right".to_string(),
+                "bg-bottom-left".to_string(),
+                "bg-bottom".to_string(),
+                "bg-bottom-right".to_string(),
+                "bg-position-(--my-bg-position)".to_string(),
+                "bg-position-[center_top_1rem]".to_string(),
+                "md:bg-top".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-top-left"));
+        assert!(result.css.contains("background-position: top left"));
+        assert!(result.css.contains(".bg-top"));
+        assert!(result.css.contains("background-position: top"));
+        assert!(result.css.contains(".bg-top-right"));
+        assert!(result.css.contains("background-position: top right"));
+        assert!(result.css.contains(".bg-left"));
+        assert!(result.css.contains("background-position: left"));
+        assert!(result.css.contains(".bg-center"));
+        assert!(result.css.contains("background-position: center"));
+        assert!(result.css.contains(".bg-right"));
+        assert!(result.css.contains("background-position: right"));
+        assert!(result.css.contains(".bg-bottom-left"));
+        assert!(result.css.contains("background-position: bottom left"));
+        assert!(result.css.contains(".bg-bottom"));
+        assert!(result.css.contains("background-position: bottom"));
+        assert!(result.css.contains(".bg-bottom-right"));
+        assert!(result.css.contains("background-position: bottom right"));
+        assert!(result.css.contains(".bg-position-\\(--my-bg-position\\)"));
+        assert!(result.css.contains("background-position: var(--my-bg-position)"));
+        assert!(result.css.contains(".bg-position-\\[center_top_1rem\\]"));
+        assert!(result.css.contains("background-position: center_top_1rem"));
+        assert!(result.css.contains(".md\\:bg-top"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_repeat_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-repeat".to_string(),
+                "bg-repeat-x".to_string(),
+                "bg-repeat-y".to_string(),
+                "bg-repeat-space".to_string(),
+                "bg-repeat-round".to_string(),
+                "bg-no-repeat".to_string(),
+                "md:bg-repeat-x".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-repeat"));
+        assert!(result.css.contains("background-repeat: repeat"));
+        assert!(result.css.contains(".bg-repeat-x"));
+        assert!(result.css.contains("background-repeat: repeat-x"));
+        assert!(result.css.contains(".bg-repeat-y"));
+        assert!(result.css.contains("background-repeat: repeat-y"));
+        assert!(result.css.contains(".bg-repeat-space"));
+        assert!(result.css.contains("background-repeat: space"));
+        assert!(result.css.contains(".bg-repeat-round"));
+        assert!(result.css.contains("background-repeat: round"));
+        assert!(result.css.contains(".bg-no-repeat"));
+        assert!(result.css.contains("background-repeat: no-repeat"));
+        assert!(result.css.contains(".md\\:bg-repeat-x"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_size_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-auto".to_string(),
+                "bg-cover".to_string(),
+                "bg-contain".to_string(),
+                "bg-size-[auto_100px]".to_string(),
+                "bg-size-(--my-image-size)".to_string(),
+                "md:bg-contain".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-auto"));
+        assert!(result.css.contains("background-size: auto"));
+        assert!(result.css.contains(".bg-cover"));
+        assert!(result.css.contains("background-size: cover"));
+        assert!(result.css.contains(".bg-contain"));
+        assert!(result.css.contains("background-size: contain"));
+        assert!(result.css.contains(".bg-size-\\[auto_100px\\]"));
+        assert!(result.css.contains("background-size: auto_100px"));
+        assert!(result.css.contains(".bg-size-\\(--my-image-size\\)"));
+        assert!(result.css.contains("background-size: var(--my-image-size)"));
+        assert!(result.css.contains(".md\\:bg-contain"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_color_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-inherit".to_string(),
+                "bg-current".to_string(),
+                "bg-transparent".to_string(),
+                "bg-black".to_string(),
+                "bg-white".to_string(),
+                "bg-sky-500".to_string(),
+                "bg-sky-500/75".to_string(),
+                "bg-sky-500/[37%]".to_string(),
+                "bg-sky-500/(--my-opacity)".to_string(),
+                "bg-[#50d71e]".to_string(),
+                "bg-(--my-color)".to_string(),
+                "hover:bg-fuchsia-500".to_string(),
+                "md:bg-green-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-inherit"));
+        assert!(result.css.contains("background-color: inherit"));
+        assert!(result.css.contains(".bg-current"));
+        assert!(result.css.contains("background-color: currentColor"));
+        assert!(result.css.contains(".bg-transparent"));
+        assert!(result.css.contains("background-color: transparent"));
+        assert!(result.css.contains(".bg-black"));
+        assert!(result.css.contains("background-color: var(--color-black)"));
+        assert!(result.css.contains(".bg-white"));
+        assert!(result.css.contains("background-color: var(--color-white)"));
+        assert!(result.css.contains(".bg-sky-500"));
+        assert!(result.css.contains("background-color: var(--color-sky-500)"));
+        assert!(result.css.contains(".bg-sky-500\\/75"));
+        assert!(result.css.contains(
+            "background-color: color-mix(in oklab,var(--color-sky-500) 75%,transparent)"
+        ));
+        assert!(result.css.contains(".bg-sky-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "background-color: color-mix(in oklab,var(--color-sky-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".bg-sky-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "background-color: color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".bg-\\[#50d71e\\]"));
+        assert!(result.css.contains("background-color: #50d71e"));
+        assert!(result.css.contains(".bg-\\(--my-color\\)"));
+        assert!(result.css.contains("background-color: var(--my-color)"));
+        assert!(result.css.contains(".hover\\:bg-fuchsia-500:hover"));
+        assert!(result.css.contains(".md\\:bg-green-500"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_image_and_gradient_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-none".to_string(),
+                "bg-[url(/img/mountains.jpg)]".to_string(),
+                "bg-(image:--my-image)".to_string(),
+                "bg-linear-to-r".to_string(),
+                "bg-linear-to-r/srgb".to_string(),
+                "bg-linear-65".to_string(),
+                "-bg-linear-65".to_string(),
+                "bg-linear-[25deg,red_5%,yellow_60%]".to_string(),
+                "bg-linear-(--my-gradient)".to_string(),
+                "bg-radial".to_string(),
+                "bg-radial-[at_50%_75%]".to_string(),
+                "bg-radial-(--my-radial)".to_string(),
+                "bg-conic-180".to_string(),
+                "-bg-conic-180".to_string(),
+                "bg-conic-(--my-conic)".to_string(),
+                "bg-conic-[conic-gradient(from_0deg,red,blue)]".to_string(),
+                "from-indigo-500".to_string(),
+                "from-10%".to_string(),
+                "from-(--my-from)".to_string(),
+                "from-[#50d71e]".to_string(),
+                "via-purple-500".to_string(),
+                "via-30%".to_string(),
+                "to-pink-500".to_string(),
+                "to-90%".to_string(),
+                "md:from-yellow-500".to_string(),
+                "hover:bg-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-none"));
+        assert!(result.css.contains("background-image: none"));
+        assert!(result.css.contains(".bg-\\[url\\(\\/img\\/mountains.jpg\\)\\]"));
+        assert!(result.css.contains("background-image: url(/img/mountains.jpg)"));
+        assert!(result.css.contains(".bg-\\(image\\:--my-image\\)"));
+        assert!(result.css.contains("background-image: var(--my-image)"));
+        assert!(result.css.contains(".bg-linear-to-r"));
+        assert!(result
+            .css
+            .contains("background-image: linear-gradient(to right, var(--tw-gradient-stops))"));
+        assert!(result.css.contains(".bg-linear-to-r\\/srgb"));
+        assert!(result.css.contains(
+            "background-image: linear-gradient(to right in srgb, var(--tw-gradient-stops))"
+        ));
+        assert!(result.css.contains(".bg-linear-65"));
+        assert!(result.css.contains(
+            "background-image: linear-gradient(65deg in oklab, var(--tw-gradient-stops))"
+        ));
+        assert!(result.css.contains(".-bg-linear-65"));
+        assert!(result.css.contains(
+            "background-image: linear-gradient(-65deg in oklab, var(--tw-gradient-stops))"
+        ));
+        assert!(result.css.contains(".bg-linear-\\[25deg\\,red_5\\%\\,yellow_60\\%\\]"));
+        assert!(result.css.contains(
+            "background-image: linear-gradient(var(--tw-gradient-stops, 25deg,red_5%,yellow_60%))"
+        ));
+        assert!(result.css.contains(".bg-linear-\\(--my-gradient\\)"));
+        assert!(result.css.contains(
+            "background-image: linear-gradient(var(--tw-gradient-stops, var(--my-gradient)))"
+        ));
+        assert!(result.css.contains(".bg-radial"));
+        assert!(result
+            .css
+            .contains("background-image: radial-gradient(in oklab, var(--tw-gradient-stops))"));
+        assert!(result.css.contains(".bg-radial-\\[at_50\\%_75\\%\\]"));
+        assert!(result.css.contains(
+            "background-image: radial-gradient(var(--tw-gradient-stops, at_50%_75%))"
+        ));
+        assert!(result.css.contains(".bg-radial-\\(--my-radial\\)"));
+        assert!(result.css.contains(
+            "background-image: radial-gradient(var(--tw-gradient-stops, var(--my-radial)))"
+        ));
+        assert!(result.css.contains(".bg-conic-180"));
+        assert!(result.css.contains(
+            "background-image: conic-gradient(from 180deg in oklab, var(--tw-gradient-stops))"
+        ));
+        assert!(result.css.contains(".-bg-conic-180"));
+        assert!(result.css.contains(
+            "background-image: conic-gradient(from -180deg in oklab, var(--tw-gradient-stops))"
+        ));
+        assert!(result.css.contains(".bg-conic-\\(--my-conic\\)"));
+        assert!(result.css.contains("background-image: var(--my-conic)"));
+        assert!(result
+            .css
+            .contains(".bg-conic-\\[conic-gradient\\(from_0deg\\,red\\,blue\\)\\]"));
+        assert!(result.css.contains("background-image: conic-gradient(from_0deg,red,blue)"));
+        assert!(result.css.contains(".from-indigo-500"));
+        assert!(result.css.contains("--tw-gradient-from: var(--color-indigo-500)"));
+        assert!(result.css.contains(".from-10\\%"));
+        assert!(result.css.contains("--tw-gradient-from-position: 10%"));
+        assert!(result.css.contains(".from-\\(--my-from\\)"));
+        assert!(result.css.contains("--tw-gradient-from: var(--my-from)"));
+        assert!(result.css.contains(".from-\\[#50d71e\\]"));
+        assert!(result.css.contains("--tw-gradient-from: #50d71e"));
+        assert!(result.css.contains(".via-purple-500"));
+        assert!(result.css.contains("--tw-gradient-via: var(--color-purple-500)"));
+        assert!(result.css.contains(".via-30\\%"));
+        assert!(result.css.contains("--tw-gradient-via-position: 30%"));
+        assert!(result.css.contains(".to-pink-500"));
+        assert!(result.css.contains("--tw-gradient-to: var(--color-pink-500)"));
+        assert!(result.css.contains(".to-90\\%"));
+        assert!(result.css.contains("--tw-gradient-to-position: 90%"));
+        assert!(result.css.contains(".md\\:from-yellow-500"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".hover\\:bg-none:hover"));
+    }
+
+    #[test]
+    fn generates_text_colors() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "text-gray-700".to_string(),
+                "text-blue-500".to_string(),
+                "text-inherit".to_string(),
+                "text-current".to_string(),
+                "text-transparent".to_string(),
+                "text-black".to_string(),
+                "text-white".to_string(),
+                "text-(--my-color)".to_string(),
+                "text-[#50d71e]".to_string(),
+                "text-red-500".to_string(),
+                "text-red-500/75".to_string(),
+                "text-red-500/[37%]".to_string(),
+                "text-red-500/(--my-opacity)".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".text-gray-700"));
+        assert!(result.css.contains("color: #374151"));
+        assert!(result.css.contains(".text-blue-500"));
+        assert!(result.css.contains("color: #3b82f6"));
+        assert!(result.css.contains(".text-inherit"));
+        assert!(result.css.contains("color: inherit"));
+        assert!(result.css.contains(".text-current"));
+        assert!(result.css.contains("color: currentColor"));
+        assert!(result.css.contains(".text-transparent"));
+        assert!(result.css.contains("color: transparent"));
+        assert!(result.css.contains(".text-black"));
+        assert!(result.css.contains("color: var(--color-black)"));
+        assert!(result.css.contains(".text-white"));
+        assert!(result.css.contains("color: var(--color-white)"));
+        assert!(result.css.contains(".text-\\(--my-color\\)"));
+        assert!(result.css.contains("color: var(--my-color)"));
+        assert!(result.css.contains(".text-\\[#50d71e\\]"));
+        assert!(result.css.contains("color: #50d71e"));
+        assert!(result.css.contains(".text-red-500"));
+        assert!(result.css.contains("color: var(--color-red-500)"));
+        assert!(result.css.contains(".text-red-500\\/75"));
+        assert!(result.css.contains(
+            "color: color-mix(in oklab,var(--color-red-500) 75%,transparent)"
+        ));
+        assert!(result.css.contains(".text-red-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "color: color-mix(in oklab,var(--color-red-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".text-red-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
+        ));
+    }
+
+    #[test]
+    fn generates_text_shadows() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "text-shadow-2xs".to_string(),
+                "text-shadow-xs".to_string(),
+                "text-shadow-sm".to_string(),
+                "text-shadow-md".to_string(),
+                "text-shadow-lg".to_string(),
+                "text-shadow-none".to_string(),
+                "text-shadow-(--my-text-shadow)".to_string(),
+                "text-shadow-(color:--my-shadow-color)".to_string(),
+                "text-shadow-[0_35px_35px_rgb(0_0_0_/_0.25)]".to_string(),
+                "text-shadow-inherit".to_string(),
+                "text-shadow-lg/20".to_string(),
+                "text-shadow-sky-300".to_string(),
+                "text-shadow-cyan-500/50".to_string(),
+                "text-shadow-xl".to_string(),
+                "md:text-shadow-lg".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".text-shadow-2xs"));
+        assert!(result.css.contains(
+            "text-shadow: 0px 1px 0px var(--tw-shadow-color,rgb(0 0 0 / 0.15))"
+        ));
+        assert!(result.css.contains(".text-shadow-xs"));
+        assert!(result.css.contains(
+            "text-shadow: 0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.2))"
+        ));
+        assert!(result.css.contains(".text-shadow-sm"));
+        assert!(result.css.contains("text-shadow: 0px 1px 0px var(--tw-shadow-color,rgb(0 0 0 / 0.075)),0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.075)),0px 2px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.075))"));
+        assert!(result.css.contains(".text-shadow-md"));
+        assert!(result.css.contains("text-shadow: 0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 1px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 2px 4px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
+        assert!(result.css.contains(".text-shadow-lg"));
+        assert!(result.css.contains("text-shadow: 0px 1px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 3px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 4px 8px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
+        assert!(result.css.contains(".text-shadow-none"));
+        assert!(result.css.contains("text-shadow: none"));
+        assert!(result.css.contains(".text-shadow-\\(--my-text-shadow\\)"));
+        assert!(result.css.contains("text-shadow: var(--my-text-shadow)"));
+        assert!(result.css.contains(".text-shadow-\\(color\\:--my-shadow-color\\)"));
+        assert!(result.css.contains("--tw-shadow-color: var(--my-shadow-color)"));
+        assert!(result
+            .css
+            .contains(".text-shadow-\\[0_35px_35px_rgb\\(0_0_0_\\/_0.25\\)\\]"));
+        assert!(result.css.contains("text-shadow: 0_35px_35px_rgb(0_0_0_/_0.25)"));
+        assert!(result.css.contains(".text-shadow-inherit"));
+        assert!(result.css.contains("--tw-shadow-color: inherit"));
+        assert!(result.css.contains(".text-shadow-lg\\/20"));
+        assert!(result.css.contains("--tw-shadow-color: rgb(0 0 0 / 20%)"));
+        assert!(result.css.contains(".text-shadow-sky-300"));
+        assert!(result.css.contains("--tw-shadow-color: var(--color-sky-300)"));
+        assert!(result.css.contains(".text-shadow-cyan-500\\/50"));
+        assert!(result.css.contains(
+            "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
+        ));
+        assert!(result.css.contains(".text-shadow-xl"));
+        assert!(result.css.contains("text-shadow: var(--text-shadow-xl)"));
+        assert!(result.css.contains(".md\\:text-shadow-lg"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_text_decoration_colors() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "decoration-inherit".to_string(),
+                "decoration-current".to_string(),
+                "decoration-transparent".to_string(),
+                "decoration-black".to_string(),
+                "decoration-white".to_string(),
+                "decoration-sky-500".to_string(),
+                "decoration-pink-500/30".to_string(),
+                "decoration-indigo-500/[37%]".to_string(),
+                "decoration-red-500/(--my-opacity)".to_string(),
+                "decoration-[#50d71e]".to_string(),
+                "decoration-(--my-color)".to_string(),
+                "hover:decoration-pink-500".to_string(),
+                "md:decoration-blue-400".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".decoration-inherit"));
+        assert!(result.css.contains("text-decoration-color: inherit"));
+        assert!(result.css.contains(".decoration-current"));
+        assert!(result.css.contains("text-decoration-color: currentColor"));
+        assert!(result.css.contains(".decoration-transparent"));
+        assert!(result.css.contains("text-decoration-color: transparent"));
+        assert!(result.css.contains(".decoration-black"));
+        assert!(result.css.contains("text-decoration-color: var(--color-black)"));
+        assert!(result.css.contains(".decoration-white"));
+        assert!(result.css.contains("text-decoration-color: var(--color-white)"));
+        assert!(result.css.contains(".decoration-sky-500"));
+        assert!(result.css.contains("text-decoration-color: var(--color-sky-500)"));
+        assert!(result.css.contains(".decoration-pink-500\\/30"));
+        assert!(result.css.contains(
+            "text-decoration-color: color-mix(in oklab,var(--color-pink-500) 30%,transparent)"
+        ));
+        assert!(result.css.contains(".decoration-indigo-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "text-decoration-color: color-mix(in oklab,var(--color-indigo-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".decoration-red-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "text-decoration-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".decoration-\\[#50d71e\\]"));
+        assert!(result.css.contains("text-decoration-color: #50d71e"));
+        assert!(result.css.contains(".decoration-\\(--my-color\\)"));
+        assert!(result.css.contains("text-decoration-color: var(--my-color)"));
+        assert!(result.css.contains(".hover\\:decoration-pink-500:hover"));
+        assert!(result.css.contains(".md\\:decoration-blue-400"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_border_colors() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "border-gray-200".to_string(),
+                "border-blue-600".to_string(),
+                "border-x-indigo-500".to_string(),
+                "border-s-emerald-500/30".to_string(),
+                "border-[#243c5a]".to_string(),
+                "border-(--my-border)".to_string(),
+                "divide-rose-400".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".border-gray-200"));
+        assert!(result.css.contains("border-color: var(--color-gray-200)"));
+        assert!(result.css.contains(".border-blue-600"));
+        assert!(result.css.contains("border-color: var(--color-blue-600)"));
+        assert!(result.css.contains(".border-x-indigo-500"));
+        assert!(result.css.contains("border-inline-color: var(--color-indigo-500)"));
+        assert!(result.css.contains(".border-s-emerald-500\\/30"));
+        assert!(result.css.contains(
+            "border-inline-start-color: color-mix(in oklab,var(--color-emerald-500) 30%,transparent)"
+        ));
+        assert!(result.css.contains(".border-\\[#243c5a\\]"));
+        assert!(result.css.contains("border-color: #243c5a"));
+        assert!(result.css.contains(".border-\\(--my-border\\)"));
+        assert!(result.css.contains("border-color: var(--my-border)"));
+        assert!(result.css.contains(".divide-rose-400 > :not(:last-child)"));
+        assert!(result.css.contains("border-color: var(--color-rose-400)"));
+    }
+
+    #[test]
+    fn generates_border_widths() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "border".to_string(),
+                "border-0".to_string(),
+                "border-2".to_string(),
+                "border-4".to_string(),
+                "border-8".to_string(),
+                "border-x-4".to_string(),
+                "border-t-[3px]".to_string(),
+                "border-e-(length:--my-border-width)".to_string(),
+                "divide-x-2".to_string(),
+                "divide-y-[3px]".to_string(),
+                "divide-x-reverse".to_string(),
+                "divide-y-reverse".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".border"));
+        assert!(result.css.contains("border-width: 1px"));
+        assert!(result.css.contains(".border-0"));
+        assert!(result.css.contains("border-width: 0px"));
+        assert!(result.css.contains(".border-2"));
+        assert!(result.css.contains("border-width: 2px"));
+        assert!(result.css.contains(".border-4"));
+        assert!(result.css.contains("border-width: 4px"));
+        assert!(result.css.contains(".border-8"));
+        assert!(result.css.contains("border-width: 8px"));
+        assert!(result.css.contains(".border-x-4"));
+        assert!(result.css.contains("border-inline-width: 4px"));
+        assert!(result.css.contains(".border-t-\\[3px\\]"));
+        assert!(result.css.contains("border-top-width: 3px"));
+        assert!(result.css.contains(".border-e-\\(length\\:--my-border-width\\)"));
+        assert!(result.css.contains("border-inline-end-width: var(--my-border-width)"));
+        assert!(result.css.contains(".divide-x-2 > :not(:last-child)"));
+        assert!(result.css.contains(
+            "border-inline-start-width: calc(2px * var(--tw-divide-x-reverse))"
+        ));
+        assert!(result.css.contains(
+            "border-inline-end-width: calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
+        ));
+        assert!(result.css.contains(".divide-y-\\[3px\\] > :not(:last-child)"));
+        assert!(result.css.contains(
+            "border-block-end-width: calc(3px * calc(1 - var(--tw-divide-y-reverse)))"
+        ));
+        assert!(result.css.contains(".divide-x-reverse > :not(:last-child)"));
+        assert!(result.css.contains("--tw-divide-x-reverse: 1"));
+        assert!(result.css.contains(".divide-y-reverse > :not(:last-child)"));
+        assert!(result.css.contains("--tw-divide-y-reverse: 1"));
+    }
+
+    #[test]
+    fn generates_border_styles() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "border-solid".to_string(),
+                "border-dashed".to_string(),
+                "border-dotted".to_string(),
+                "border-double".to_string(),
+                "border-hidden".to_string(),
+                "border-none".to_string(),
+                "divide-dashed".to_string(),
+                "divide-none".to_string(),
+                "md:border-dotted".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".border-solid"));
+        assert!(result.css.contains("border-style: solid"));
+        assert!(result.css.contains(".border-dashed"));
+        assert!(result.css.contains("border-style: dashed"));
+        assert!(result.css.contains(".border-dotted"));
+        assert!(result.css.contains("border-style: dotted"));
+        assert!(result.css.contains(".border-double"));
+        assert!(result.css.contains("border-style: double"));
+        assert!(result.css.contains(".border-hidden"));
+        assert!(result.css.contains("border-style: hidden"));
+        assert!(result.css.contains(".border-none"));
+        assert!(result.css.contains("border-style: none"));
+        assert!(result.css.contains(".divide-dashed > :not(:last-child)"));
+        assert!(result.css.contains(".divide-none > :not(:last-child)"));
+        assert!(result.css.contains(".md\\:border-dotted"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_outline_widths() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "outline".to_string(),
+                "outline-2".to_string(),
+                "outline-4".to_string(),
+                "outline-(length:--my-outline-width)".to_string(),
+                "outline-[2vw]".to_string(),
+                "focus:outline-2".to_string(),
+                "md:outline".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".outline"));
+        assert!(result.css.contains("outline-width: 1px"));
+        assert!(result.css.contains(".outline-2"));
+        assert!(result.css.contains("outline-width: 2px"));
+        assert!(result.css.contains(".outline-4"));
+        assert!(result.css.contains("outline-width: 4px"));
+        assert!(result.css.contains(".outline-\\(length\\:--my-outline-width\\)"));
+        assert!(result.css.contains("outline-width: var(--my-outline-width)"));
+        assert!(result.css.contains(".outline-\\[2vw\\]"));
+        assert!(result.css.contains("outline-width: 2vw"));
+        assert!(result.css.contains(".focus\\:outline-2:focus"));
+        assert!(result.css.contains(".md\\:outline"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_outline_colors() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "outline-inherit".to_string(),
+                "outline-current".to_string(),
+                "outline-transparent".to_string(),
+                "outline-black".to_string(),
+                "outline-white".to_string(),
+                "outline-blue-500".to_string(),
+                "outline-blue-500/75".to_string(),
+                "outline-rose-500/[37%]".to_string(),
+                "outline-red-500/(--my-opacity)".to_string(),
+                "outline-[#243c5a]".to_string(),
+                "outline-(--my-color)".to_string(),
+                "focus:outline-sky-500".to_string(),
+                "md:outline-blue-400".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".outline-inherit"));
+        assert!(result.css.contains("outline-color: inherit"));
+        assert!(result.css.contains(".outline-current"));
+        assert!(result.css.contains("outline-color: currentColor"));
+        assert!(result.css.contains(".outline-transparent"));
+        assert!(result.css.contains("outline-color: transparent"));
+        assert!(result.css.contains(".outline-black"));
+        assert!(result.css.contains("outline-color: var(--color-black)"));
+        assert!(result.css.contains(".outline-white"));
+        assert!(result.css.contains("outline-color: var(--color-white)"));
+        assert!(result.css.contains(".outline-blue-500"));
+        assert!(result.css.contains("outline-color: var(--color-blue-500)"));
+        assert!(result.css.contains(".outline-blue-500\\/75"));
+        assert!(result.css.contains(
+            "outline-color: color-mix(in oklab,var(--color-blue-500) 75%,transparent)"
+        ));
+        assert!(result.css.contains(".outline-rose-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "outline-color: color-mix(in oklab,var(--color-rose-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".outline-red-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "outline-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".outline-\\[#243c5a\\]"));
+        assert!(result.css.contains("outline-color: #243c5a"));
+        assert!(result.css.contains(".outline-\\(--my-color\\)"));
+        assert!(result.css.contains("outline-color: var(--my-color)"));
+        assert!(result.css.contains(".focus\\:outline-sky-500:focus"));
+        assert!(result.css.contains(".md\\:outline-blue-400"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_outline_styles() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "outline-solid".to_string(),
+                "outline-dashed".to_string(),
+                "outline-dotted".to_string(),
+                "outline-double".to_string(),
+                "outline-none".to_string(),
+                "outline-hidden".to_string(),
+                "focus:outline-hidden".to_string(),
+                "md:outline-dashed".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".outline-solid"));
+        assert!(result.css.contains("outline-style: solid"));
+        assert!(result.css.contains(".outline-dashed"));
+        assert!(result.css.contains("outline-style: dashed"));
+        assert!(result.css.contains(".outline-dotted"));
+        assert!(result.css.contains("outline-style: dotted"));
+        assert!(result.css.contains(".outline-double"));
+        assert!(result.css.contains("outline-style: double"));
+        assert!(result.css.contains(".outline-none"));
+        assert!(result.css.contains("outline-style: none"));
+        assert!(result.css.contains(".outline-hidden"));
+        assert!(result.css.contains("outline: 2px solid transparent"));
+        assert!(result.css.contains("outline-offset: 2px"));
+        assert!(result.css.contains(".focus\\:outline-hidden:focus"));
+        assert!(result.css.contains(".md\\:outline-dashed"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_outline_offsets() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "outline-offset-0".to_string(),
+                "outline-offset-2".to_string(),
+                "outline-offset-4".to_string(),
+                "-outline-offset-2".to_string(),
+                "outline-offset-(--my-outline-offset)".to_string(),
+                "outline-offset-[2vw]".to_string(),
+                "md:outline-offset-2".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".outline-offset-0"));
+        assert!(result.css.contains("outline-offset: 0px"));
+        assert!(result.css.contains(".outline-offset-2"));
+        assert!(result.css.contains("outline-offset: 2px"));
+        assert!(result.css.contains(".outline-offset-4"));
+        assert!(result.css.contains("outline-offset: 4px"));
+        assert!(result.css.contains(".-outline-offset-2"));
+        assert!(result.css.contains("outline-offset: calc(2px * -1)"));
+        assert!(result
+            .css
+            .contains(".outline-offset-\\(--my-outline-offset\\)"));
+        assert!(result.css.contains("outline-offset: var(--my-outline-offset)"));
+        assert!(result.css.contains(".outline-offset-\\[2vw\\]"));
+        assert!(result.css.contains("outline-offset: 2vw"));
+        assert!(result.css.contains(".md\\:outline-offset-2"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_rounded_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "rounded".to_string(),
+                "rounded-xs".to_string(),
+                "rounded-sm".to_string(),
+                "rounded-md".to_string(),
+                "rounded-lg".to_string(),
+                "rounded-xl".to_string(),
+                "rounded-2xl".to_string(),
+                "rounded-3xl".to_string(),
+                "rounded-4xl".to_string(),
+                "rounded-none".to_string(),
+                "rounded-full".to_string(),
+                "rounded-(--my-radius)".to_string(),
+                "rounded-[2vw]".to_string(),
+                "rounded-s-lg".to_string(),
+                "rounded-se-xl".to_string(),
+                "rounded-tr-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".rounded"));
+        assert!(result.css.contains("border-radius: var(--radius-md)"));
+        assert!(result.css.contains(".rounded-xs"));
+        assert!(result.css.contains("border-radius: var(--radius-xs)"));
+        assert!(result.css.contains(".rounded-sm"));
+        assert!(result.css.contains("border-radius: var(--radius-sm)"));
+        assert!(result.css.contains(".rounded-md"));
+        assert!(result.css.contains("border-radius: var(--radius-md)"));
+        assert!(result.css.contains(".rounded-lg"));
+        assert!(result.css.contains("border-radius: var(--radius-lg)"));
+        assert!(result.css.contains(".rounded-xl"));
+        assert!(result.css.contains("border-radius: var(--radius-xl)"));
+        assert!(result.css.contains(".rounded-2xl"));
+        assert!(result.css.contains("border-radius: var(--radius-2xl)"));
+        assert!(result.css.contains(".rounded-3xl"));
+        assert!(result.css.contains("border-radius: var(--radius-3xl)"));
+        assert!(result.css.contains(".rounded-4xl"));
+        assert!(result.css.contains("border-radius: var(--radius-4xl)"));
+        assert!(result.css.contains(".rounded-none"));
+        assert!(result.css.contains("border-radius: 0"));
+        assert!(result.css.contains(".rounded-full"));
+        assert!(result.css.contains("border-radius: calc(infinity * 1px)"));
+        assert!(result.css.contains(".rounded-\\(--my-radius\\)"));
+        assert!(result.css.contains("border-radius: var(--my-radius)"));
+        assert!(result.css.contains(".rounded-\\[2vw\\]"));
+        assert!(result.css.contains("border-radius: 2vw"));
+        assert!(result.css.contains(".rounded-s-lg"));
+        assert!(result.css.contains("border-start-start-radius: var(--radius-lg)"));
+        assert!(result.css.contains("border-end-start-radius: var(--radius-lg)"));
+        assert!(result.css.contains(".rounded-se-xl"));
+        assert!(result.css.contains("border-start-end-radius: var(--radius-xl)"));
+        assert!(result.css.contains(".rounded-tr-none"));
+        assert!(result.css.contains("border-top-right-radius: 0"));
+    }
+
+    #[test]
+    fn generates_shadow_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "shadow-sm".to_string(),
+                "shadow".to_string(),
+                "shadow-md".to_string(),
+                "shadow-lg".to_string(),
+                "shadow-xl".to_string(),
+                "shadow-2xl".to_string(),
+                "shadow-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".shadow-sm"));
+        assert!(result.css.contains("box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"));
+        assert!(result.css.contains(".shadow"));
+        assert!(result.css.contains("box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1)"));
+        assert!(result.css.contains(".shadow-md"));
+        assert!(result.css.contains("box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)"));
+        assert!(result.css.contains(".shadow-lg"));
+        assert!(result.css.contains("box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1)"));
+        assert!(result.css.contains(".shadow-xl"));
+        assert!(result.css.contains("box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1)"));
+        assert!(result.css.contains(".shadow-2xl"));
+        assert!(result.css.contains("box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25)"));
+        assert!(result.css.contains(".shadow-none"));
+        assert!(result.css.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn generates_ring_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "ring".to_string(),
+                "ring-0".to_string(),
+                "ring-2".to_string(),
+                "ring-8".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".ring"));
+        assert!(result.css.contains("box-shadow: 0 0 0 3px rgba(59,130,246,0.5)"));
+        assert!(result.css.contains(".ring-0"));
+        assert!(result.css.contains("box-shadow: 0 0 0 0 rgba(59,130,246,0.5)"));
+        assert!(result.css.contains(".ring-2"));
+        assert!(result.css.contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+        assert!(result.css.contains(".ring-8"));
+        assert!(result.css.contains("box-shadow: 0 0 0 8px rgba(59,130,246,0.5)"));
+    }
+
+    #[test]
+    fn generates_focus_variant() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["focus:ring-2".to_string()], &config);
+        assert!(result.css.contains(".focus\\:ring-2:focus"));
+        assert!(result.css.contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+    }
+
+    #[test]
+    fn generates_hover_and_active_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &["hover:bg-blue-500".to_string(), "active:bg-blue-600".to_string()],
+            &config,
+        );
+        assert!(result.css.contains(".hover\\:bg-blue-500:hover"));
+        assert!(result.css.contains("background-color: #3b82f6"));
+        assert!(result.css.contains(".active\\:bg-blue-600:active"));
+        assert!(result.css.contains("background-color: #2563eb"));
+    }
+
+    #[test]
+    fn generates_focus_within_and_disabled_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "focus-within:ring-1".to_string(),
+                "disabled:bg-gray-200".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".focus-within\\:ring-1:focus-within"));
+        assert!(result.css.contains("box-shadow: 0 0 0 1px rgba(59,130,246,0.5)"));
+        assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
+        assert!(result.css.contains("background-color: #e5e7eb"));
+    }
+
+    #[test]
+    fn generates_dark_variant() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["dark:bg-gray-900".to_string()], &config);
+        assert!(result.css.contains(".dark .dark\\:bg-gray-900"));
+        assert!(result.css.contains("background-color: #111827"));
+    }
+
+    #[test]
+    fn generates_responsive_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "sm:bg-blue-500".to_string(),
+                "md:text-gray-700".to_string(),
+                "lg:ring-2".to_string(),
+                "xl:bg-gray-100".to_string(),
+                "2xl:text-blue-600".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains("@media (min-width: 640px)"));
+        assert!(result.css.contains(".sm\\:bg-blue-500"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:text-gray-700"));
+        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains(".lg\\:ring-2"));
+        assert!(result.css.contains("@media (min-width: 1280px)"));
+        assert!(result.css.contains(".xl\\:bg-gray-100"));
+        assert!(result.css.contains("@media (min-width: 1536px)"));
+        assert!(result.css.contains(".2xl\\:text-blue-600"));
+    }
+
+    #[test]
+    fn generates_configured_colors() {
+        let mut colors = BTreeMap::new();
+        let mut brand = BTreeMap::new();
+        brand.insert("500".to_string(), "#00aaff".to_string());
+        colors.insert("brand".to_string(), brand);
+        let config = GeneratorConfig {
+            minify: false,
+            colors,
+        };
+        let result = generate(
+            &[
+                "text-brand-500".to_string(),
+                "bg-brand-500".to_string(),
+                "border-brand-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".text-brand-500"));
+        assert!(result.css.contains("color: #00aaff"));
+        assert!(result.css.contains(".bg-brand-500"));
+        assert!(result.css.contains("background-color: #00aaff"));
+        assert!(result.css.contains(".border-brand-500"));
+        assert!(result.css.contains("border-color: #00aaff"));
+    }
+
+    #[test]
+    fn configured_colors_override_builtin_palette() {
+        let mut colors = BTreeMap::new();
+        let mut gray = BTreeMap::new();
+        gray.insert("500".to_string(), "#123456".to_string());
+        colors.insert("gray".to_string(), gray);
+        let config = GeneratorConfig {
+            minify: false,
+            colors,
+        };
+        let result = generate(&["text-gray-500".to_string(), "bg-gray-500".to_string()], &config);
+        assert!(result.css.contains("color: #123456"));
+        assert!(result.css.contains("background-color: #123456"));
+    }
+
+    #[test]
+    fn generates_display_position_and_sizing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "inline".to_string(),
+                "inline-block".to_string(),
+                "flow-root".to_string(),
+                "flex".to_string(),
+                "inline-flex".to_string(),
+                "grid".to_string(),
+                "inline-grid".to_string(),
+                "contents".to_string(),
+                "table".to_string(),
+                "table-row".to_string(),
+                "table-cell".to_string(),
+                "table-caption".to_string(),
+                "table-column".to_string(),
+                "table-column-group".to_string(),
+                "table-header-group".to_string(),
+                "table-row-group".to_string(),
+                "table-footer-group".to_string(),
+                "sr-only".to_string(),
+                "not-sr-only".to_string(),
+                "overflow-auto".to_string(),
+                "overflow-hidden".to_string(),
+                "overflow-clip".to_string(),
+                "overflow-visible".to_string(),
+                "overflow-scroll".to_string(),
+                "overflow-x-auto".to_string(),
+                "overflow-y-auto".to_string(),
+                "overflow-x-hidden".to_string(),
+                "overflow-y-hidden".to_string(),
+                "overflow-x-clip".to_string(),
+                "overflow-y-clip".to_string(),
+                "overflow-x-visible".to_string(),
+                "overflow-y-visible".to_string(),
+                "overflow-x-scroll".to_string(),
+                "overflow-y-scroll".to_string(),
+                "hidden".to_string(),
+                "absolute".to_string(),
+                "w-full".to_string(),
+                "h-screen".to_string(),
+                "min-h-screen".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".inline"));
+        assert!(result.css.contains("display: inline"));
+        assert!(result.css.contains(".inline-block"));
+        assert!(result.css.contains("display: inline-block"));
+        assert!(result.css.contains(".flow-root"));
+        assert!(result.css.contains("display: flow-root"));
+        assert!(result.css.contains(".flex"));
+        assert!(result.css.contains("display: flex"));
+        assert!(result.css.contains(".inline-flex"));
+        assert!(result.css.contains("display: inline-flex"));
+        assert!(result.css.contains(".grid"));
+        assert!(result.css.contains("display: grid"));
+        assert!(result.css.contains(".inline-grid"));
+        assert!(result.css.contains("display: inline-grid"));
+        assert!(result.css.contains(".contents"));
+        assert!(result.css.contains("display: contents"));
+        assert!(result.css.contains(".table"));
+        assert!(result.css.contains("display: table"));
+        assert!(result.css.contains(".table-row"));
+        assert!(result.css.contains("display: table-row"));
+        assert!(result.css.contains(".table-cell"));
+        assert!(result.css.contains("display: table-cell"));
+        assert!(result.css.contains(".table-caption"));
+        assert!(result.css.contains("display: table-caption"));
+        assert!(result.css.contains(".table-column"));
+        assert!(result.css.contains("display: table-column"));
+        assert!(result.css.contains(".table-column-group"));
+        assert!(result.css.contains("display: table-column-group"));
+        assert!(result.css.contains(".table-header-group"));
+        assert!(result.css.contains("display: table-header-group"));
+        assert!(result.css.contains(".table-row-group"));
+        assert!(result.css.contains("display: table-row-group"));
+        assert!(result.css.contains(".table-footer-group"));
+        assert!(result.css.contains("display: table-footer-group"));
+        assert!(result.css.contains(".sr-only"));
+        assert!(result.css.contains("position: absolute"));
+        assert!(result.css.contains("clip: rect(0,0,0,0)"));
+        assert!(result.css.contains(".not-sr-only"));
+        assert!(result.css.contains("position: static"));
+        assert!(result.css.contains("clip: auto"));
+        assert!(result.css.contains(".overflow-auto"));
+        assert!(result.css.contains("overflow: auto"));
+        assert!(result.css.contains(".overflow-hidden"));
+        assert!(result.css.contains("overflow: hidden"));
+        assert!(result.css.contains(".overflow-clip"));
+        assert!(result.css.contains("overflow: clip"));
+        assert!(result.css.contains(".overflow-visible"));
+        assert!(result.css.contains("overflow: visible"));
+        assert!(result.css.contains(".overflow-scroll"));
+        assert!(result.css.contains("overflow: scroll"));
+        assert!(result.css.contains(".overflow-x-auto"));
+        assert!(result.css.contains("overflow-x: auto"));
+        assert!(result.css.contains(".overflow-y-auto"));
+        assert!(result.css.contains("overflow-y: auto"));
+        assert!(result.css.contains(".overflow-x-hidden"));
+        assert!(result.css.contains("overflow-x: hidden"));
+        assert!(result.css.contains(".overflow-y-hidden"));
+        assert!(result.css.contains("overflow-y: hidden"));
+        assert!(result.css.contains(".overflow-x-clip"));
+        assert!(result.css.contains("overflow-x: clip"));
+        assert!(result.css.contains(".overflow-y-clip"));
+        assert!(result.css.contains("overflow-y: clip"));
+        assert!(result.css.contains(".overflow-x-visible"));
+        assert!(result.css.contains("overflow-x: visible"));
+        assert!(result.css.contains(".overflow-y-visible"));
+        assert!(result.css.contains("overflow-y: visible"));
+        assert!(result.css.contains(".overflow-x-scroll"));
+        assert!(result.css.contains("overflow-x: scroll"));
+        assert!(result.css.contains(".overflow-y-scroll"));
+        assert!(result.css.contains("overflow-y: scroll"));
+        assert!(result.css.contains(".hidden"));
+        assert!(result.css.contains("display: none"));
+        assert!(result.css.contains(".absolute"));
+        assert!(result.css.contains("position: absolute"));
+        assert!(result.css.contains(".w-full"));
+        assert!(result.css.contains("width: 100%"));
+        assert!(result.css.contains(".h-screen"));
+        assert!(result.css.contains("height: 100vh"));
+        assert!(result.css.contains(".min-h-screen"));
+        assert!(result.css.contains("min-height: 100vh"));
+    }
+
+    #[test]
+    fn generates_flex_alignment_overflow_and_gap_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "flex-row".to_string(),
+                "flex-row-reverse".to_string(),
+                "flex-nowrap".to_string(),
+                "flex-wrap".to_string(),
+                "flex-wrap-reverse".to_string(),
+                "flex-col".to_string(),
+                "flex-col-reverse".to_string(),
+                "justify-between".to_string(),
+                "justify-around".to_string(),
+                "justify-evenly".to_string(),
+                "justify-end".to_string(),
+                "justify-end-safe".to_string(),
+                "justify-center".to_string(),
+                "justify-center-safe".to_string(),
+                "justify-stretch".to_string(),
+                "justify-baseline".to_string(),
+                "justify-normal".to_string(),
+                "justify-items-start".to_string(),
+                "justify-items-end".to_string(),
+                "justify-items-end-safe".to_string(),
+                "justify-items-center".to_string(),
+                "justify-items-center-safe".to_string(),
+                "justify-items-stretch".to_string(),
+                "justify-items-normal".to_string(),
+                "justify-self-auto".to_string(),
+                "justify-self-start".to_string(),
+                "justify-self-center".to_string(),
+                "justify-self-center-safe".to_string(),
+                "justify-self-end".to_string(),
+                "justify-self-end-safe".to_string(),
+                "justify-self-stretch".to_string(),
+                "content-normal".to_string(),
+                "content-center".to_string(),
+                "content-start".to_string(),
+                "content-end".to_string(),
+                "content-between".to_string(),
+                "content-around".to_string(),
+                "content-evenly".to_string(),
+                "content-baseline".to_string(),
+                "content-stretch".to_string(),
+                "place-content-center".to_string(),
+                "place-content-center-safe".to_string(),
+                "place-content-start".to_string(),
+                "place-content-end".to_string(),
+                "place-content-end-safe".to_string(),
+                "place-content-between".to_string(),
+                "place-content-around".to_string(),
+                "place-content-evenly".to_string(),
+                "place-content-baseline".to_string(),
+                "place-content-stretch".to_string(),
+                "place-items-start".to_string(),
+                "place-items-end".to_string(),
+                "place-items-end-safe".to_string(),
+                "place-items-center".to_string(),
+                "place-items-center-safe".to_string(),
+                "place-items-baseline".to_string(),
+                "place-items-stretch".to_string(),
+                "place-self-auto".to_string(),
+                "place-self-start".to_string(),
+                "place-self-end".to_string(),
+                "place-self-end-safe".to_string(),
+                "place-self-center".to_string(),
+                "place-self-center-safe".to_string(),
+                "place-self-stretch".to_string(),
+                "items-start".to_string(),
+                "items-end".to_string(),
+                "items-end-safe".to_string(),
+                "items-center".to_string(),
+                "items-center-safe".to_string(),
+                "items-baseline".to_string(),
+                "items-baseline-last".to_string(),
+                "items-stretch".to_string(),
+                "self-auto".to_string(),
+                "self-start".to_string(),
+                "self-end".to_string(),
+                "self-end-safe".to_string(),
+                "self-center".to_string(),
+                "self-center-safe".to_string(),
+                "self-stretch".to_string(),
+                "self-baseline".to_string(),
+                "self-baseline-last".to_string(),
+                "overflow-hidden".to_string(),
+                "gap-4".to_string(),
+                "md:flex-row".to_string(),
+                "md:flex-wrap-reverse".to_string(),
+                "md:justify-between".to_string(),
+                "md:justify-items-center".to_string(),
+                "md:justify-self-end".to_string(),
+                "md:content-around".to_string(),
+                "md:place-content-center".to_string(),
+                "md:place-items-center".to_string(),
+                "md:place-self-end".to_string(),
+                "md:items-center-safe".to_string(),
+                "md:self-end".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".flex-row"));
+        assert!(result.css.contains("flex-direction: row"));
+        assert!(result.css.contains(".flex-row-reverse"));
+        assert!(result.css.contains("flex-direction: row-reverse"));
+        assert!(result.css.contains(".flex-col"));
+        assert!(result.css.contains("flex-direction: column"));
+        assert!(result.css.contains(".flex-col-reverse"));
+        assert!(result.css.contains("flex-direction: column-reverse"));
+        assert!(result.css.contains(".flex-nowrap"));
+        assert!(result.css.contains("flex-wrap: nowrap"));
+        assert!(result.css.contains(".flex-wrap"));
+        assert!(result.css.contains("flex-wrap: wrap"));
+        assert!(result.css.contains(".flex-wrap-reverse"));
+        assert!(result.css.contains("flex-wrap: wrap-reverse"));
+        assert!(result.css.contains(".justify-between"));
+        assert!(result.css.contains("justify-content: space-between"));
+        assert!(result.css.contains(".justify-around"));
+        assert!(result.css.contains("justify-content: space-around"));
+        assert!(result.css.contains(".justify-evenly"));
+        assert!(result.css.contains("justify-content: space-evenly"));
+        assert!(result.css.contains(".justify-end"));
+        assert!(result.css.contains("justify-content: flex-end"));
+        assert!(result.css.contains(".justify-end-safe"));
+        assert!(result.css.contains("justify-content: safe flex-end"));
+        assert!(result.css.contains(".justify-center"));
+        assert!(result.css.contains("justify-content: center"));
+        assert!(result.css.contains(".justify-center-safe"));
+        assert!(result.css.contains("justify-content: safe center"));
+        assert!(result.css.contains(".justify-stretch"));
+        assert!(result.css.contains("justify-content: stretch"));
+        assert!(result.css.contains(".justify-baseline"));
+        assert!(result.css.contains("justify-content: baseline"));
+        assert!(result.css.contains(".justify-normal"));
+        assert!(result.css.contains("justify-content: normal"));
+        assert!(result.css.contains(".justify-items-start"));
+        assert!(result.css.contains("justify-items: start"));
+        assert!(result.css.contains(".justify-items-end"));
+        assert!(result.css.contains("justify-items: end"));
+        assert!(result.css.contains(".justify-items-end-safe"));
+        assert!(result.css.contains("justify-items: safe end"));
+        assert!(result.css.contains(".justify-items-center"));
+        assert!(result.css.contains("justify-items: center"));
+        assert!(result.css.contains(".justify-items-center-safe"));
+        assert!(result.css.contains("justify-items: safe center"));
+        assert!(result.css.contains(".justify-items-stretch"));
+        assert!(result.css.contains("justify-items: stretch"));
+        assert!(result.css.contains(".justify-items-normal"));
+        assert!(result.css.contains("justify-items: normal"));
+        assert!(result.css.contains(".justify-self-auto"));
+        assert!(result.css.contains("justify-self: auto"));
+        assert!(result.css.contains(".justify-self-start"));
+        assert!(result.css.contains("justify-self: start"));
+        assert!(result.css.contains(".justify-self-center"));
+        assert!(result.css.contains("justify-self: center"));
+        assert!(result.css.contains(".justify-self-center-safe"));
+        assert!(result.css.contains("justify-self: safe center"));
+        assert!(result.css.contains(".justify-self-end"));
+        assert!(result.css.contains("justify-self: end"));
+        assert!(result.css.contains(".justify-self-end-safe"));
+        assert!(result.css.contains("justify-self: safe end"));
+        assert!(result.css.contains(".justify-self-stretch"));
+        assert!(result.css.contains("justify-self: stretch"));
+        assert!(result.css.contains(".content-normal"));
+        assert!(result.css.contains("align-content: normal"));
+        assert!(result.css.contains(".content-center"));
+        assert!(result.css.contains("align-content: center"));
+        assert!(result.css.contains(".content-start"));
+        assert!(result.css.contains("align-content: flex-start"));
+        assert!(result.css.contains(".content-end"));
+        assert!(result.css.contains("align-content: flex-end"));
+        assert!(result.css.contains(".content-between"));
+        assert!(result.css.contains("align-content: space-between"));
+        assert!(result.css.contains(".content-around"));
+        assert!(result.css.contains("align-content: space-around"));
+        assert!(result.css.contains(".content-evenly"));
+        assert!(result.css.contains("align-content: space-evenly"));
+        assert!(result.css.contains(".content-baseline"));
+        assert!(result.css.contains("align-content: baseline"));
+        assert!(result.css.contains(".content-stretch"));
+        assert!(result.css.contains("align-content: stretch"));
+        assert!(result.css.contains(".place-content-center"));
+        assert!(result.css.contains("place-content: center"));
+        assert!(result.css.contains(".place-content-center-safe"));
+        assert!(result.css.contains("place-content: safe center"));
+        assert!(result.css.contains(".place-content-start"));
+        assert!(result.css.contains("place-content: start"));
+        assert!(result.css.contains(".place-content-end"));
+        assert!(result.css.contains("place-content: end"));
+        assert!(result.css.contains(".place-content-end-safe"));
+        assert!(result.css.contains("place-content: safe end"));
+        assert!(result.css.contains(".place-content-between"));
+        assert!(result.css.contains("place-content: space-between"));
+        assert!(result.css.contains(".place-content-around"));
+        assert!(result.css.contains("place-content: space-around"));
+        assert!(result.css.contains(".place-content-evenly"));
+        assert!(result.css.contains("place-content: space-evenly"));
+        assert!(result.css.contains(".place-content-baseline"));
+        assert!(result.css.contains("place-content: baseline"));
+        assert!(result.css.contains(".place-content-stretch"));
+        assert!(result.css.contains("place-content: stretch"));
+        assert!(result.css.contains(".place-items-start"));
+        assert!(result.css.contains("place-items: start"));
+        assert!(result.css.contains(".place-items-end"));
+        assert!(result.css.contains("place-items: end"));
+        assert!(result.css.contains(".place-items-end-safe"));
+        assert!(result.css.contains("place-items: safe end"));
+        assert!(result.css.contains(".place-items-center"));
+        assert!(result.css.contains("place-items: center"));
+        assert!(result.css.contains(".place-items-center-safe"));
+        assert!(result.css.contains("place-items: safe center"));
+        assert!(result.css.contains(".place-items-baseline"));
+        assert!(result.css.contains("place-items: baseline"));
+        assert!(result.css.contains(".place-items-stretch"));
+        assert!(result.css.contains("place-items: stretch"));
+        assert!(result.css.contains(".place-self-auto"));
+        assert!(result.css.contains("place-self: auto"));
+        assert!(result.css.contains(".place-self-start"));
+        assert!(result.css.contains("place-self: start"));
+        assert!(result.css.contains(".place-self-end"));
+        assert!(result.css.contains("place-self: end"));
+        assert!(result.css.contains(".place-self-end-safe"));
+        assert!(result.css.contains("place-self: safe end"));
+        assert!(result.css.contains(".place-self-center"));
+        assert!(result.css.contains("place-self: center"));
+        assert!(result.css.contains(".place-self-center-safe"));
+        assert!(result.css.contains("place-self: safe center"));
+        assert!(result.css.contains(".place-self-stretch"));
+        assert!(result.css.contains("place-self: stretch"));
+        assert!(result.css.contains(".items-start"));
+        assert!(result.css.contains("align-items: flex-start"));
+        assert!(result.css.contains(".items-end"));
+        assert!(result.css.contains("align-items: flex-end"));
+        assert!(result.css.contains(".items-end-safe"));
+        assert!(result.css.contains("align-items: safe flex-end"));
+        assert!(result.css.contains(".items-center"));
+        assert!(result.css.contains("align-items: center"));
+        assert!(result.css.contains(".items-center-safe"));
+        assert!(result.css.contains("align-items: safe center"));
+        assert!(result.css.contains(".items-baseline"));
+        assert!(result.css.contains("align-items: baseline"));
+        assert!(result.css.contains(".items-baseline-last"));
+        assert!(result.css.contains("align-items: last baseline"));
+        assert!(result.css.contains(".items-stretch"));
+        assert!(result.css.contains("align-items: stretch"));
+        assert!(result.css.contains(".self-auto"));
+        assert!(result.css.contains("align-self: auto"));
+        assert!(result.css.contains(".self-start"));
+        assert!(result.css.contains("align-self: flex-start"));
+        assert!(result.css.contains(".self-end"));
+        assert!(result.css.contains("align-self: flex-end"));
+        assert!(result.css.contains(".self-end-safe"));
+        assert!(result.css.contains("align-self: safe flex-end"));
+        assert!(result.css.contains(".self-center"));
+        assert!(result.css.contains("align-self: center"));
+        assert!(result.css.contains(".self-center-safe"));
+        assert!(result.css.contains("align-self: safe center"));
+        assert!(result.css.contains(".self-stretch"));
+        assert!(result.css.contains("align-self: stretch"));
+        assert!(result.css.contains(".self-baseline"));
+        assert!(result.css.contains("align-self: baseline"));
+        assert!(result.css.contains(".self-baseline-last"));
+        assert!(result.css.contains("align-self: last baseline"));
+        assert!(result.css.contains(".overflow-hidden"));
+        assert!(result.css.contains("overflow: hidden"));
+        assert!(result.css.contains(".gap-4"));
+        assert!(result.css.contains("gap: 1rem"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:flex-row"));
+        assert!(result.css.contains(".md\\:flex-wrap-reverse"));
+        assert!(result.css.contains(".md\\:justify-between"));
+        assert!(result.css.contains(".md\\:justify-items-center"));
+        assert!(result.css.contains(".md\\:justify-self-end"));
+        assert!(result.css.contains(".md\\:content-around"));
+        assert!(result.css.contains(".md\\:place-content-center"));
+        assert!(result.css.contains(".md\\:place-items-center"));
+        assert!(result.css.contains(".md\\:place-self-end"));
+        assert!(result.css.contains(".md\\:items-center-safe"));
+        assert!(result.css.contains(".md\\:self-end"));
+    }
+
+    #[test]
+    fn generates_aspect_ratio_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "aspect-square".to_string(),
+                "aspect-video".to_string(),
+                "aspect-auto".to_string(),
+                "aspect-16/9".to_string(),
+                "aspect-(--card-ratio)".to_string(),
+                "aspect-[4/3]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".aspect-square"));
+        assert!(result.css.contains("aspect-ratio: 1 / 1"));
+        assert!(result.css.contains(".aspect-video"));
+        assert!(result.css.contains("aspect-ratio: var(--aspect-video)"));
+        assert!(result.css.contains(".aspect-auto"));
+        assert!(result.css.contains("aspect-ratio: auto"));
+        assert!(result.css.contains(".aspect-16\\/9"));
+        assert!(result.css.contains("aspect-ratio: 16/9"));
+        assert!(result.css.contains(".aspect-\\(--card-ratio\\)"));
+        assert!(result.css.contains("aspect-ratio: var(--card-ratio)"));
+        assert!(result.css.contains(".aspect-\\[4\\/3\\]"));
+        assert!(result.css.contains("aspect-ratio: 4/3"));
+    }
+
+    #[test]
+    fn generates_columns_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "columns-3".to_string(),
+                "columns-4xs".to_string(),
+                "columns-3xs".to_string(),
+                "columns-md".to_string(),
+                "columns-[30vw]".to_string(),
+                "columns-(--my-columns)".to_string(),
+                "sm:columns-4".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".columns-3"));
+        assert!(result.css.contains("columns: 3"));
+        assert!(result.css.contains(".columns-4xs"));
+        assert!(result.css.contains("columns: var(--container-4xs)"));
+        assert!(result.css.contains(".columns-3xs"));
+        assert!(result.css.contains("columns: var(--container-3xs)"));
+        assert!(result.css.contains(".columns-md"));
+        assert!(result.css.contains("columns: var(--container-md)"));
+        assert!(result.css.contains(".columns-\\[30vw\\]"));
+        assert!(result.css.contains("columns: 30vw"));
+        assert!(result.css.contains(".columns-\\(--my-columns\\)"));
+        assert!(result.css.contains("columns: var(--my-columns)"));
+        assert!(result.css.contains("@media (min-width: 640px)"));
+        assert!(result.css.contains(".sm\\:columns-4"));
+        assert!(result.css.contains("columns: 4"));
+    }
+
+    #[test]
+    fn generates_break_after_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "break-after-auto".to_string(),
+                "break-after-avoid".to_string(),
+                "break-after-all".to_string(),
+                "break-after-avoid-page".to_string(),
+                "break-after-page".to_string(),
+                "break-after-left".to_string(),
+                "break-after-right".to_string(),
+                "break-after-column".to_string(),
+                "md:break-after-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".break-after-auto"));
+        assert!(result.css.contains("break-after: auto"));
+        assert!(result.css.contains(".break-after-avoid"));
+        assert!(result.css.contains("break-after: avoid"));
+        assert!(result.css.contains(".break-after-all"));
+        assert!(result.css.contains("break-after: all"));
+        assert!(result.css.contains(".break-after-avoid-page"));
+        assert!(result.css.contains("break-after: avoid-page"));
+        assert!(result.css.contains(".break-after-page"));
+        assert!(result.css.contains("break-after: page"));
+        assert!(result.css.contains(".break-after-left"));
+        assert!(result.css.contains("break-after: left"));
+        assert!(result.css.contains(".break-after-right"));
+        assert!(result.css.contains("break-after: right"));
+        assert!(result.css.contains(".break-after-column"));
+        assert!(result.css.contains("break-after: column"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:break-after-auto"));
+    }
+
+    #[test]
+    fn generates_break_before_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "break-before-auto".to_string(),
+                "break-before-avoid".to_string(),
+                "break-before-all".to_string(),
+                "break-before-avoid-page".to_string(),
+                "break-before-page".to_string(),
+                "break-before-left".to_string(),
+                "break-before-right".to_string(),
+                "break-before-column".to_string(),
+                "md:break-before-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".break-before-auto"));
+        assert!(result.css.contains("break-before: auto"));
+        assert!(result.css.contains(".break-before-avoid"));
+        assert!(result.css.contains("break-before: avoid"));
+        assert!(result.css.contains(".break-before-all"));
+        assert!(result.css.contains("break-before: all"));
+        assert!(result.css.contains(".break-before-avoid-page"));
+        assert!(result.css.contains("break-before: avoid-page"));
+        assert!(result.css.contains(".break-before-page"));
+        assert!(result.css.contains("break-before: page"));
+        assert!(result.css.contains(".break-before-left"));
+        assert!(result.css.contains("break-before: left"));
+        assert!(result.css.contains(".break-before-right"));
+        assert!(result.css.contains("break-before: right"));
+        assert!(result.css.contains(".break-before-column"));
+        assert!(result.css.contains("break-before: column"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:break-before-auto"));
+    }
+
+    #[test]
+    fn generates_break_inside_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "break-inside-auto".to_string(),
+                "break-inside-avoid".to_string(),
+                "break-inside-avoid-page".to_string(),
+                "break-inside-avoid-column".to_string(),
+                "md:break-inside-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".break-inside-auto"));
+        assert!(result.css.contains("break-inside: auto"));
+        assert!(result.css.contains(".break-inside-avoid"));
+        assert!(result.css.contains("break-inside: avoid"));
+        assert!(result.css.contains(".break-inside-avoid-page"));
+        assert!(result.css.contains("break-inside: avoid-page"));
+        assert!(result.css.contains(".break-inside-avoid-column"));
+        assert!(result.css.contains("break-inside: avoid-column"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:break-inside-auto"));
+    }
+
+    #[test]
+    fn generates_box_decoration_break_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "box-decoration-clone".to_string(),
+                "box-decoration-slice".to_string(),
+                "md:box-decoration-slice".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".box-decoration-clone"));
+        assert!(result.css.contains("box-decoration-break: clone"));
+        assert!(result.css.contains(".box-decoration-slice"));
+        assert!(result.css.contains("box-decoration-break: slice"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:box-decoration-slice"));
+    }
+
+    #[test]
+    fn generates_box_sizing_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "box-border".to_string(),
+                "box-content".to_string(),
+                "md:box-border".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".box-border"));
+        assert!(result.css.contains("box-sizing: border-box"));
+        assert!(result.css.contains(".box-content"));
+        assert!(result.css.contains("box-sizing: content-box"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:box-border"));
+    }
+
+    #[test]
+    fn generates_float_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "float-right".to_string(),
+                "float-left".to_string(),
+                "float-start".to_string(),
+                "float-end".to_string(),
+                "float-none".to_string(),
+                "md:float-left".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".float-right"));
+        assert!(result.css.contains("float: right"));
+        assert!(result.css.contains(".float-left"));
+        assert!(result.css.contains("float: left"));
+        assert!(result.css.contains(".float-start"));
+        assert!(result.css.contains("float: inline-start"));
+        assert!(result.css.contains(".float-end"));
+        assert!(result.css.contains("float: inline-end"));
+        assert!(result.css.contains(".float-none"));
+        assert!(result.css.contains("float: none"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:float-left"));
+    }
+
+    #[test]
+    fn generates_clear_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "clear-left".to_string(),
+                "clear-right".to_string(),
+                "clear-both".to_string(),
+                "clear-start".to_string(),
+                "clear-end".to_string(),
+                "clear-none".to_string(),
+                "md:clear-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".clear-left"));
+        assert!(result.css.contains("clear: left"));
+        assert!(result.css.contains(".clear-right"));
+        assert!(result.css.contains("clear: right"));
+        assert!(result.css.contains(".clear-both"));
+        assert!(result.css.contains("clear: both"));
+        assert!(result.css.contains(".clear-start"));
+        assert!(result.css.contains("clear: inline-start"));
+        assert!(result.css.contains(".clear-end"));
+        assert!(result.css.contains("clear: inline-end"));
+        assert!(result.css.contains(".clear-none"));
+        assert!(result.css.contains("clear: none"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:clear-none"));
+    }
+
+    #[test]
+    fn generates_isolation_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "isolate".to_string(),
+                "isolation-auto".to_string(),
+                "md:isolation-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".isolate"));
+        assert!(result.css.contains("isolation: isolate"));
+        assert!(result.css.contains(".isolation-auto"));
+        assert!(result.css.contains("isolation: auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:isolation-auto"));
+    }
+
+    #[test]
+    fn generates_object_fit_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "object-contain".to_string(),
+                "object-cover".to_string(),
+                "object-fill".to_string(),
+                "object-none".to_string(),
+                "object-scale-down".to_string(),
+                "md:object-cover".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".object-contain"));
+        assert!(result.css.contains("object-fit: contain"));
+        assert!(result.css.contains(".object-cover"));
+        assert!(result.css.contains("object-fit: cover"));
+        assert!(result.css.contains(".object-fill"));
+        assert!(result.css.contains("object-fit: fill"));
+        assert!(result.css.contains(".object-none"));
+        assert!(result.css.contains("object-fit: none"));
+        assert!(result.css.contains(".object-scale-down"));
+        assert!(result.css.contains("object-fit: scale-down"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:object-cover"));
+    }
+
+    #[test]
+    fn generates_object_position_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "object-top-left".to_string(),
+                "object-top".to_string(),
+                "object-top-right".to_string(),
+                "object-left".to_string(),
+                "object-center".to_string(),
+                "object-right".to_string(),
+                "object-bottom-left".to_string(),
+                "object-bottom".to_string(),
+                "object-bottom-right".to_string(),
+                "object-(--my-object)".to_string(),
+                "object-[25%_75%]".to_string(),
+                "md:object-top".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".object-top-left"));
+        assert!(result.css.contains("object-position: top left"));
+        assert!(result.css.contains(".object-top"));
+        assert!(result.css.contains("object-position: top"));
+        assert!(result.css.contains(".object-top-right"));
+        assert!(result.css.contains("object-position: top right"));
+        assert!(result.css.contains(".object-left"));
+        assert!(result.css.contains("object-position: left"));
+        assert!(result.css.contains(".object-center"));
+        assert!(result.css.contains("object-position: center"));
+        assert!(result.css.contains(".object-right"));
+        assert!(result.css.contains("object-position: right"));
+        assert!(result.css.contains(".object-bottom-left"));
+        assert!(result.css.contains("object-position: bottom left"));
+        assert!(result.css.contains(".object-bottom"));
+        assert!(result.css.contains("object-position: bottom"));
+        assert!(result.css.contains(".object-bottom-right"));
+        assert!(result.css.contains("object-position: bottom right"));
+        assert!(result.css.contains(".object-\\(--my-object\\)"));
+        assert!(result.css.contains("object-position: var(--my-object)"));
+        assert!(result.css.contains(".object-\\[25\\%_75\\%\\]"));
+        assert!(result.css.contains("object-position: 25%_75%"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:object-top"));
+    }
+
+    #[test]
+    fn generates_overscroll_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "overscroll-auto".to_string(),
+                "overscroll-contain".to_string(),
+                "overscroll-none".to_string(),
+                "overscroll-x-auto".to_string(),
+                "overscroll-x-contain".to_string(),
+                "overscroll-x-none".to_string(),
+                "overscroll-y-auto".to_string(),
+                "overscroll-y-contain".to_string(),
+                "overscroll-y-none".to_string(),
+                "md:overscroll-contain".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".overscroll-auto"));
+        assert!(result.css.contains("overscroll-behavior: auto"));
+        assert!(result.css.contains(".overscroll-contain"));
+        assert!(result.css.contains("overscroll-behavior: contain"));
+        assert!(result.css.contains(".overscroll-none"));
+        assert!(result.css.contains("overscroll-behavior: none"));
+        assert!(result.css.contains(".overscroll-x-auto"));
+        assert!(result.css.contains("overscroll-behavior-x: auto"));
+        assert!(result.css.contains(".overscroll-x-contain"));
+        assert!(result.css.contains("overscroll-behavior-x: contain"));
+        assert!(result.css.contains(".overscroll-x-none"));
+        assert!(result.css.contains("overscroll-behavior-x: none"));
+        assert!(result.css.contains(".overscroll-y-auto"));
+        assert!(result.css.contains("overscroll-behavior-y: auto"));
+        assert!(result.css.contains(".overscroll-y-contain"));
+        assert!(result.css.contains("overscroll-behavior-y: contain"));
+        assert!(result.css.contains(".overscroll-y-none"));
+        assert!(result.css.contains("overscroll-behavior-y: none"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:overscroll-contain"));
+    }
+
+    #[test]
+    fn generates_position_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "static".to_string(),
+                "fixed".to_string(),
+                "absolute".to_string(),
+                "relative".to_string(),
+                "sticky".to_string(),
+                "md:absolute".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".static"));
+        assert!(result.css.contains("position: static"));
+        assert!(result.css.contains(".fixed"));
+        assert!(result.css.contains("position: fixed"));
+        assert!(result.css.contains(".absolute"));
+        assert!(result.css.contains("position: absolute"));
+        assert!(result.css.contains(".relative"));
+        assert!(result.css.contains("position: relative"));
+        assert!(result.css.contains(".sticky"));
+        assert!(result.css.contains("position: sticky"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:absolute"));
+    }
+
+    #[test]
+    fn generates_inset_spacing_fraction_and_custom_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "inset-4".to_string(),
+                "-inset-4".to_string(),
+                "inset-x-2".to_string(),
+                "inset-y-3".to_string(),
+                "top-1/2".to_string(),
+                "-top-1/2".to_string(),
+                "left-px".to_string(),
+                "-left-px".to_string(),
+                "right-full".to_string(),
+                "-right-full".to_string(),
+                "bottom-auto".to_string(),
+                "start-2".to_string(),
+                "end-3".to_string(),
+                "inset-(--my-position)".to_string(),
+                "inset-[3px]".to_string(),
+                "-top-[3px]".to_string(),
+                "md:top-6".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".inset-4"));
+        assert!(result.css.contains("inset: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".-inset-4"));
+        assert!(result.css.contains("inset: calc(var(--spacing) * -4)"));
+        assert!(result.css.contains(".inset-x-2"));
+        assert!(result.css.contains("left: calc(var(--spacing) * 2); right: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".inset-y-3"));
+        assert!(result.css.contains("top: calc(var(--spacing) * 3); bottom: calc(var(--spacing) * 3)"));
+        assert!(result.css.contains(".top-1\\/2"));
+        assert!(result.css.contains("top: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".-top-1\\/2"));
+        assert!(result.css.contains("top: calc(1/2 * -100%)"));
+        assert!(result.css.contains(".left-px"));
+        assert!(result.css.contains("left: 1px"));
+        assert!(result.css.contains(".-left-px"));
+        assert!(result.css.contains("left: calc(1px * -1)"));
+        assert!(result.css.contains(".right-full"));
+        assert!(result.css.contains("right: 100%"));
+        assert!(result.css.contains(".-right-full"));
+        assert!(result.css.contains("right: calc(100% * -1)"));
+        assert!(result.css.contains(".bottom-auto"));
+        assert!(result.css.contains("bottom: auto"));
+        assert!(result.css.contains(".start-2"));
+        assert!(result.css.contains("inset-inline-start: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".end-3"));
+        assert!(result.css.contains("inset-inline-end: calc(var(--spacing) * 3)"));
+        assert!(result.css.contains(".inset-\\(--my-position\\)"));
+        assert!(result.css.contains("inset: var(--my-position)"));
+        assert!(result.css.contains(".inset-\\[3px\\]"));
+        assert!(result.css.contains("inset: 3px"));
+        assert!(result.css.contains(".-top-\\[3px\\]"));
+        assert!(result.css.contains("top: calc(3px * -1)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:top-6"));
+    }
+
+    #[test]
+    fn generates_visibility_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "visible".to_string(),
+                "invisible".to_string(),
+                "collapse".to_string(),
+                "md:invisible".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".visible"));
+        assert!(result.css.contains("visibility: visible"));
+        assert!(result.css.contains(".invisible"));
+        assert!(result.css.contains("visibility: hidden"));
+        assert!(result.css.contains(".collapse"));
+        assert!(result.css.contains("visibility: collapse"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:invisible"));
+    }
+
+    #[test]
+    fn generates_flex_basis_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "basis-64".to_string(),
+                "basis-1/3".to_string(),
+                "basis-full".to_string(),
+                "basis-auto".to_string(),
+                "basis-3xs".to_string(),
+                "basis-2xs".to_string(),
+                "basis-xs".to_string(),
+                "basis-sm".to_string(),
+                "basis-4xs".to_string(),
+                "basis-md".to_string(),
+                "basis-lg".to_string(),
+                "basis-xl".to_string(),
+                "basis-2xl".to_string(),
+                "basis-3xl".to_string(),
+                "basis-4xl".to_string(),
+                "basis-5xl".to_string(),
+                "basis-6xl".to_string(),
+                "basis-7xl".to_string(),
+                "basis-[30vw]".to_string(),
+                "basis-(--my-basis)".to_string(),
+                "md:basis-1/2".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".basis-64"));
+        assert!(result.css.contains("flex-basis: calc(var(--spacing) * 64)"));
+        assert!(result.css.contains(".basis-1\\/3"));
+        assert!(result.css.contains("flex-basis: calc(1/3 * 100%)"));
+        assert!(result.css.contains(".basis-full"));
+        assert!(result.css.contains("flex-basis: 100%"));
+        assert!(result.css.contains(".basis-auto"));
+        assert!(result.css.contains("flex-basis: auto"));
+        assert!(result.css.contains(".basis-3xs"));
+        assert!(result.css.contains("flex-basis: var(--container-3xs)"));
+        assert!(result.css.contains(".basis-2xs"));
+        assert!(result.css.contains("flex-basis: var(--container-2xs)"));
+        assert!(result.css.contains(".basis-xs"));
+        assert!(result.css.contains("flex-basis: var(--container-xs)"));
+        assert!(result.css.contains(".basis-sm"));
+        assert!(result.css.contains("flex-basis: var(--container-sm)"));
+        assert!(result.css.contains(".basis-4xs"));
+        assert!(result.css.contains("flex-basis: var(--container-4xs)"));
+        assert!(result.css.contains(".basis-md"));
+        assert!(result.css.contains("flex-basis: var(--container-md)"));
+        assert!(result.css.contains(".basis-lg"));
+        assert!(result.css.contains("flex-basis: var(--container-lg)"));
+        assert!(result.css.contains(".basis-xl"));
+        assert!(result.css.contains("flex-basis: var(--container-xl)"));
+        assert!(result.css.contains(".basis-2xl"));
+        assert!(result.css.contains("flex-basis: var(--container-2xl)"));
+        assert!(result.css.contains(".basis-3xl"));
+        assert!(result.css.contains("flex-basis: var(--container-3xl)"));
+        assert!(result.css.contains(".basis-4xl"));
+        assert!(result.css.contains("flex-basis: var(--container-4xl)"));
+        assert!(result.css.contains(".basis-5xl"));
+        assert!(result.css.contains("flex-basis: var(--container-5xl)"));
+        assert!(result.css.contains(".basis-6xl"));
+        assert!(result.css.contains("flex-basis: var(--container-6xl)"));
+        assert!(result.css.contains(".basis-7xl"));
+        assert!(result.css.contains("flex-basis: var(--container-7xl)"));
+        assert!(result.css.contains(".basis-\\[30vw\\]"));
+        assert!(result.css.contains("flex-basis: 30vw"));
+        assert!(result.css.contains(".basis-\\(--my-basis\\)"));
+        assert!(result.css.contains("flex-basis: var(--my-basis)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:basis-1\\/2"));
+        assert!(result.css.contains("flex-basis: calc(1/2 * 100%)"));
+    }
+
+    #[test]
+    fn generates_flex_shorthand_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "flex-1".to_string(),
+                "flex-2".to_string(),
+                "flex-1/2".to_string(),
+                "flex-auto".to_string(),
+                "flex-initial".to_string(),
+                "flex-none".to_string(),
+                "flex-[3_1_auto]".to_string(),
+                "flex-(--my-flex)".to_string(),
+                "md:flex-1".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".flex-1"));
+        assert!(result.css.contains("flex: 1"));
+        assert!(result.css.contains(".flex-2"));
+        assert!(result.css.contains("flex: 2"));
+        assert!(result.css.contains(".flex-1\\/2"));
+        assert!(result.css.contains("flex: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".flex-auto"));
+        assert!(result.css.contains("flex: auto"));
+        assert!(result.css.contains(".flex-initial"));
+        assert!(result.css.contains("flex: 0 auto"));
+        assert!(result.css.contains(".flex-none"));
+        assert!(result.css.contains("flex: none"));
+        assert!(result.css.contains(".flex-\\[3_1_auto\\]"));
+        assert!(result.css.contains("flex: 3_1_auto"));
+        assert!(result.css.contains(".flex-\\(--my-flex\\)"));
+        assert!(result.css.contains("flex: var(--my-flex)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:flex-1"));
+    }
+
+    #[test]
+    fn generates_flex_grow_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "grow".to_string(),
+                "grow-0".to_string(),
+                "grow-3".to_string(),
+                "grow-7".to_string(),
+                "grow-[25vw]".to_string(),
+                "grow-(--my-grow)".to_string(),
+                "md:grow-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".grow"));
+        assert!(result.css.contains("flex-grow: 1"));
+        assert!(result.css.contains(".grow-0"));
+        assert!(result.css.contains("flex-grow: 0"));
+        assert!(result.css.contains(".grow-3"));
+        assert!(result.css.contains("flex-grow: 3"));
+        assert!(result.css.contains(".grow-7"));
+        assert!(result.css.contains("flex-grow: 7"));
+        assert!(result.css.contains(".grow-\\[25vw\\]"));
+        assert!(result.css.contains("flex-grow: 25vw"));
+        assert!(result.css.contains(".grow-\\(--my-grow\\)"));
+        assert!(result.css.contains("flex-grow: var(--my-grow)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:grow-0"));
+    }
+
+    #[test]
+    fn generates_flex_shrink_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "shrink".to_string(),
+                "shrink-0".to_string(),
+                "shrink-2".to_string(),
+                "shrink-[calc(100vw-var(--sidebar))]".to_string(),
+                "shrink-(--my-shrink)".to_string(),
+                "md:shrink-0".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".shrink"));
+        assert!(result.css.contains("flex-shrink: 1"));
+        assert!(result.css.contains(".shrink-0"));
+        assert!(result.css.contains("flex-shrink: 0"));
+        assert!(result.css.contains(".shrink-2"));
+        assert!(result.css.contains("flex-shrink: 2"));
+        assert!(result.css.contains(".shrink-\\[calc\\(100vw-var\\(--sidebar\\)\\)\\]"));
+        assert!(result.css.contains("flex-shrink: calc(100vw-var(--sidebar))"));
+        assert!(result.css.contains(".shrink-\\(--my-shrink\\)"));
+        assert!(result.css.contains("flex-shrink: var(--my-shrink)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:shrink-0"));
+    }
+
+    #[test]
+    fn generates_grid_template_columns_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "grid-cols-1".to_string(),
+                "grid-cols-6".to_string(),
+                "grid-cols-none".to_string(),
+                "grid-cols-subgrid".to_string(),
+                "grid-cols-[200px_minmax(900px,_1fr)_100px]".to_string(),
+                "grid-cols-(--my-grid-cols)".to_string(),
+                "md:grid-cols-6".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".grid-cols-1"));
+        assert!(result.css.contains("grid-template-columns: repeat(1, minmax(0, 1fr))"));
+        assert!(result.css.contains(".grid-cols-6"));
+        assert!(result.css.contains("grid-template-columns: repeat(6, minmax(0, 1fr))"));
+        assert!(result.css.contains(".grid-cols-none"));
+        assert!(result.css.contains("grid-template-columns: none"));
+        assert!(result.css.contains(".grid-cols-subgrid"));
+        assert!(result.css.contains("grid-template-columns: subgrid"));
+        assert!(
+            result
+                .css
+                .contains(".grid-cols-\\[200px_minmax\\(900px\\,_1fr\\)_100px\\]")
+        );
+        assert!(result.css.contains("grid-template-columns: 200px_minmax(900px,_1fr)_100px"));
+        assert!(result.css.contains(".grid-cols-\\(--my-grid-cols\\)"));
+        assert!(result.css.contains("grid-template-columns: var(--my-grid-cols)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:grid-cols-6"));
+    }
+
+    #[test]
+    fn generates_grid_auto_flow_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "grid-flow-row".to_string(),
+                "grid-flow-col".to_string(),
+                "grid-flow-dense".to_string(),
+                "grid-flow-row-dense".to_string(),
+                "grid-flow-col-dense".to_string(),
+                "md:grid-flow-row".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".grid-flow-row"));
+        assert!(result.css.contains("grid-auto-flow: row"));
+        assert!(result.css.contains(".grid-flow-col"));
+        assert!(result.css.contains("grid-auto-flow: column"));
+        assert!(result.css.contains(".grid-flow-dense"));
+        assert!(result.css.contains("grid-auto-flow: dense"));
+        assert!(result.css.contains(".grid-flow-row-dense"));
+        assert!(result.css.contains("grid-auto-flow: row dense"));
+        assert!(result.css.contains(".grid-flow-col-dense"));
+        assert!(result.css.contains("grid-auto-flow: column dense"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:grid-flow-row"));
+    }
+
+    #[test]
+    fn generates_grid_auto_columns_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "auto-cols-auto".to_string(),
+                "auto-cols-min".to_string(),
+                "auto-cols-max".to_string(),
+                "auto-cols-fr".to_string(),
+                "auto-cols-[minmax(0,2fr)]".to_string(),
+                "auto-cols-(--my-auto-cols)".to_string(),
+                "md:auto-cols-min".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".auto-cols-auto"));
+        assert!(result.css.contains("grid-auto-columns: auto"));
+        assert!(result.css.contains(".auto-cols-min"));
+        assert!(result.css.contains("grid-auto-columns: min-content"));
+        assert!(result.css.contains(".auto-cols-max"));
+        assert!(result.css.contains("grid-auto-columns: max-content"));
+        assert!(result.css.contains(".auto-cols-fr"));
+        assert!(result.css.contains("grid-auto-columns: minmax(0, 1fr)"));
+        assert!(result.css.contains(".auto-cols-\\[minmax\\(0\\,2fr\\)\\]"));
+        assert!(result.css.contains("grid-auto-columns: minmax(0,2fr)"));
+        assert!(result.css.contains(".auto-cols-\\(--my-auto-cols\\)"));
+        assert!(result.css.contains("grid-auto-columns: var(--my-auto-cols)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:auto-cols-min"));
+    }
+
+    #[test]
+    fn generates_grid_auto_rows_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "auto-rows-auto".to_string(),
+                "auto-rows-min".to_string(),
+                "auto-rows-max".to_string(),
+                "auto-rows-fr".to_string(),
+                "auto-rows-[minmax(0,2fr)]".to_string(),
+                "auto-rows-(--my-auto-rows)".to_string(),
+                "md:auto-rows-min".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".auto-rows-auto"));
+        assert!(result.css.contains("grid-auto-rows: auto"));
+        assert!(result.css.contains(".auto-rows-min"));
+        assert!(result.css.contains("grid-auto-rows: min-content"));
+        assert!(result.css.contains(".auto-rows-max"));
+        assert!(result.css.contains("grid-auto-rows: max-content"));
+        assert!(result.css.contains(".auto-rows-fr"));
+        assert!(result.css.contains("grid-auto-rows: minmax(0, 1fr)"));
+        assert!(result.css.contains(".auto-rows-\\[minmax\\(0\\,2fr\\)\\]"));
+        assert!(result.css.contains("grid-auto-rows: minmax(0,2fr)"));
+        assert!(result.css.contains(".auto-rows-\\(--my-auto-rows\\)"));
+        assert!(result.css.contains("grid-auto-rows: var(--my-auto-rows)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:auto-rows-min"));
+    }
+
+    #[test]
+    fn generates_gap_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "gap-4".to_string(),
+                "gap-[10vw]".to_string(),
+                "gap-(--my-gap)".to_string(),
+                "gap-x-8".to_string(),
+                "gap-x-[5rem]".to_string(),
+                "gap-x-(--my-gap-x)".to_string(),
+                "gap-y-2".to_string(),
+                "gap-y-[3vh]".to_string(),
+                "gap-y-(--my-gap-y)".to_string(),
+                "md:gap-6".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".gap-4"));
+        assert!(result.css.contains("gap: 1rem"));
+        assert!(result.css.contains(".gap-\\[10vw\\]"));
+        assert!(result.css.contains("gap: 10vw"));
+        assert!(result.css.contains(".gap-\\(--my-gap\\)"));
+        assert!(result.css.contains("gap: var(--my-gap)"));
+        assert!(result.css.contains(".gap-x-8"));
+        assert!(result.css.contains("column-gap: 2rem"));
+        assert!(result.css.contains(".gap-x-\\[5rem\\]"));
+        assert!(result.css.contains("column-gap: 5rem"));
+        assert!(result.css.contains(".gap-x-\\(--my-gap-x\\)"));
+        assert!(result.css.contains("column-gap: var(--my-gap-x)"));
+        assert!(result.css.contains(".gap-y-2"));
+        assert!(result.css.contains("row-gap: 0.5rem"));
+        assert!(result.css.contains(".gap-y-\\[3vh\\]"));
+        assert!(result.css.contains("row-gap: 3vh"));
+        assert!(result.css.contains(".gap-y-\\(--my-gap-y\\)"));
+        assert!(result.css.contains("row-gap: var(--my-gap-y)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:gap-6"));
+    }
+
+    #[test]
+    fn generates_space_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "space-x-4".to_string(),
+                "-space-x-2".to_string(),
+                "space-x-px".to_string(),
+                "-space-x-px".to_string(),
+                "space-x-(--my-space-x)".to_string(),
+                "space-x-[3rem]".to_string(),
+                "space-y-6".to_string(),
+                "-space-y-1".to_string(),
+                "space-y-px".to_string(),
+                "-space-y-px".to_string(),
+                "space-y-(--my-space-y)".to_string(),
+                "space-y-[10%]".to_string(),
+                "space-x-reverse".to_string(),
+                "space-y-reverse".to_string(),
+                "md:space-x-8".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".space-x-4 > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"));
+        assert!(result.css.contains(".-space-x-2 > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-end: calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)))"));
+        assert!(result.css.contains(".space-x-px > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-start: calc(1px * var(--tw-space-x-reverse))"));
+        assert!(result.css.contains(".-space-x-px > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-end: calc(-1px * calc(1 - var(--tw-space-x-reverse)))"));
+        assert!(result.css.contains(".space-x-\\(--my-space-x\\) > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-start: calc(var(--my-space-x) * var(--tw-space-x-reverse))"));
+        assert!(result.css.contains(".space-x-\\[3rem\\] > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-inline-end: calc(3rem * calc(1 - var(--tw-space-x-reverse)))"));
+        assert!(result.css.contains(".space-y-6 > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"));
+        assert!(result.css.contains(".-space-y-1 > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-end: calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"));
+        assert!(result.css.contains(".space-y-px > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-start: calc(1px * var(--tw-space-y-reverse))"));
+        assert!(result.css.contains(".-space-y-px > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-end: calc(-1px * calc(1 - var(--tw-space-y-reverse)))"));
+        assert!(result.css.contains(".space-y-\\(--my-space-y\\) > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-start: calc(var(--my-space-y) * var(--tw-space-y-reverse))"));
+        assert!(result.css.contains(".space-y-\\[10\\%\\] > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("margin-block-end: calc(10% * calc(1 - var(--tw-space-y-reverse)))"));
+        assert!(result.css.contains(".space-x-reverse > :not(:last-child)"));
+        assert!(result.css.contains("--tw-space-x-reverse: 1"));
+        assert!(result.css.contains(".space-y-reverse > :not(:last-child)"));
+        assert!(result.css.contains("--tw-space-y-reverse: 1"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:space-x-8 > :not(:last-child)"));
+    }
+
+    #[test]
+    fn generates_width_and_size_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "w-4".to_string(),
+                "w-1/2".to_string(),
+                "w-3xs".to_string(),
+                "w-auto".to_string(),
+                "w-px".to_string(),
+                "w-full".to_string(),
+                "w-screen".to_string(),
+                "w-dvw".to_string(),
+                "w-dvh".to_string(),
+                "w-lvw".to_string(),
+                "w-lvh".to_string(),
+                "w-svw".to_string(),
+                "w-svh".to_string(),
+                "w-min".to_string(),
+                "w-max".to_string(),
+                "w-fit".to_string(),
+                "w-(--my-width)".to_string(),
+                "w-[42ch]".to_string(),
+                "size-8".to_string(),
+                "size-1/2".to_string(),
+                "size-auto".to_string(),
+                "size-px".to_string(),
+                "size-full".to_string(),
+                "size-dvw".to_string(),
+                "size-dvh".to_string(),
+                "size-lvw".to_string(),
+                "size-lvh".to_string(),
+                "size-svw".to_string(),
+                "size-svh".to_string(),
+                "size-min".to_string(),
+                "size-max".to_string(),
+                "size-fit".to_string(),
+                "size-(--my-size)".to_string(),
+                "size-[10rem]".to_string(),
+                "md:w-auto".to_string(),
+                "md:size-4".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".w-4"));
+        assert!(result.css.contains("width: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".w-1\\/2"));
+        assert!(result.css.contains("width: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".w-3xs"));
+        assert!(result.css.contains("width: var(--container-3xs)"));
+        assert!(result.css.contains(".w-auto"));
+        assert!(result.css.contains("width: auto"));
+        assert!(result.css.contains(".w-px"));
+        assert!(result.css.contains("width: 1px"));
+        assert!(result.css.contains(".w-full"));
+        assert!(result.css.contains("width: 100%"));
+        assert!(result.css.contains(".w-screen"));
+        assert!(result.css.contains("width: 100vw"));
+        assert!(result.css.contains(".w-dvw"));
+        assert!(result.css.contains("width: 100dvw"));
+        assert!(result.css.contains(".w-dvh"));
+        assert!(result.css.contains("width: 100dvh"));
+        assert!(result.css.contains(".w-lvw"));
+        assert!(result.css.contains("width: 100lvw"));
+        assert!(result.css.contains(".w-lvh"));
+        assert!(result.css.contains("width: 100lvh"));
+        assert!(result.css.contains(".w-svw"));
+        assert!(result.css.contains("width: 100svw"));
+        assert!(result.css.contains(".w-svh"));
+        assert!(result.css.contains("width: 100svh"));
+        assert!(result.css.contains(".w-min"));
+        assert!(result.css.contains("width: min-content"));
+        assert!(result.css.contains(".w-max"));
+        assert!(result.css.contains("width: max-content"));
+        assert!(result.css.contains(".w-fit"));
+        assert!(result.css.contains("width: fit-content"));
+        assert!(result.css.contains(".w-\\(--my-width\\)"));
+        assert!(result.css.contains("width: var(--my-width)"));
+        assert!(result.css.contains(".w-\\[42ch\\]"));
+        assert!(result.css.contains("width: 42ch"));
+
+        assert!(result.css.contains(".size-8"));
+        assert!(result.css.contains("width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".size-1\\/2"));
+        assert!(result.css.contains("width: calc(1/2 * 100%); height: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".size-auto"));
+        assert!(result.css.contains("width: auto; height: auto"));
+        assert!(result.css.contains(".size-px"));
+        assert!(result.css.contains("width: 1px; height: 1px"));
+        assert!(result.css.contains(".size-full"));
+        assert!(result.css.contains("width: 100%; height: 100%"));
+        assert!(result.css.contains(".size-dvw"));
+        assert!(result.css.contains("width: 100dvw; height: 100dvw"));
+        assert!(result.css.contains(".size-dvh"));
+        assert!(result.css.contains("width: 100dvh; height: 100dvh"));
+        assert!(result.css.contains(".size-lvw"));
+        assert!(result.css.contains("width: 100lvw; height: 100lvw"));
+        assert!(result.css.contains(".size-lvh"));
+        assert!(result.css.contains("width: 100lvh; height: 100lvh"));
+        assert!(result.css.contains(".size-svw"));
+        assert!(result.css.contains("width: 100svw; height: 100svw"));
+        assert!(result.css.contains(".size-svh"));
+        assert!(result.css.contains("width: 100svh; height: 100svh"));
+        assert!(result.css.contains(".size-min"));
+        assert!(result.css.contains("width: min-content; height: min-content"));
+        assert!(result.css.contains(".size-max"));
+        assert!(result.css.contains("width: max-content; height: max-content"));
+        assert!(result.css.contains(".size-fit"));
+        assert!(result.css.contains("width: fit-content; height: fit-content"));
+        assert!(result.css.contains(".size-\\(--my-size\\)"));
+        assert!(result.css.contains("width: var(--my-size); height: var(--my-size)"));
+        assert!(result.css.contains(".size-\\[10rem\\]"));
+        assert!(result.css.contains("width: 10rem; height: 10rem"));
+
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:w-auto"));
+        assert!(result.css.contains(".md\\:size-4"));
+    }
+
+    #[test]
+    fn generates_min_width_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "min-w-0".to_string(),
+                "min-w-4".to_string(),
+                "min-w-1/2".to_string(),
+                "min-w-3xs".to_string(),
+                "min-w-auto".to_string(),
+                "min-w-px".to_string(),
+                "min-w-full".to_string(),
+                "min-w-screen".to_string(),
+                "min-w-dvw".to_string(),
+                "min-w-dvh".to_string(),
+                "min-w-lvw".to_string(),
+                "min-w-lvh".to_string(),
+                "min-w-svw".to_string(),
+                "min-w-svh".to_string(),
+                "min-w-min".to_string(),
+                "min-w-max".to_string(),
+                "min-w-fit".to_string(),
+                "min-w-(--my-min-width)".to_string(),
+                "min-w-[220px]".to_string(),
+                "md:min-w-0".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".min-w-0"));
+        assert!(result.css.contains("min-width: calc(var(--spacing) * 0)"));
+        assert!(result.css.contains(".min-w-4"));
+        assert!(result.css.contains("min-width: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".min-w-1\\/2"));
+        assert!(result.css.contains("min-width: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".min-w-3xs"));
+        assert!(result.css.contains("min-width: var(--container-3xs)"));
+        assert!(result.css.contains(".min-w-auto"));
+        assert!(result.css.contains("min-width: auto"));
+        assert!(result.css.contains(".min-w-px"));
+        assert!(result.css.contains("min-width: 1px"));
+        assert!(result.css.contains(".min-w-full"));
+        assert!(result.css.contains("min-width: 100%"));
+        assert!(result.css.contains(".min-w-screen"));
+        assert!(result.css.contains("min-width: 100vw"));
+        assert!(result.css.contains(".min-w-dvw"));
+        assert!(result.css.contains("min-width: 100dvw"));
+        assert!(result.css.contains(".min-w-dvh"));
+        assert!(result.css.contains("min-width: 100dvh"));
+        assert!(result.css.contains(".min-w-lvw"));
+        assert!(result.css.contains("min-width: 100lvw"));
+        assert!(result.css.contains(".min-w-lvh"));
+        assert!(result.css.contains("min-width: 100lvh"));
+        assert!(result.css.contains(".min-w-svw"));
+        assert!(result.css.contains("min-width: 100svw"));
+        assert!(result.css.contains(".min-w-svh"));
+        assert!(result.css.contains("min-width: 100svh"));
+        assert!(result.css.contains(".min-w-min"));
+        assert!(result.css.contains("min-width: min-content"));
+        assert!(result.css.contains(".min-w-max"));
+        assert!(result.css.contains("min-width: max-content"));
+        assert!(result.css.contains(".min-w-fit"));
+        assert!(result.css.contains("min-width: fit-content"));
+        assert!(result.css.contains(".min-w-\\(--my-min-width\\)"));
+        assert!(result.css.contains("min-width: var(--my-min-width)"));
+        assert!(result.css.contains(".min-w-\\[220px\\]"));
+        assert!(result.css.contains("min-width: 220px"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:min-w-0"));
+    }
+
+    #[test]
+    fn generates_max_width_and_container_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "max-w-4".to_string(),
+                "max-w-1/2".to_string(),
+                "max-w-3xs".to_string(),
+                "max-w-none".to_string(),
+                "max-w-px".to_string(),
+                "max-w-full".to_string(),
+                "max-w-screen".to_string(),
+                "max-w-dvw".to_string(),
+                "max-w-dvh".to_string(),
+                "max-w-lvw".to_string(),
+                "max-w-lvh".to_string(),
+                "max-w-svw".to_string(),
+                "max-w-svh".to_string(),
+                "max-w-min".to_string(),
+                "max-w-max".to_string(),
+                "max-w-fit".to_string(),
+                "max-w-(--my-max-width)".to_string(),
+                "max-w-[220px]".to_string(),
+                "container".to_string(),
+                "md:max-w-lg".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".max-w-4"));
+        assert!(result.css.contains("max-width: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".max-w-1\\/2"));
+        assert!(result.css.contains("max-width: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".max-w-3xs"));
+        assert!(result.css.contains("max-width: var(--container-3xs)"));
+        assert!(result.css.contains(".max-w-none"));
+        assert!(result.css.contains("max-width: none"));
+        assert!(result.css.contains(".max-w-px"));
+        assert!(result.css.contains("max-width: 1px"));
+        assert!(result.css.contains(".max-w-full"));
+        assert!(result.css.contains("max-width: 100%"));
+        assert!(result.css.contains(".max-w-screen"));
+        assert!(result.css.contains("max-width: 100vw"));
+        assert!(result.css.contains(".max-w-dvw"));
+        assert!(result.css.contains("max-width: 100dvw"));
+        assert!(result.css.contains(".max-w-dvh"));
+        assert!(result.css.contains("max-width: 100dvh"));
+        assert!(result.css.contains(".max-w-lvw"));
+        assert!(result.css.contains("max-width: 100lvw"));
+        assert!(result.css.contains(".max-w-lvh"));
+        assert!(result.css.contains("max-width: 100lvh"));
+        assert!(result.css.contains(".max-w-svw"));
+        assert!(result.css.contains("max-width: 100svw"));
+        assert!(result.css.contains(".max-w-svh"));
+        assert!(result.css.contains("max-width: 100svh"));
+        assert!(result.css.contains(".max-w-min"));
+        assert!(result.css.contains("max-width: min-content"));
+        assert!(result.css.contains(".max-w-max"));
+        assert!(result.css.contains("max-width: max-content"));
+        assert!(result.css.contains(".max-w-fit"));
+        assert!(result.css.contains("max-width: fit-content"));
+        assert!(result.css.contains(".max-w-\\(--my-max-width\\)"));
+        assert!(result.css.contains("max-width: var(--my-max-width)"));
+        assert!(result.css.contains(".max-w-\\[220px\\]"));
+        assert!(result.css.contains("max-width: 220px"));
+        assert!(result.css.contains(".container"));
+        assert!(result.css.contains("width: 100%"));
+        assert!(result.css.contains("@media (min-width: 40rem)"));
+        assert!(result.css.contains("max-width: 40rem"));
+        assert!(result.css.contains("@media (min-width: 48rem)"));
+        assert!(result.css.contains("max-width: 48rem"));
+        assert!(result.css.contains("@media (min-width: 64rem)"));
+        assert!(result.css.contains("max-width: 64rem"));
+        assert!(result.css.contains("@media (min-width: 80rem)"));
+        assert!(result.css.contains("max-width: 80rem"));
+        assert!(result.css.contains("@media (min-width: 96rem)"));
+        assert!(result.css.contains("max-width: 96rem"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:max-w-lg"));
+    }
+
+    #[test]
+    fn generates_height_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "h-4".to_string(),
+                "h-1/2".to_string(),
+                "h-auto".to_string(),
+                "h-px".to_string(),
+                "h-full".to_string(),
+                "h-screen".to_string(),
+                "h-dvh".to_string(),
+                "h-dvw".to_string(),
+                "h-lvh".to_string(),
+                "h-lvw".to_string(),
+                "h-svh".to_string(),
+                "h-svw".to_string(),
+                "h-min".to_string(),
+                "h-max".to_string(),
+                "h-fit".to_string(),
+                "h-lh".to_string(),
+                "h-(--my-height)".to_string(),
+                "h-[32rem]".to_string(),
+                "md:h-full".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".h-4"));
+        assert!(result.css.contains("height: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".h-1\\/2"));
+        assert!(result.css.contains("height: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".h-auto"));
+        assert!(result.css.contains("height: auto"));
+        assert!(result.css.contains(".h-px"));
+        assert!(result.css.contains("height: 1px"));
+        assert!(result.css.contains(".h-full"));
+        assert!(result.css.contains("height: 100%"));
+        assert!(result.css.contains(".h-screen"));
+        assert!(result.css.contains("height: 100vh"));
+        assert!(result.css.contains(".h-dvh"));
+        assert!(result.css.contains("height: 100dvh"));
+        assert!(result.css.contains(".h-dvw"));
+        assert!(result.css.contains("height: 100dvw"));
+        assert!(result.css.contains(".h-lvh"));
+        assert!(result.css.contains("height: 100lvh"));
+        assert!(result.css.contains(".h-lvw"));
+        assert!(result.css.contains("height: 100lvw"));
+        assert!(result.css.contains(".h-svh"));
+        assert!(result.css.contains("height: 100svh"));
+        assert!(result.css.contains(".h-svw"));
+        assert!(result.css.contains("height: 100svw"));
+        assert!(result.css.contains(".h-min"));
+        assert!(result.css.contains("height: min-content"));
+        assert!(result.css.contains(".h-max"));
+        assert!(result.css.contains("height: max-content"));
+        assert!(result.css.contains(".h-fit"));
+        assert!(result.css.contains("height: fit-content"));
+        assert!(result.css.contains(".h-lh"));
+        assert!(result.css.contains("height: 1lh"));
+        assert!(result.css.contains(".h-\\(--my-height\\)"));
+        assert!(result.css.contains("height: var(--my-height)"));
+        assert!(result.css.contains(".h-\\[32rem\\]"));
+        assert!(result.css.contains("height: 32rem"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:h-full"));
+    }
+
+    #[test]
+    fn generates_min_height_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "min-h-0".to_string(),
+                "min-h-4".to_string(),
+                "min-h-1/2".to_string(),
+                "min-h-px".to_string(),
+                "min-h-full".to_string(),
+                "min-h-screen".to_string(),
+                "min-h-dvh".to_string(),
+                "min-h-dvw".to_string(),
+                "min-h-lvh".to_string(),
+                "min-h-lvw".to_string(),
+                "min-h-svh".to_string(),
+                "min-h-svw".to_string(),
+                "min-h-auto".to_string(),
+                "min-h-min".to_string(),
+                "min-h-max".to_string(),
+                "min-h-fit".to_string(),
+                "min-h-lh".to_string(),
+                "min-h-(--my-min-height)".to_string(),
+                "min-h-[220px]".to_string(),
+                "md:min-h-0".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".min-h-0"));
+        assert!(result.css.contains("min-height: calc(var(--spacing) * 0)"));
+        assert!(result.css.contains(".min-h-4"));
+        assert!(result.css.contains("min-height: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".min-h-1\\/2"));
+        assert!(result.css.contains("min-height: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".min-h-px"));
+        assert!(result.css.contains("min-height: 1px"));
+        assert!(result.css.contains(".min-h-full"));
+        assert!(result.css.contains("min-height: 100%"));
+        assert!(result.css.contains(".min-h-screen"));
+        assert!(result.css.contains("min-height: 100vh"));
+        assert!(result.css.contains(".min-h-dvh"));
+        assert!(result.css.contains("min-height: 100dvh"));
+        assert!(result.css.contains(".min-h-dvw"));
+        assert!(result.css.contains("min-height: 100dvw"));
+        assert!(result.css.contains(".min-h-lvh"));
+        assert!(result.css.contains("min-height: 100lvh"));
+        assert!(result.css.contains(".min-h-lvw"));
+        assert!(result.css.contains("min-height: 100lvw"));
+        assert!(result.css.contains(".min-h-svh"));
+        assert!(result.css.contains("min-height: 100svh"));
+        assert!(result.css.contains(".min-h-svw"));
+        assert!(result.css.contains("min-height: 100svw"));
+        assert!(result.css.contains(".min-h-auto"));
+        assert!(result.css.contains("min-height: auto"));
+        assert!(result.css.contains(".min-h-min"));
+        assert!(result.css.contains("min-height: min-content"));
+        assert!(result.css.contains(".min-h-max"));
+        assert!(result.css.contains("min-height: max-content"));
+        assert!(result.css.contains(".min-h-fit"));
+        assert!(result.css.contains("min-height: fit-content"));
+        assert!(result.css.contains(".min-h-lh"));
+        assert!(result.css.contains("min-height: 1lh"));
+        assert!(result.css.contains(".min-h-\\(--my-min-height\\)"));
+        assert!(result.css.contains("min-height: var(--my-min-height)"));
+        assert!(result.css.contains(".min-h-\\[220px\\]"));
+        assert!(result.css.contains("min-height: 220px"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:min-h-0"));
+    }
+
+    #[test]
+    fn generates_max_height_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "max-h-0".to_string(),
+                "max-h-4".to_string(),
+                "max-h-1/2".to_string(),
+                "max-h-none".to_string(),
+                "max-h-px".to_string(),
+                "max-h-full".to_string(),
+                "max-h-screen".to_string(),
+                "max-h-dvh".to_string(),
+                "max-h-dvw".to_string(),
+                "max-h-lvh".to_string(),
+                "max-h-lvw".to_string(),
+                "max-h-svh".to_string(),
+                "max-h-svw".to_string(),
+                "max-h-min".to_string(),
+                "max-h-max".to_string(),
+                "max-h-fit".to_string(),
+                "max-h-lh".to_string(),
+                "max-h-(--my-max-height)".to_string(),
+                "max-h-[220px]".to_string(),
+                "md:max-h-screen".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".max-h-0"));
+        assert!(result.css.contains("max-height: calc(var(--spacing) * 0)"));
+        assert!(result.css.contains(".max-h-4"));
+        assert!(result.css.contains("max-height: calc(var(--spacing) * 4)"));
+        assert!(result.css.contains(".max-h-1\\/2"));
+        assert!(result.css.contains("max-height: calc(1/2 * 100%)"));
+        assert!(result.css.contains(".max-h-none"));
+        assert!(result.css.contains("max-height: none"));
+        assert!(result.css.contains(".max-h-px"));
+        assert!(result.css.contains("max-height: 1px"));
+        assert!(result.css.contains(".max-h-full"));
+        assert!(result.css.contains("max-height: 100%"));
+        assert!(result.css.contains(".max-h-screen"));
+        assert!(result.css.contains("max-height: 100vh"));
+        assert!(result.css.contains(".max-h-dvh"));
+        assert!(result.css.contains("max-height: 100dvh"));
+        assert!(result.css.contains(".max-h-dvw"));
+        assert!(result.css.contains("max-height: 100dvw"));
+        assert!(result.css.contains(".max-h-lvh"));
+        assert!(result.css.contains("max-height: 100lvh"));
+        assert!(result.css.contains(".max-h-lvw"));
+        assert!(result.css.contains("max-height: 100lvw"));
+        assert!(result.css.contains(".max-h-svh"));
+        assert!(result.css.contains("max-height: 100svh"));
+        assert!(result.css.contains(".max-h-svw"));
+        assert!(result.css.contains("max-height: 100svw"));
+        assert!(result.css.contains(".max-h-min"));
+        assert!(result.css.contains("max-height: min-content"));
+        assert!(result.css.contains(".max-h-max"));
+        assert!(result.css.contains("max-height: max-content"));
+        assert!(result.css.contains(".max-h-fit"));
+        assert!(result.css.contains("max-height: fit-content"));
+        assert!(result.css.contains(".max-h-lh"));
+        assert!(result.css.contains("max-height: 1lh"));
+        assert!(result.css.contains(".max-h-\\(--my-max-height\\)"));
+        assert!(result.css.contains("max-height: var(--my-max-height)"));
+        assert!(result.css.contains(".max-h-\\[220px\\]"));
+        assert!(result.css.contains("max-height: 220px"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:max-h-screen"));
+    }
+
+    #[test]
+    fn generates_grid_column_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "col-span-2".to_string(),
+                "col-span-full".to_string(),
+                "col-span-[5]".to_string(),
+                "col-span-(--my-span)".to_string(),
+                "col-start-2".to_string(),
+                "-col-start-2".to_string(),
+                "col-start-auto".to_string(),
+                "col-start-[7]".to_string(),
+                "col-start-(--my-start)".to_string(),
+                "col-end-7".to_string(),
+                "-col-end-3".to_string(),
+                "col-end-auto".to_string(),
+                "col-end-[9]".to_string(),
+                "col-end-(--my-end)".to_string(),
+                "col-auto".to_string(),
+                "col-7".to_string(),
+                "-col-4".to_string(),
+                "col-[16_/_span_16]".to_string(),
+                "col-(--my-columns)".to_string(),
+                "md:col-span-6".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".col-span-2"));
+        assert!(result.css.contains("grid-column: span 2 / span 2"));
+        assert!(result.css.contains(".col-span-full"));
+        assert!(result.css.contains("grid-column: 1 / -1"));
+        assert!(result.css.contains(".col-span-\\[5\\]"));
+        assert!(result.css.contains("grid-column: span 5 / span 5"));
+        assert!(result.css.contains(".col-span-\\(--my-span\\)"));
+        assert!(result.css.contains("grid-column: span var(--my-span) / span var(--my-span)"));
+        assert!(result.css.contains(".col-start-2"));
+        assert!(result.css.contains("grid-column-start: 2"));
+        assert!(result.css.contains(".-col-start-2"));
+        assert!(result.css.contains("grid-column-start: calc(2 * -1)"));
+        assert!(result.css.contains(".col-start-auto"));
+        assert!(result.css.contains("grid-column-start: auto"));
+        assert!(result.css.contains(".col-start-\\[7\\]"));
+        assert!(result.css.contains("grid-column-start: 7"));
+        assert!(result.css.contains(".col-start-\\(--my-start\\)"));
+        assert!(result.css.contains("grid-column-start: var(--my-start)"));
+        assert!(result.css.contains(".col-end-7"));
+        assert!(result.css.contains("grid-column-end: 7"));
+        assert!(result.css.contains(".-col-end-3"));
+        assert!(result.css.contains("grid-column-end: calc(3 * -1)"));
+        assert!(result.css.contains(".col-end-auto"));
+        assert!(result.css.contains("grid-column-end: auto"));
+        assert!(result.css.contains(".col-end-\\[9\\]"));
+        assert!(result.css.contains("grid-column-end: 9"));
+        assert!(result.css.contains(".col-end-\\(--my-end\\)"));
+        assert!(result.css.contains("grid-column-end: var(--my-end)"));
+        assert!(result.css.contains(".col-auto"));
+        assert!(result.css.contains("grid-column: auto"));
+        assert!(result.css.contains(".col-7"));
+        assert!(result.css.contains("grid-column: 7"));
+        assert!(result.css.contains(".-col-4"));
+        assert!(result.css.contains("grid-column: calc(4 * -1)"));
+        assert!(result.css.contains(".col-\\[16_\\/_span_16\\]"));
+        assert!(result.css.contains("grid-column: 16_/_span_16"));
+        assert!(result.css.contains(".col-\\(--my-columns\\)"));
+        assert!(result.css.contains("grid-column: var(--my-columns)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:col-span-6"));
+    }
+
+    #[test]
+    fn generates_grid_row_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "row-span-2".to_string(),
+                "row-span-full".to_string(),
+                "row-span-[5]".to_string(),
+                "row-span-(--my-span)".to_string(),
+                "row-start-2".to_string(),
+                "-row-start-2".to_string(),
+                "row-start-auto".to_string(),
+                "row-start-[7]".to_string(),
+                "row-start-(--my-start)".to_string(),
+                "row-end-7".to_string(),
+                "-row-end-3".to_string(),
+                "row-end-auto".to_string(),
+                "row-end-[9]".to_string(),
+                "row-end-(--my-end)".to_string(),
+                "row-auto".to_string(),
+                "row-7".to_string(),
+                "-row-4".to_string(),
+                "row-[span_16_/_span_16]".to_string(),
+                "row-(--my-rows)".to_string(),
+                "md:row-span-4".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".row-span-2"));
+        assert!(result.css.contains("grid-row: span 2 / span 2"));
+        assert!(result.css.contains(".row-span-full"));
+        assert!(result.css.contains("grid-row: 1 / -1"));
+        assert!(result.css.contains(".row-span-\\[5\\]"));
+        assert!(result.css.contains("grid-row: span 5 / span 5"));
+        assert!(result.css.contains(".row-span-\\(--my-span\\)"));
+        assert!(result.css.contains("grid-row: span var(--my-span) / span var(--my-span)"));
+        assert!(result.css.contains(".row-start-2"));
+        assert!(result.css.contains("grid-row-start: 2"));
+        assert!(result.css.contains(".-row-start-2"));
+        assert!(result.css.contains("grid-row-start: calc(2 * -1)"));
+        assert!(result.css.contains(".row-start-auto"));
+        assert!(result.css.contains("grid-row-start: auto"));
+        assert!(result.css.contains(".row-start-\\[7\\]"));
+        assert!(result.css.contains("grid-row-start: 7"));
+        assert!(result.css.contains(".row-start-\\(--my-start\\)"));
+        assert!(result.css.contains("grid-row-start: var(--my-start)"));
+        assert!(result.css.contains(".row-end-7"));
+        assert!(result.css.contains("grid-row-end: 7"));
+        assert!(result.css.contains(".-row-end-3"));
+        assert!(result.css.contains("grid-row-end: calc(3 * -1)"));
+        assert!(result.css.contains(".row-end-auto"));
+        assert!(result.css.contains("grid-row-end: auto"));
+        assert!(result.css.contains(".row-end-\\[9\\]"));
+        assert!(result.css.contains("grid-row-end: 9"));
+        assert!(result.css.contains(".row-end-\\(--my-end\\)"));
+        assert!(result.css.contains("grid-row-end: var(--my-end)"));
+        assert!(result.css.contains(".row-auto"));
+        assert!(result.css.contains("grid-row: auto"));
+        assert!(result.css.contains(".row-7"));
+        assert!(result.css.contains("grid-row: 7"));
+        assert!(result.css.contains(".-row-4"));
+        assert!(result.css.contains("grid-row: calc(4 * -1)"));
+        assert!(result.css.contains(".row-\\[span_16_\\/_span_16\\]"));
+        assert!(result.css.contains("grid-row: span_16_/_span_16"));
+        assert!(result.css.contains(".row-\\(--my-rows\\)"));
+        assert!(result.css.contains("grid-row: var(--my-rows)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:row-span-4"));
+    }
+}
