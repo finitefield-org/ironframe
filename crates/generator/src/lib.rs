@@ -24,6 +24,7 @@ pub struct VariantOverrides {
     pub dark_variant_selector: Option<String>,
     pub global_theme_reset: bool,
     pub disabled_namespaces: Vec<String>,
+    pub disabled_color_families: Vec<String>,
     pub declared_theme_vars: Vec<String>,
 }
 
@@ -62,6 +63,7 @@ struct VariantTables {
     dark_variant_selector: Option<String>,
     global_theme_reset: bool,
     disabled_namespaces: BTreeSet<String>,
+    disabled_color_families: BTreeSet<String>,
     declared_theme_vars: BTreeSet<String>,
 }
 
@@ -101,6 +103,9 @@ fn build_variant_tables(overrides: Option<&VariantOverrides>) -> VariantTables {
         global_theme_reset: overrides.map(|v| v.global_theme_reset).unwrap_or(false),
         disabled_namespaces: overrides
             .map(|v| v.disabled_namespaces.iter().cloned().collect())
+            .unwrap_or_default(),
+        disabled_color_families: overrides
+            .map(|v| v.disabled_color_families.iter().cloned().collect())
             .unwrap_or_default(),
         declared_theme_vars: overrides
             .map(|v| v.declared_theme_vars.iter().cloned().collect())
@@ -294,26 +299,6 @@ fn generate_rule(
         "leading-normal" => rule(".leading-normal", "line-height:1.5", config),
         "leading-relaxed" => rule(".leading-relaxed", "line-height:1.625", config),
         "leading-loose" => rule(".leading-loose", "line-height:2", config),
-        "text-gray-50" => rule(".text-gray-50", "color:#f9fafb", config),
-        "text-gray-100" => rule(".text-gray-100", "color:#f3f4f6", config),
-        "text-gray-200" => rule(".text-gray-200", "color:#e5e7eb", config),
-        "text-gray-300" => rule(".text-gray-300", "color:#d1d5db", config),
-        "text-gray-400" => rule(".text-gray-400", "color:#9ca3af", config),
-        "text-gray-500" => rule(".text-gray-500", "color:#6b7280", config),
-        "text-gray-600" => rule(".text-gray-600", "color:#4b5563", config),
-        "text-gray-700" => rule(".text-gray-700", "color:#374151", config),
-        "text-gray-800" => rule(".text-gray-800", "color:#1f2937", config),
-        "text-gray-900" => rule(".text-gray-900", "color:#111827", config),
-        "text-blue-50" => rule(".text-blue-50", "color:#eff6ff", config),
-        "text-blue-100" => rule(".text-blue-100", "color:#dbeafe", config),
-        "text-blue-200" => rule(".text-blue-200", "color:#bfdbfe", config),
-        "text-blue-300" => rule(".text-blue-300", "color:#93c5fd", config),
-        "text-blue-400" => rule(".text-blue-400", "color:#60a5fa", config),
-        "text-blue-500" => rule(".text-blue-500", "color:#3b82f6", config),
-        "text-blue-600" => rule(".text-blue-600", "color:#2563eb", config),
-        "text-blue-700" => rule(".text-blue-700", "color:#1d4ed8", config),
-        "text-blue-800" => rule(".text-blue-800", "color:#1e40af", config),
-        "text-blue-900" => rule(".text-blue-900", "color:#1e3a8a", config),
         "inset-0" => rule(".inset-0", "inset:0px", config),
         "inset-x-0" => rule(".inset-x-0", "left:0px;right:0px", config),
         "inset-y-0" => rule(".inset-y-0", "top:0px;bottom:0px", config),
@@ -323,57 +308,65 @@ fn generate_rule(
         "left-0" => rule(".left-0", "left:0px", config),
         "shadow-sm" => rule(
             ".shadow-sm",
-            "box-shadow:0 1px 2px 0 rgba(0,0,0,0.05)",
+            "box-shadow:0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))",
             config,
         ),
         "shadow" => rule(
             ".shadow",
-            "box-shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px 0 rgba(0,0,0,0.06)",
+            "box-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.06))",
             config,
         ),
         "shadow-md" => rule(
             ".shadow-md",
-            "box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06)",
+            "box-shadow:0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 2px 4px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.06))",
             config,
         ),
         "shadow-lg" => rule(
             ".shadow-lg",
-            "box-shadow:0 10px 15px -3px rgba(0,0,0,0.1),0 4px 6px -2px rgba(0,0,0,0.05)",
+            "box-shadow:0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 4px 6px -2px var(--tw-shadow-color,rgb(0 0 0 / 0.05))",
             config,
         ),
         "shadow-xl" => rule(
             ".shadow-xl",
-            "box-shadow:0 20px 25px -5px rgba(0,0,0,0.1),0 10px 10px -5px rgba(0,0,0,0.04)",
+            "box-shadow:0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 10px 10px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.04))",
             config,
         ),
         "shadow-2xl" => rule(
             ".shadow-2xl",
-            "box-shadow:0 25px 50px -12px rgba(0,0,0,0.25)",
+            "box-shadow:0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))",
             config,
         ),
         "shadow-none" => rule(".shadow-none", "box-shadow:none", config),
-        "ring-0" => rule(".ring-0", "box-shadow:0 0 0 0 rgba(59,130,246,0.5)", config),
+        "ring-0" => rule(
+            ".ring-0",
+            "box-shadow:0 0 0 0 var(--tw-ring-color,rgba(59,130,246,0.5))",
+            config,
+        ),
         "ring-1" => rule(
             ".ring-1",
-            "box-shadow:0 0 0 1px rgba(59,130,246,0.5)",
+            "box-shadow:0 0 0 1px var(--tw-ring-color,rgba(59,130,246,0.5))",
             config,
         ),
         "ring-2" => rule(
             ".ring-2",
-            "box-shadow:0 0 0 2px rgba(59,130,246,0.5)",
+            "box-shadow:0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))",
             config,
         ),
         "ring-4" => rule(
             ".ring-4",
-            "box-shadow:0 0 0 4px rgba(59,130,246,0.5)",
+            "box-shadow:0 0 0 4px var(--tw-ring-color,rgba(59,130,246,0.5))",
             config,
         ),
         "ring-8" => rule(
             ".ring-8",
-            "box-shadow:0 0 0 8px rgba(59,130,246,0.5)",
+            "box-shadow:0 0 0 8px var(--tw-ring-color,rgba(59,130,246,0.5))",
             config,
         ),
-        "ring" => rule(".ring", "box-shadow:0 0 0 3px rgba(59,130,246,0.5)", config),
+        "ring" => rule(
+            ".ring",
+            "box-shadow:0 0 0 3px var(--tw-ring-color,rgba(59,130,246,0.5))",
+            config,
+        ),
         "bg-fixed" => rule(".bg-fixed", "background-attachment:fixed", config),
         "bg-local" => rule(".bg-local", "background-attachment:local", config),
         "bg-scroll" => rule(".bg-scroll", "background-attachment:scroll", config),
@@ -419,27 +412,6 @@ fn generate_rule(
         "bg-transparent" => rule(".bg-transparent", "background-color:transparent", config),
         "bg-black" => rule(".bg-black", "background-color:var(--color-black)", config),
         "bg-white" => rule(".bg-white", "background-color:var(--color-white)", config),
-        "bg-red-500" => rule(".bg-red-500", "background-color:#ef4444", config),
-        "bg-gray-50" => rule(".bg-gray-50", "background-color:#f9fafb", config),
-        "bg-gray-100" => rule(".bg-gray-100", "background-color:#f3f4f6", config),
-        "bg-gray-200" => rule(".bg-gray-200", "background-color:#e5e7eb", config),
-        "bg-gray-300" => rule(".bg-gray-300", "background-color:#d1d5db", config),
-        "bg-gray-400" => rule(".bg-gray-400", "background-color:#9ca3af", config),
-        "bg-gray-500" => rule(".bg-gray-500", "background-color:#6b7280", config),
-        "bg-gray-600" => rule(".bg-gray-600", "background-color:#4b5563", config),
-        "bg-gray-700" => rule(".bg-gray-700", "background-color:#374151", config),
-        "bg-gray-800" => rule(".bg-gray-800", "background-color:#1f2937", config),
-        "bg-gray-900" => rule(".bg-gray-900", "background-color:#111827", config),
-        "bg-blue-50" => rule(".bg-blue-50", "background-color:#eff6ff", config),
-        "bg-blue-100" => rule(".bg-blue-100", "background-color:#dbeafe", config),
-        "bg-blue-200" => rule(".bg-blue-200", "background-color:#bfdbfe", config),
-        "bg-blue-300" => rule(".bg-blue-300", "background-color:#93c5fd", config),
-        "bg-blue-400" => rule(".bg-blue-400", "background-color:#60a5fa", config),
-        "bg-blue-500" => rule(".bg-blue-500", "background-color:#3b82f6", config),
-        "bg-blue-600" => rule(".bg-blue-600", "background-color:#2563eb", config),
-        "bg-blue-700" => rule(".bg-blue-700", "background-color:#1d4ed8", config),
-        "bg-blue-800" => rule(".bg-blue-800", "background-color:#1e40af", config),
-        "bg-blue-900" => rule(".bg-blue-900", "background-color:#1e3a8a", config),
         _ => generate_text_shadow_rule(base, config)
             .or_else(|| generate_drop_shadow_rule(base, config))
             .or_else(|| generate_backdrop_blur_rule(base, config))
@@ -489,6 +461,10 @@ fn generate_rule(
             .or_else(|| generate_accent_palette_color_rule(base, config))
             .or_else(|| generate_caret_arbitrary_color_rule(base, config))
             .or_else(|| generate_caret_palette_color_rule(base, config))
+            .or_else(|| generate_shadow_color_rule(base, config))
+            .or_else(|| generate_inset_shadow_color_rule(base, config))
+            .or_else(|| generate_ring_color_rule(base, config))
+            .or_else(|| generate_inset_ring_color_rule(base, config))
             .or_else(|| generate_list_style_type_rule(base, config))
             .or_else(|| generate_list_style_image_rule(base, config))
             .or_else(|| generate_line_clamp_rule(base, config))
@@ -593,7 +569,10 @@ fn generate_rule(
 }
 
 fn rule_allowed_by_theme(base_class: &str, rule: &str, tables: &VariantTables) -> bool {
-    if !tables.global_theme_reset && tables.disabled_namespaces.is_empty() {
+    if !tables.global_theme_reset
+        && tables.disabled_namespaces.is_empty()
+        && tables.disabled_color_families.is_empty()
+    {
         return true;
     }
 
@@ -603,13 +582,15 @@ fn rule_allowed_by_theme(base_class: &str, rule: &str, tables: &VariantTables) -
         }
     }
 
-    if rule_looks_like_color_utility(rule) {
-        let namespace_disabled = tables.disabled_namespaces.contains("color");
-        if (tables.global_theme_reset || namespace_disabled)
-            && !color_utility_token_is_declared(base_class, &tables.declared_theme_vars)
-        {
-            return false;
-        }
+    if rule_looks_like_color_utility(rule)
+        && !color_utility_is_allowed(
+            base_class,
+            tables.global_theme_reset || tables.disabled_namespaces.contains("color"),
+            &tables.disabled_color_families,
+            &tables.declared_theme_vars,
+        )
+    {
+        return false;
     }
 
     true
@@ -711,6 +692,11 @@ fn rule_looks_like_color_utility(rule: &str) -> bool {
         "caret-color:",
         "fill:",
         "stroke:",
+        "--tw-shadow-color:",
+        "--tw-inset-shadow-color:",
+        "--tw-ring-color:",
+        "--tw-inset-ring-color:",
+        "--tw-drop-shadow-color:",
         "--tw-gradient-from:",
         "--tw-gradient-via:",
         "--tw-gradient-to:",
@@ -719,15 +705,89 @@ fn rule_looks_like_color_utility(rule: &str) -> bool {
     .any(|property| rule.contains(property))
 }
 
-fn color_utility_token_is_declared(base_class: &str, declared: &BTreeSet<String>) -> bool {
-    for variable in declared {
-        if let Some(token) = variable.strip_prefix("--color-") {
-            if base_class.contains(token) {
-                return true;
-            }
-        }
+fn color_utility_is_allowed(
+    base_class: &str,
+    require_declared: bool,
+    disabled_families: &BTreeSet<String>,
+    declared: &BTreeSet<String>,
+) -> bool {
+    let Some(token) = extract_color_utility_token(base_class) else {
+        return true;
+    };
+
+    let declared_for_token = declared.contains(&format!("--color-{}", token));
+    if declared_for_token {
+        return true;
     }
-    false
+
+    if require_declared {
+        return false;
+    }
+
+    let family = token.split('-').next().unwrap_or(token);
+    !disabled_families.contains(family)
+}
+
+fn extract_color_utility_token(base_class: &str) -> Option<&str> {
+    fn strip_slash_modifier(raw: &str) -> &str {
+        raw.split_once('/').map(|(token, _)| token).unwrap_or(raw)
+    }
+
+    if let Some(raw) = base_class
+        .strip_prefix("drop-shadow-")
+        .or_else(|| base_class.strip_prefix("text-shadow-"))
+        .or_else(|| base_class.strip_prefix("shadow-"))
+        .or_else(|| base_class.strip_prefix("inset-shadow-"))
+        .or_else(|| base_class.strip_prefix("ring-"))
+        .or_else(|| base_class.strip_prefix("inset-ring-"))
+    {
+        let token = strip_slash_modifier(raw);
+        if token.starts_with('[') || token.starts_with('(') || token.is_empty() {
+            return None;
+        }
+        return Some(token);
+    }
+
+    if let Some(raw) = base_class
+        .strip_prefix("border-x-")
+        .or_else(|| base_class.strip_prefix("border-y-"))
+        .or_else(|| base_class.strip_prefix("border-s-"))
+        .or_else(|| base_class.strip_prefix("border-e-"))
+        .or_else(|| base_class.strip_prefix("border-t-"))
+        .or_else(|| base_class.strip_prefix("border-r-"))
+        .or_else(|| base_class.strip_prefix("border-b-"))
+        .or_else(|| base_class.strip_prefix("border-l-"))
+        .or_else(|| base_class.strip_prefix("divide-"))
+        .or_else(|| base_class.strip_prefix("border-"))
+    {
+        let token = strip_slash_modifier(raw);
+        if token.starts_with('[') || token.starts_with('(') || token.is_empty() {
+            return None;
+        }
+        return Some(token);
+    }
+
+    if let Some(raw) = base_class
+        .strip_prefix("bg-")
+        .or_else(|| base_class.strip_prefix("text-"))
+        .or_else(|| base_class.strip_prefix("decoration-"))
+        .or_else(|| base_class.strip_prefix("outline-"))
+        .or_else(|| base_class.strip_prefix("accent-"))
+        .or_else(|| base_class.strip_prefix("caret-"))
+        .or_else(|| base_class.strip_prefix("fill-"))
+        .or_else(|| base_class.strip_prefix("stroke-"))
+        .or_else(|| base_class.strip_prefix("from-"))
+        .or_else(|| base_class.strip_prefix("via-"))
+        .or_else(|| base_class.strip_prefix("to-"))
+    {
+        let token = strip_slash_modifier(raw);
+        if token.starts_with('[') || token.starts_with('(') || token.is_empty() {
+            return None;
+        }
+        return Some(token);
+    }
+
+    None
 }
 
 fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -2159,28 +2219,17 @@ fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig)
         return None;
     }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if token.starts_with("linear-")
-                || token == "radial"
-                || token.starts_with("radial-")
-                || token.starts_with("conic-")
-                || token.starts_with("position-")
-                || token.starts_with("size-")
-            {
-                return None;
-            }
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    if token.starts_with("linear-")
+        || token == "none"
+        || token == "radial"
+        || token.starts_with("radial-")
+        || token.starts_with("conic-")
+        || token.starts_with("position-")
+        || token.starts_with("size-")
+    {
+        return None;
+    }
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -2240,17 +2289,7 @@ fn generate_fill_palette_color_rule(class: &str, config: &GeneratorConfig) -> Op
 
     let color_value = match token {
         "none" => "none".to_string(),
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
+        _ => theme_color_value_from_token(token, true)?,
     };
 
     if token == "none" && opacity.is_some() {
@@ -2311,17 +2350,7 @@ fn generate_stroke_palette_color_rule(class: &str, config: &GeneratorConfig) -> 
 
     let color_value = match token {
         "none" => "none".to_string(),
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
+        _ => theme_color_value_from_token(token, true)?,
     };
 
     if token == "none" && opacity.is_some() {
@@ -2911,19 +2940,7 @@ fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig)
         return None;
     }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -2981,19 +2998,7 @@ fn generate_accent_palette_color_rule(class: &str, config: &GeneratorConfig) -> 
         return None;
     }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -3047,19 +3052,7 @@ fn generate_caret_palette_color_rule(class: &str, config: &GeneratorConfig) -> O
         return None;
     }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -3110,19 +3103,7 @@ fn parse_text_shadow_color_value(raw: &str) -> Option<String> {
         return None;
     }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    let color_value = theme_color_value_from_token(token, false)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -3242,20 +3223,11 @@ fn generate_text_palette_color_rule(class: &str, config: &GeneratorConfig) -> Op
     if token.is_empty() {
         return None;
     }
+    if is_reserved_text_non_color_token(token) {
+        return None;
+    }
 
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -3292,6 +3264,252 @@ fn parse_color_opacity_value(raw: &str) -> Option<String> {
         return Some(format!("var({})", value));
     }
     None
+}
+
+fn is_theme_color_token(token: &str) -> bool {
+    !token.is_empty()
+        && token
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+}
+
+fn theme_color_value_from_token(token: &str, allow_plain_tokens: bool) -> Option<String> {
+    match token {
+        "inherit" => Some("inherit".to_string()),
+        "current" => Some("currentColor".to_string()),
+        "transparent" => Some("transparent".to_string()),
+        "black" => Some("var(--color-black)".to_string()),
+        "white" => Some("var(--color-white)".to_string()),
+        _ => {
+            if !is_theme_color_token(token) {
+                return None;
+            }
+            if token.contains('-') || allow_plain_tokens {
+                Some(format!("var(--color-{})", token))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn is_text_size_token(token: &str) -> bool {
+    matches!(
+        token,
+        "xs"
+            | "sm"
+            | "base"
+            | "lg"
+            | "xl"
+            | "2xl"
+            | "3xl"
+            | "4xl"
+            | "5xl"
+            | "6xl"
+            | "7xl"
+            | "8xl"
+            | "9xl"
+            | "tiny"
+    )
+}
+
+fn is_reserved_text_non_color_token(token: &str) -> bool {
+    matches!(
+        token,
+        "left"
+            | "center"
+            | "right"
+            | "justify"
+            | "start"
+            | "end"
+            | "ellipsis"
+            | "clip"
+            | "wrap"
+            | "nowrap"
+            | "balance"
+            | "pretty"
+            | "inherit"
+            | "current"
+            | "transparent"
+            | "black"
+            | "white"
+    ) || is_text_size_token(token)
+}
+
+fn parse_palette_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = theme_color_value_from_token(token, true)?;
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return Some(format!(
+            "color-mix(in oklab,{} {},transparent)",
+            color_value, opacity_value
+        ));
+    }
+
+    Some(color_value)
+}
+
+fn generate_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("shadow-")?;
+    if matches!(raw, "none" | "sm" | "md" | "lg" | "xl" | "2xl") {
+        return None;
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if !is_color_like_value(value) {
+            return None;
+        }
+        return rule(&selector, &format!("--tw-shadow-color:{}", value), config);
+    }
+    if let Some(value) = raw
+        .strip_prefix("(color:")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-shadow-color:var({})", value),
+            config,
+        );
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-shadow-color:var({})", value),
+            config,
+        );
+    }
+
+    let color_value = parse_palette_color_value(raw)?;
+    rule(
+        &selector,
+        &format!("--tw-shadow-color:{}", color_value),
+        config,
+    )
+}
+
+fn generate_inset_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("inset-shadow-")?;
+    if raw == "none" {
+        return None;
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if !is_color_like_value(value) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-inset-shadow-color:{}", value),
+            config,
+        );
+    }
+    if let Some(value) = raw
+        .strip_prefix("(color:")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-inset-shadow-color:var({})", value),
+            config,
+        );
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-inset-shadow-color:var({})", value),
+            config,
+        );
+    }
+
+    let color_value = parse_palette_color_value(raw)?;
+    rule(
+        &selector,
+        &format!("--tw-inset-shadow-color:{}", color_value),
+        config,
+    )
+}
+
+fn generate_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("ring-")?;
+    if matches!(raw, "0" | "1" | "2" | "4" | "8") {
+        return None;
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if !is_color_like_value(value) {
+            return None;
+        }
+        return rule(&selector, &format!("--tw-ring-color:{}", value), config);
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("--tw-ring-color:var({})", value), config);
+    }
+
+    let color_value = parse_palette_color_value(raw)?;
+    rule(&selector, &format!("--tw-ring-color:{}", color_value), config)
+}
+
+fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("inset-ring-")?;
+    if raw.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if !is_color_like_value(value) {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-inset-ring-color:{}", value),
+            config,
+        );
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("--tw-inset-ring-color:var({})", value),
+            config,
+        );
+    }
+
+    let color_value = parse_palette_color_value(raw)?;
+    rule(
+        &selector,
+        &format!("--tw-inset-ring-color:{}", color_value),
+        config,
+    )
 }
 
 fn generate_list_style_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -6918,19 +7136,10 @@ fn parse_border_color_value(raw: &str) -> Option<String> {
     if token.is_empty() {
         return None;
     }
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    if matches!(token, "collapse" | "separate") {
+        return None;
+    }
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -7029,20 +7238,12 @@ fn parse_outline_color_value(raw: &str) -> Option<String> {
     if token.is_empty() {
         return None;
     }
-
-    let color_value = match token {
-        "inherit" => "inherit".to_string(),
-        "current" => "currentColor".to_string(),
-        "transparent" => "transparent".to_string(),
-        "black" => "var(--color-black)".to_string(),
-        "white" => "var(--color-white)".to_string(),
-        _ => {
-            if !token.contains('-') {
-                return None;
-            }
-            format!("var(--color-{})", token)
-        }
-    };
+    if token.chars().all(|ch| ch.is_ascii_digit())
+        || matches!(token, "solid" | "dashed" | "dotted" | "double" | "none" | "hidden")
+    {
+        return None;
+    }
+    let color_value = theme_color_value_from_token(token, true)?;
 
     if let Some(opacity_raw) = opacity {
         let opacity_value = parse_color_opacity_value(opacity_raw)?;
@@ -8401,7 +8602,7 @@ mod tests {
         assert!(result.css.contains(".text-sm"));
         assert!(result.css.contains("font-size: var(--text-sm)"));
         assert!(result.css.contains(".bg-red-500"));
-        assert!(result.css.contains("background-color: #ef4444"));
+        assert!(result.css.contains("background-color: var(--color-red-500)"));
     }
 
     #[test]
@@ -10815,9 +11016,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".bg-gray-100"));
-        assert!(result.css.contains("background-color: #f3f4f6"));
+        assert!(result.css.contains("background-color: var(--color-gray-100)"));
         assert!(result.css.contains(".bg-gray-700"));
-        assert!(result.css.contains("background-color: #374151"));
+        assert!(result.css.contains("background-color: var(--color-gray-700)"));
     }
 
     #[test]
@@ -10831,9 +11032,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".bg-blue-100"));
-        assert!(result.css.contains("background-color: #dbeafe"));
+        assert!(result.css.contains("background-color: var(--color-blue-100)"));
         assert!(result.css.contains(".bg-blue-600"));
-        assert!(result.css.contains("background-color: #2563eb"));
+        assert!(result.css.contains("background-color: var(--color-blue-600)"));
     }
 
     #[test]
@@ -11242,9 +11443,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".text-gray-700"));
-        assert!(result.css.contains("color: #374151"));
+        assert!(result.css.contains("color: var(--color-gray-700)"));
         assert!(result.css.contains(".text-blue-500"));
-        assert!(result.css.contains("color: #3b82f6"));
+        assert!(result.css.contains("color: var(--color-blue-500)"));
         assert!(result.css.contains(".text-inherit"));
         assert!(result.css.contains("color: inherit"));
         assert!(result.css.contains(".text-current"));
@@ -11681,6 +11882,59 @@ mod tests {
         assert!(result.css.contains("caret-color: var(--my-caret-color)"));
         assert!(result.css.contains(".md\\:caret-lime-600"));
         assert!(result.css.contains("@media (width >= 48rem)"));
+    }
+
+    #[test]
+    fn supports_single_token_theme_colors_without_breaking_non_color_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-midnight".to_string(),
+                "text-tahiti".to_string(),
+                "fill-bermuda".to_string(),
+                "stroke-bermuda".to_string(),
+                "decoration-midnight".to_string(),
+                "accent-midnight".to_string(),
+                "caret-midnight".to_string(),
+                "border-midnight".to_string(),
+                "outline-midnight".to_string(),
+                "shadow-midnight".to_string(),
+                "ring-midnight".to_string(),
+                "inset-shadow-midnight".to_string(),
+                "inset-ring-midnight".to_string(),
+                "text-sm".to_string(),
+                "outline-2".to_string(),
+                "border-collapse".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains("background-color: var(--color-midnight)"));
+        assert!(result.css.contains("color: var(--color-tahiti)"));
+        assert!(result.css.contains("fill: var(--color-bermuda)"));
+        assert!(result.css.contains("stroke: var(--color-bermuda)"));
+        assert!(result
+            .css
+            .contains("text-decoration-color: var(--color-midnight)"));
+        assert!(result.css.contains("accent-color: var(--color-midnight)"));
+        assert!(result.css.contains("caret-color: var(--color-midnight)"));
+        assert!(result.css.contains("border-color: var(--color-midnight)"));
+        assert!(result.css.contains("outline-color: var(--color-midnight)"));
+        assert!(result.css.contains("--tw-shadow-color: var(--color-midnight)"));
+        assert!(result.css.contains("--tw-ring-color: var(--color-midnight)"));
+        assert!(result
+            .css
+            .contains("--tw-inset-shadow-color: var(--color-midnight)"));
+        assert!(result
+            .css
+            .contains("--tw-inset-ring-color: var(--color-midnight)"));
+
+        assert!(result.css.contains("font-size: var(--text-sm)"));
+        assert!(result.css.contains("outline-width: 2px"));
+        assert!(result.css.contains("border-collapse: collapse"));
     }
 
     #[test]
@@ -12144,29 +12398,92 @@ mod tests {
         assert!(result.css.contains(".shadow-sm"));
         assert!(result
             .css
-            .contains("box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"));
+            .contains("box-shadow: 0 1px 2px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05))"));
         assert!(result.css.contains(".shadow"));
         assert!(result
             .css
-            .contains("box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1)"));
+            .contains("box-shadow: 0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
         assert!(result.css.contains(".shadow-md"));
         assert!(result
             .css
-            .contains("box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)"));
+            .contains("box-shadow: 0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
         assert!(result.css.contains(".shadow-lg"));
         assert!(result
             .css
-            .contains("box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1)"));
+            .contains("box-shadow: 0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
         assert!(result.css.contains(".shadow-xl"));
         assert!(result
             .css
-            .contains("box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1)"));
+            .contains("box-shadow: 0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
         assert!(result.css.contains(".shadow-2xl"));
         assert!(result
             .css
-            .contains("box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25)"));
+            .contains("box-shadow: 0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25))"));
         assert!(result.css.contains(".shadow-none"));
         assert!(result.css.contains("box-shadow: none"));
+    }
+
+    #[test]
+    fn generates_shadow_color_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "shadow-md".to_string(),
+                "shadow-red-500".to_string(),
+                "shadow-cyan-500/[37%]".to_string(),
+                "shadow-(--my-shadow-color)".to_string(),
+                "shadow-[#243c5a]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".shadow-red-500"));
+        assert!(result.css.contains("--tw-shadow-color: var(--color-red-500)"));
+        assert!(result.css.contains(".shadow-cyan-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 37%,transparent)"
+        ));
+        assert!(result.css.contains(".shadow-\\(--my-shadow-color\\)"));
+        assert!(result.css.contains("--tw-shadow-color: var(--my-shadow-color)"));
+        assert!(result.css.contains(".shadow-\\[#243c5a\\]"));
+        assert!(result.css.contains("--tw-shadow-color: #243c5a"));
+    }
+
+    #[test]
+    fn generates_inset_shadow_color_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "inset-shadow-red-500".to_string(),
+                "inset-shadow-cyan-500/[37%]".to_string(),
+                "inset-shadow-(--my-inset-shadow-color)".to_string(),
+                "inset-shadow-[#243c5a]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".inset-shadow-red-500"));
+        assert!(result
+            .css
+            .contains("--tw-inset-shadow-color: var(--color-red-500)"));
+        assert!(result
+            .css
+            .contains(".inset-shadow-cyan-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(
+            "--tw-inset-shadow-color: color-mix(in oklab,var(--color-cyan-500) 37%,transparent)"
+        ));
+        assert!(result
+            .css
+            .contains(".inset-shadow-\\(--my-inset-shadow-color\\)"));
+        assert!(result
+            .css
+            .contains("--tw-inset-shadow-color: var(--my-inset-shadow-color)"));
+        assert!(result.css.contains(".inset-shadow-\\[#243c5a\\]"));
+        assert!(result.css.contains("--tw-inset-shadow-color: #243c5a"));
     }
 
     #[test]
@@ -12187,19 +12504,80 @@ mod tests {
         assert!(result.css.contains(".ring"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 3px rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 3px var(--tw-ring-color,rgba(59,130,246,0.5))"));
         assert!(result.css.contains(".ring-0"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 0 rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 0 var(--tw-ring-color,rgba(59,130,246,0.5))"));
         assert!(result.css.contains(".ring-2"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))"));
         assert!(result.css.contains(".ring-8"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 8px rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 8px var(--tw-ring-color,rgba(59,130,246,0.5))"));
+    }
+
+    #[test]
+    fn generates_ring_color_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "ring-2".to_string(),
+                "ring-blue-500".to_string(),
+                "ring-rose-500/30".to_string(),
+                "ring-(--my-ring-color)".to_string(),
+                "ring-[#243c5a]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".ring-blue-500"));
+        assert!(result.css.contains("--tw-ring-color: var(--color-blue-500)"));
+        assert!(result.css.contains(".ring-rose-500\\/30"));
+        assert!(result
+            .css
+            .contains("--tw-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"));
+        assert!(result.css.contains(".ring-\\(--my-ring-color\\)"));
+        assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
+        assert!(result.css.contains(".ring-\\[#243c5a\\]"));
+        assert!(result.css.contains("--tw-ring-color: #243c5a"));
+    }
+
+    #[test]
+    fn generates_inset_ring_color_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "inset-ring-blue-500".to_string(),
+                "inset-ring-rose-500/30".to_string(),
+                "inset-ring-(--my-inset-ring-color)".to_string(),
+                "inset-ring-[#243c5a]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".inset-ring-blue-500"));
+        assert!(result
+            .css
+            .contains("--tw-inset-ring-color: var(--color-blue-500)"));
+        assert!(result.css.contains(".inset-ring-rose-500\\/30"));
+        assert!(result.css.contains(
+            "--tw-inset-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"
+        ));
+        assert!(result
+            .css
+            .contains(".inset-ring-\\(--my-inset-ring-color\\)"));
+        assert!(result
+            .css
+            .contains("--tw-inset-ring-color: var(--my-inset-ring-color)"));
+        assert!(result.css.contains(".inset-ring-\\[#243c5a\\]"));
+        assert!(result.css.contains("--tw-inset-ring-color: #243c5a"));
     }
 
     #[test]
@@ -12212,7 +12590,7 @@ mod tests {
         assert!(result.css.contains(".focus\\:ring-2:focus"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 2px var(--tw-ring-color,rgba(59,130,246,0.5))"));
     }
 
     #[test]
@@ -12229,9 +12607,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".hover\\:bg-blue-500:hover"));
-        assert!(result.css.contains("background-color: #3b82f6"));
+        assert!(result.css.contains("background-color: var(--color-blue-500)"));
         assert!(result.css.contains(".active\\:bg-blue-600:active"));
-        assert!(result.css.contains("background-color: #2563eb"));
+        assert!(result.css.contains("background-color: var(--color-blue-600)"));
     }
 
     #[test]
@@ -12250,9 +12628,9 @@ mod tests {
         assert!(result.css.contains(".focus-within\\:ring-1:focus-within"));
         assert!(result
             .css
-            .contains("box-shadow: 0 0 0 1px rgba(59,130,246,0.5)"));
+            .contains("box-shadow: 0 0 0 1px var(--tw-ring-color,rgba(59,130,246,0.5))"));
         assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
-        assert!(result.css.contains("background-color: #e5e7eb"));
+        assert!(result.css.contains("background-color: var(--color-gray-200)"));
     }
 
     #[test]
@@ -12264,7 +12642,7 @@ mod tests {
         let result = generate(&["dark:bg-gray-900".to_string()], &config);
         assert!(result.css.contains(".dark\\:bg-gray-900"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(result.css.contains("background-color: #111827"));
+        assert!(result.css.contains("background-color: var(--color-gray-900)"));
     }
 
     #[test]
@@ -12279,6 +12657,7 @@ mod tests {
             dark_variant_selector: Some("&:where(.dark, .dark *)".to_string()),
             global_theme_reset: false,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec![],
         };
         let result =
@@ -12332,6 +12711,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: false,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec![],
         };
         let result = generate_with_overrides(
@@ -12365,6 +12745,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: false,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec![],
         };
         let result = generate_with_overrides(
@@ -12390,6 +12771,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: true,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec!["--color-brand-500".to_string()],
         };
         let result = generate_with_overrides(
@@ -12418,6 +12800,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: false,
             disabled_namespaces: vec!["color".to_string()],
+            disabled_color_families: vec![],
             declared_theme_vars: vec!["--color-brand-500".to_string()],
         };
         let result = generate_with_overrides(
@@ -12435,6 +12818,45 @@ mod tests {
     }
 
     #[test]
+    fn respects_color_family_initial_reset_for_color_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec!["lime".to_string()],
+            declared_theme_vars: vec!["--color-lime-500".to_string()],
+        };
+        let result = generate_with_overrides(
+            &[
+                "bg-lime-500".to_string(),
+                "bg-lime-600".to_string(),
+                "ring-lime-600".to_string(),
+                "shadow-lime-600".to_string(),
+                "inset-ring-lime-600".to_string(),
+                "inset-shadow-lime-600".to_string(),
+                "bg-blue-500".to_string(),
+                "p-4".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".bg-lime-500"));
+        assert!(!result.css.contains(".bg-lime-600"));
+        assert!(!result.css.contains(".ring-lime-600"));
+        assert!(!result.css.contains(".shadow-lime-600"));
+        assert!(!result.css.contains(".inset-ring-lime-600"));
+        assert!(!result.css.contains(".inset-shadow-lime-600"));
+        assert!(result.css.contains(".bg-blue-500"));
+        assert!(result.css.contains(".p-4"));
+    }
+
+    #[test]
     fn respects_global_theme_reset_for_text_shadow_utilities() {
         let config = GeneratorConfig {
             minify: false,
@@ -12446,6 +12868,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: true,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec![],
         };
         let result =
@@ -12458,6 +12881,7 @@ mod tests {
             dark_variant_selector: None,
             global_theme_reset: true,
             disabled_namespaces: vec![],
+            disabled_color_families: vec![],
             declared_theme_vars: vec!["--text-shadow-xl".to_string()],
         };
         let result =
@@ -12475,7 +12899,7 @@ mod tests {
         assert!(result
             .css
             .contains(".disabled\\:hover\\:bg-blue-500:disabled:hover"));
-        assert!(result.css.contains("background-color: #3b82f6"));
+        assert!(result.css.contains("background-color: var(--color-blue-500)"));
     }
 
     #[test]
@@ -12490,7 +12914,7 @@ mod tests {
             .contains(".dark\\:lg\\:hover\\:bg-gray-900:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
-        assert!(result.css.contains("background-color: #111827"));
+        assert!(result.css.contains("background-color: var(--color-gray-900)"));
     }
 
     #[test]
@@ -12524,7 +12948,7 @@ mod tests {
         assert!(result
             .css
             .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]"));
-        assert!(result.css.contains("background-color: #3b82f6"));
+        assert!(result.css.contains("background-color: var(--color-blue-500)"));
     }
 
     #[test]
@@ -12824,7 +13248,7 @@ mod tests {
         assert!(result
             .css
             .contains(".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"));
-        assert!(result.css.contains("color: #2563eb"));
+        assert!(result.css.contains("color: var(--color-blue-600)"));
     }
 
     #[test]
@@ -12855,7 +13279,9 @@ mod tests {
         };
         let result = generate(&["bg-red-500!".to_string()], &config);
         assert!(result.css.contains(".bg-red-500\\!"));
-        assert!(result.css.contains("background-color: #ef4444 !important"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-red-500) !important"));
     }
 
     #[test]
@@ -12866,7 +13292,9 @@ mod tests {
         };
         let result = generate(&["hover:bg-red-500!".to_string()], &config);
         assert!(result.css.contains(".hover\\:bg-red-500\\!:hover"));
-        assert!(result.css.contains("background-color: #ef4444 !important"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-red-500) !important"));
     }
 
     #[test]

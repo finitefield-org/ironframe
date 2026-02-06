@@ -687,6 +687,7 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
     let mut keyframes = Vec::<ThemeKeyframes>::new();
     let mut global_theme_reset = false;
     let mut disabled_namespaces = std::collections::BTreeSet::<String>::new();
+    let mut disabled_color_families = std::collections::BTreeSet::<String>::new();
     let mut declared_theme_vars = std::collections::BTreeSet::<String>::new();
 
     for block in extract_theme_blocks(template_css) {
@@ -702,10 +703,15 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
                 global_theme_reset = true;
                 continue;
             }
-            if let Some(namespace) = name
-                .strip_prefix("--")
-                .and_then(|raw| raw.strip_suffix("-*"))
-            {
+            if let Some(namespace) = name.strip_prefix("--color-").and_then(|raw| raw.strip_suffix("-*")) {
+                if value == "initial" {
+                    if !namespace.is_empty() {
+                        disabled_color_families.insert(namespace.to_string());
+                    }
+                    continue;
+                }
+            }
+            if let Some(namespace) = name.strip_prefix("--").and_then(|raw| raw.strip_suffix("-*")) {
                 if value == "initial" {
                     disabled_namespaces.insert(namespace.to_string());
                     continue;
@@ -761,6 +767,7 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
             dark_variant_selector: parse_custom_dark_variant(template_css),
             global_theme_reset,
             disabled_namespaces: disabled_namespaces.into_iter().collect(),
+            disabled_color_families: disabled_color_families.into_iter().collect(),
             declared_theme_vars: declared_theme_vars.into_iter().collect(),
         },
         root_variables,
@@ -1441,6 +1448,7 @@ fn should_prefix_variable(var_name: &str, prefix: &str) -> bool {
         "--text-",
         "--shadow-",
         "--inset-shadow-",
+        "--inset-ring-",
         "--breakpoint-",
         "--container-",
     ];
@@ -1658,6 +1666,8 @@ mod tests {
   --container-8xl: 96rem;
   --container-*: initial;
   --container-sm: 24rem;
+  --color-lime-*: initial;
+  --color-brand-500: #10b981;
 }
 @custom-variant dark (&:where(.dark, .dark *));
 "#;
@@ -1681,6 +1691,12 @@ mod tests {
         assert!(overrides
             .disabled_namespaces
             .contains(&"container".to_string()));
+        assert!(overrides
+            .disabled_color_families
+            .contains(&"lime".to_string()));
+        assert!(overrides
+            .declared_theme_vars
+            .contains(&"--color-brand-500".to_string()));
         assert!(overrides
             .declared_theme_vars
             .contains(&"--breakpoint-xs".to_string()));
