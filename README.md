@@ -62,16 +62,16 @@ Developed by [Finite Field, K.K.](https://finitefield.org/en/).
 
 ```text
 ironframe scan [--ignore <glob>] <glob...>
-ironframe build [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>
-ironframe watch [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>
+ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>
+ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>
 ```
 
 - `scan`
   - scans files and prints unique class candidates to stdout
 - `build`
   - generates CSS once
-  - writes to stdout by default, or to `--out <path>` when specified
-  - `--input-css <path>` enables processing for `@import`, `@source`, `@theme`, and `@apply`
+  - writes to stdout by default, or to `--output <path>` (alias: `--out`, `-o`) when specified
+  - `--input-css <path>` (aliases: `-i`, `-s`) enables processing for `@import`, `@source`, `@theme`, and `@apply`
   - `--config <path>` loads TOML config (default: built-in config)
   - `--ignore <glob>` can be passed multiple times
   - `--minify` emits minified output
@@ -88,13 +88,13 @@ ironframe watch [--minify] [--out <path>] [--input-css <path>] [--config <path>]
 ironframe scan "src/**/*.{html,tsx}"
 
 # Build once to a file
-ironframe build --out dist/tailwind.css "src/**/*.{html,tsx}"
+ironframe build --output dist/tailwind.css "src/**/*.{html,tsx}"
 
 # Build with template CSS and config
-ironframe build --input-css src/app.css -c tailwind.toml --out dist/app.css "src/**/*.{html,tsx}"
+ironframe build -i src/app.css -c ironframe.toml -o dist/app.css "src/**/*.{html,tsx}"
 
 # Watch mode (native watcher)
-ironframe watch --out dist/tailwind.css "src/**/*.{html,tsx}"
+ironframe watch --output dist/tailwind.css "src/**/*.{html,tsx}"
 
 # Watch mode with polling
 ironframe watch --poll --poll-interval 250 "src/**/*.{html,tsx}"
@@ -154,7 +154,7 @@ This repository references Tailwind CSS v4.1 for behavior and ideas but is not a
 
 ## Example Config
 
-`tailwind.toml`:
+`ironframe.toml`:
 
 ```toml
 [theme]

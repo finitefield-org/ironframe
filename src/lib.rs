@@ -119,16 +119,16 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
 
     while idx < args.len() {
         match args[idx].as_str() {
-            "--out" | "-o" => {
+            "--out" | "--output" | "-o" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
-                        message: "build requires a value for --out".to_string(),
+                        message: "build requires a value for --output".to_string(),
                     });
                 }
                 out = Some(args[idx].clone());
             }
-            "--input-css" | "-s" => {
+            "--input-css" | "-i" | "-s" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
@@ -146,7 +146,7 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
                 }
                 config = Some(args[idx].clone());
             }
-            "--ignore" | "-i" => {
+            "--ignore" | "-I" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
@@ -193,7 +193,7 @@ fn parse_scan_args(args: Vec<String>) -> Result<Command, CliError> {
 
     while idx < args.len() {
         match args[idx].as_str() {
-            "--ignore" | "-i" => {
+            "--ignore" | "-i" | "-I" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
@@ -231,16 +231,16 @@ fn parse_watch_args(args: Vec<String>) -> Result<Command, CliError> {
 
     while idx < args.len() {
         match args[idx].as_str() {
-            "--out" | "-o" => {
+            "--out" | "--output" | "-o" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
-                        message: "watch requires a value for --out".to_string(),
+                        message: "watch requires a value for --output".to_string(),
                     });
                 }
                 out = Some(args[idx].clone());
             }
-            "--input-css" | "-s" => {
+            "--input-css" | "-i" | "-s" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
@@ -258,7 +258,7 @@ fn parse_watch_args(args: Vec<String>) -> Result<Command, CliError> {
                 }
                 config = Some(args[idx].clone());
             }
-            "--ignore" | "-i" => {
+            "--ignore" | "-I" => {
                 idx += 1;
                 if idx >= args.len() {
                     return Err(CliError {
@@ -545,19 +545,19 @@ fn print_help() {
     println!();
     println!("USAGE:");
     println!("  ironframe scan [--ignore <glob>] <glob...>");
-    println!("  ironframe build [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>");
-    println!("  ironframe watch [--minify] [--out <path>] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
+    println!("  ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>");
+    println!("  ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>");
     println!();
     println!("EXAMPLES:");
     println!("  ironframe scan \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe scan -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe build --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe build --input-css src/app.css --out dist/app.css \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe build -c tailwind.toml \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build --output dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build -i src/app.css -o dist/app.css \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build -c ironframe.toml \"src/**/*.{{html,tsx}}\"");
     println!(
-        "  ironframe watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\""
+        "  ironframe watch -c ironframe.toml --output dist/tailwind.css \"src/**/*.{{html,tsx}}\""
     );
-    println!("  ironframe build -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
+    println!("  ironframe build -I \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
 }
 
@@ -2729,11 +2729,63 @@ mod tests {
     }
 
     #[test]
+    fn parse_build_supports_input_css_short_and_output_alias() {
+        let command = parse_args(vec![
+            "build".to_string(),
+            "-i".to_string(),
+            "src/app.css".to_string(),
+            "--output".to_string(),
+            "dist/app.css".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect("build args should parse");
+
+        assert_eq!(
+            command,
+            Command::Build {
+                inputs: vec!["src/**/*.html".to_string()],
+                out: Some("dist/app.css".to_string()),
+                input_css: Some("src/app.css".to_string()),
+                minify: false,
+                config: None,
+                ignore: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_watch_supports_input_css_short_and_output_short() {
+        let command = parse_args(vec![
+            "watch".to_string(),
+            "-i".to_string(),
+            "src/app.css".to_string(),
+            "-o".to_string(),
+            "dist/app.css".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect("watch args should parse");
+
+        assert_eq!(
+            command,
+            Command::Watch {
+                inputs: vec!["src/**/*.html".to_string()],
+                out: Some("dist/app.css".to_string()),
+                input_css: Some("src/app.css".to_string()),
+                minify: false,
+                config: None,
+                ignore: vec![],
+                poll: false,
+                poll_interval_ms: 500,
+            }
+        );
+    }
+
+    #[test]
     fn watch_roots_include_input_css_and_config_paths() {
         let roots = watch_roots_for_build(
             &["packages/app/src/**/*.html".to_string()],
             Some("styles/app.css"),
-            Some("config/tailwind.toml"),
+            Some("config/ironframe.toml"),
         );
         assert!(roots.contains(&PathBuf::from("packages/app")));
         assert!(roots.contains(&PathBuf::from("styles/")));
