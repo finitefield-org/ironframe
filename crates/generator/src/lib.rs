@@ -313,6 +313,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_text_palette_color_rule(base, config))
             .or_else(|| generate_background_arbitrary_color_rule(base, config))
             .or_else(|| generate_background_palette_color_rule(base, config))
+            .or_else(|| generate_fill_arbitrary_color_rule(base, config))
+            .or_else(|| generate_fill_palette_color_rule(base, config))
+            .or_else(|| generate_stroke_width_rule(base, config))
+            .or_else(|| generate_stroke_arbitrary_color_rule(base, config))
+            .or_else(|| generate_stroke_palette_color_rule(base, config))
             .or_else(|| generate_background_blend_mode_rule(base, config))
             .or_else(|| generate_background_position_rule(base, config))
             .or_else(|| generate_background_size_rule(base, config))
@@ -361,6 +366,7 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_clear_rule(base, config))
             .or_else(|| generate_isolation_rule(base, config))
             .or_else(|| generate_appearance_rule(base, config))
+            .or_else(|| generate_forced_color_adjust_rule(base, config))
             .or_else(|| generate_color_scheme_rule(base, config))
             .or_else(|| generate_cursor_rule(base, config))
             .or_else(|| generate_field_sizing_rule(base, config))
@@ -1669,6 +1675,171 @@ fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig)
     }
 
     rule(&selector, &format!("background-color:{}", color_value), config)
+}
+
+fn generate_fill_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("fill-(").and_then(|v| v.strip_suffix(')')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("fill:var({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("fill-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(&selector, &format!("fill:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_fill_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("fill-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "none" => "none".to_string(),
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if token == "none" && opacity.is_some() {
+        return None;
+    }
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "fill:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("fill:{}", color_value), config)
+}
+
+fn generate_stroke_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class
+        .strip_prefix("stroke-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("stroke:var({})", raw), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("stroke-[").and_then(|v| v.strip_suffix(']')) {
+        if is_color_like_value(raw) {
+            return rule(&selector, &format!("stroke:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_stroke_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("stroke-")?;
+    if raw.starts_with('[') || raw.starts_with('(') {
+        return None;
+    }
+
+    let (token, opacity) = split_slash_modifier(raw);
+    if token.is_empty() {
+        return None;
+    }
+
+    let color_value = match token {
+        "none" => "none".to_string(),
+        "inherit" => "inherit".to_string(),
+        "current" => "currentColor".to_string(),
+        "transparent" => "transparent".to_string(),
+        "black" => "var(--color-black)".to_string(),
+        "white" => "var(--color-white)".to_string(),
+        _ => {
+            if !token.contains('-') {
+                return None;
+            }
+            format!("var(--color-{})", token)
+        }
+    };
+
+    if token == "none" && opacity.is_some() {
+        return None;
+    }
+
+    if let Some(opacity_raw) = opacity {
+        let opacity_value = parse_color_opacity_value(opacity_raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "stroke:color-mix(in oklab,{} {},transparent)",
+                color_value, opacity_value
+            ),
+            config,
+        );
+    }
+
+    rule(&selector, &format!("stroke:{}", color_value), config)
+}
+
+fn parse_stroke_width_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(raw.to_string());
+    }
+    if let Some(value) = raw
+        .strip_prefix("(length:")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() || is_color_like_value(value) {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn generate_stroke_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let raw = class.strip_prefix("stroke-")?;
+    let value = parse_stroke_width_value(raw)?;
+    rule(&selector, &format!("stroke-width:{}", value), config)
 }
 
 fn generate_background_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -3807,6 +3978,15 @@ fn generate_appearance_rule(class: &str, config: &GeneratorConfig) -> Option<Str
     match class {
         "appearance-none" => rule(&selector, "appearance:none", config),
         "appearance-auto" => rule(&selector, "appearance:auto", config),
+        _ => None,
+    }
+}
+
+fn generate_forced_color_adjust_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "forced-color-adjust-auto" => rule(&selector, "forced-color-adjust:auto", config),
+        "forced-color-adjust-none" => rule(&selector, "forced-color-adjust:none", config),
         _ => None,
     }
 }
@@ -6603,6 +6783,8 @@ fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         "decoration" => format!("text-decoration-color:{}", value),
         "accent" => format!("accent-color:{}", value),
         "caret" => format!("caret-color:{}", value),
+        "fill" => format!("fill:{}", value),
+        "stroke" => format!("stroke:{}", value),
         _ => return None,
     };
     rule(&selector, &declarations, config)
@@ -9538,6 +9720,154 @@ mod tests {
     }
 
     #[test]
+    fn generates_fill_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "fill-none".to_string(),
+                "fill-inherit".to_string(),
+                "fill-current".to_string(),
+                "fill-transparent".to_string(),
+                "fill-black".to_string(),
+                "fill-white".to_string(),
+                "fill-red-500".to_string(),
+                "fill-cyan-700/25".to_string(),
+                "fill-cyan-700/[37%]".to_string(),
+                "fill-cyan-700/(--my-opacity)".to_string(),
+                "fill-[#50d71e]".to_string(),
+                "fill-(--my-fill-color)".to_string(),
+                "hover:fill-lime-600".to_string(),
+                "md:fill-sky-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".fill-none"));
+        assert!(result.css.contains("fill: none"));
+        assert!(result.css.contains(".fill-inherit"));
+        assert!(result.css.contains("fill: inherit"));
+        assert!(result.css.contains(".fill-current"));
+        assert!(result.css.contains("fill: currentColor"));
+        assert!(result.css.contains(".fill-transparent"));
+        assert!(result.css.contains("fill: transparent"));
+        assert!(result.css.contains(".fill-black"));
+        assert!(result.css.contains("fill: var(--color-black)"));
+        assert!(result.css.contains(".fill-white"));
+        assert!(result.css.contains("fill: var(--color-white)"));
+        assert!(result.css.contains(".fill-red-500"));
+        assert!(result.css.contains("fill: var(--color-red-500)"));
+        assert!(result.css.contains(".fill-cyan-700\\/25"));
+        assert!(result
+            .css
+            .contains("fill: color-mix(in oklab,var(--color-cyan-700) 25%,transparent)"));
+        assert!(result.css.contains(".fill-cyan-700\\/\\[37\\%\\]"));
+        assert!(result
+            .css
+            .contains("fill: color-mix(in oklab,var(--color-cyan-700) 37%,transparent)"));
+        assert!(result.css.contains(".fill-cyan-700\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "fill: color-mix(in oklab,var(--color-cyan-700) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".fill-\\[#50d71e\\]"));
+        assert!(result.css.contains("fill: #50d71e"));
+        assert!(result.css.contains(".fill-\\(--my-fill-color\\)"));
+        assert!(result.css.contains("fill: var(--my-fill-color)"));
+        assert!(result.css.contains(".hover\\:fill-lime-600:hover"));
+        assert!(result.css.contains(".md\\:fill-sky-500"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_stroke_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "stroke-none".to_string(),
+                "stroke-inherit".to_string(),
+                "stroke-current".to_string(),
+                "stroke-transparent".to_string(),
+                "stroke-black".to_string(),
+                "stroke-white".to_string(),
+                "stroke-red-500".to_string(),
+                "stroke-cyan-700/25".to_string(),
+                "stroke-cyan-700/[37%]".to_string(),
+                "stroke-cyan-700/(--my-opacity)".to_string(),
+                "stroke-[#50d71e]".to_string(),
+                "stroke-(--my-stroke-color)".to_string(),
+                "hover:stroke-lime-600".to_string(),
+                "md:stroke-sky-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".stroke-none"));
+        assert!(result.css.contains("stroke: none"));
+        assert!(result.css.contains(".stroke-inherit"));
+        assert!(result.css.contains("stroke: inherit"));
+        assert!(result.css.contains(".stroke-current"));
+        assert!(result.css.contains("stroke: currentColor"));
+        assert!(result.css.contains(".stroke-transparent"));
+        assert!(result.css.contains("stroke: transparent"));
+        assert!(result.css.contains(".stroke-black"));
+        assert!(result.css.contains("stroke: var(--color-black)"));
+        assert!(result.css.contains(".stroke-white"));
+        assert!(result.css.contains("stroke: var(--color-white)"));
+        assert!(result.css.contains(".stroke-red-500"));
+        assert!(result.css.contains("stroke: var(--color-red-500)"));
+        assert!(result.css.contains(".stroke-cyan-700\\/25"));
+        assert!(result
+            .css
+            .contains("stroke: color-mix(in oklab,var(--color-cyan-700) 25%,transparent)"));
+        assert!(result.css.contains(".stroke-cyan-700\\/\\[37\\%\\]"));
+        assert!(result
+            .css
+            .contains("stroke: color-mix(in oklab,var(--color-cyan-700) 37%,transparent)"));
+        assert!(result.css.contains(".stroke-cyan-700\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(
+            "stroke: color-mix(in oklab,var(--color-cyan-700) var(--my-opacity),transparent)"
+        ));
+        assert!(result.css.contains(".stroke-\\[#50d71e\\]"));
+        assert!(result.css.contains("stroke: #50d71e"));
+        assert!(result.css.contains(".stroke-\\(--my-stroke-color\\)"));
+        assert!(result.css.contains("stroke: var(--my-stroke-color)"));
+        assert!(result.css.contains(".hover\\:stroke-lime-600:hover"));
+        assert!(result.css.contains(".md\\:stroke-sky-500"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_stroke_width_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "stroke-1".to_string(),
+                "stroke-2".to_string(),
+                "stroke-[1.5]".to_string(),
+                "stroke-(length:--my-stroke-width)".to_string(),
+                "md:stroke-2".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".stroke-1"));
+        assert!(result.css.contains("stroke-width: 1"));
+        assert!(result.css.contains(".stroke-2"));
+        assert!(result.css.contains("stroke-width: 2"));
+        assert!(result.css.contains(".stroke-\\[1.5\\]"));
+        assert!(result.css.contains("stroke-width: 1.5"));
+        assert!(result.css.contains(".stroke-\\(length\\:--my-stroke-width\\)"));
+        assert!(result.css.contains("stroke-width: var(--my-stroke-width)"));
+        assert!(result.css.contains(".md\\:stroke-2"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
     fn generates_text_shadows() {
         let config = GeneratorConfig {
             minify: false,
@@ -11162,6 +11492,28 @@ mod tests {
         assert!(result.css.contains(".scheme-only-light"));
         assert!(result.css.contains("color-scheme: only light"));
         assert!(result.css.contains(".dark .dark\\:scheme-dark"));
+    }
+
+    #[test]
+    fn generates_forced_color_adjust_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "forced-color-adjust-auto".to_string(),
+                "forced-color-adjust-none".to_string(),
+                "md:forced-color-adjust-auto".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".forced-color-adjust-auto"));
+        assert!(result.css.contains("forced-color-adjust: auto"));
+        assert!(result.css.contains(".forced-color-adjust-none"));
+        assert!(result.css.contains("forced-color-adjust: none"));
+        assert!(result.css.contains(".md\\:forced-color-adjust-auto"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
     }
 
     #[test]
