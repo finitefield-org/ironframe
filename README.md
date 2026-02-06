@@ -1,6 +1,7 @@
 # ironframe
 
 This repository is for learning and prototyping a Rust implementation that matches the feature set of Tailwind CSS v4.1.
+Developed by [Finite Field, K.K.](https://finitefield.org/en/).
 
 ## Goals
 
@@ -166,4 +167,4 @@ name = "default"
 
 ## License
 
-TBD
+MIT OR Apache-2.0
