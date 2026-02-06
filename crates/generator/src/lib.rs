@@ -7010,45 +7010,28 @@ fn apply_variants(
 
     let class_selector = format!(".{}", escape_selector(full_class));
     let mut selector = class_selector;
-    let mut media_queries = Vec::new();
+    let mut wrappers = Vec::new();
+    let mut needs_generated_content = false;
+
     for variant in variants {
-        match *variant {
-            "dark" => media_queries.push("(prefers-color-scheme: dark)"),
-            "group-hover" => {
-                selector = format!(".group:hover {}", selector);
-                media_queries.push("(hover: hover)");
-            }
-            "focus" => selector = format!("{}:focus", selector),
-            "focus-within" => selector = format!("{}:focus-within", selector),
-            "disabled" => selector = format!("{}:disabled", selector),
-            "hover" => selector = format!("{}:hover", selector),
-            "active" => selector = format!("{}:active", selector),
-            "before" => selector = format!("{}:before", selector),
-            "after" => selector = format!("{}:after", selector),
-            "motion-safe" => media_queries.push("(prefers-reduced-motion: no-preference)"),
-            "motion-reduce" => media_queries.push("(prefers-reduced-motion: reduce)"),
-            "sm" => media_queries.push("(min-width: 640px)"),
-            "md" => media_queries.push("(min-width: 768px)"),
-            "lg" => media_queries.push("(min-width: 1024px)"),
-            "xl" => media_queries.push("(min-width: 1280px)"),
-            "2xl" => media_queries.push("(min-width: 1536px)"),
-            _ => {
-                if let Some(data_key) = variant.strip_prefix("data-") {
-                    selector = apply_data_variant(selector, data_key)?;
-                    continue;
-                }
-                if variant.starts_with('[') && variant.ends_with(']') {
-                    selector = apply_arbitrary_variant_selector(selector, variant)?;
-                    continue;
-                }
-                return None;
-            }
+        if let Some(updated) = apply_selector_variant(
+            selector.clone(),
+            variant,
+            &mut wrappers,
+            &mut needs_generated_content,
+        ) {
+            selector = updated;
+            continue;
         }
+        return None;
     }
 
     if let Some(start) = rule.find('{') {
         let header = rule[..start].trim_end();
-        let declarations = &rule[start..];
+        let mut declarations = rule[start..].to_string();
+        if needs_generated_content {
+            declarations = ensure_generated_content(&declarations)?;
+        }
         let first_selector = header.split_whitespace().next()?;
         let expected_base_selector = format!(".{}", escape_selector(base_class));
         if first_selector != expected_base_selector {
@@ -7056,8 +7039,8 @@ fn apply_variants(
         }
         let replaced_header = header.replacen(first_selector, &selector, 1);
         let mut combined = format!("{}{}", replaced_header, declarations);
-        for query in media_queries {
-            combined = wrap_media(query, &combined, minify);
+        for wrapper in wrappers.iter().rev() {
+            combined = wrap_rule(wrapper, &combined, minify);
         }
         return Some(combined);
     }
@@ -7081,6 +7064,8 @@ fn escape_selector(class: &str) -> String {
         .replace('%', "\\%")
         .replace('=', "\\=")
         .replace('!', "\\!")
+        .replace('*', "\\*")
+        .replace('@', "\\@")
 }
 
 fn apply_data_variant(selector: String, data_key: &str) -> Option<String> {
@@ -7098,6 +7083,476 @@ fn apply_data_variant(selector: String, data_key: &str) -> Option<String> {
     Some(format!("{}[data-{}]", selector, data_key))
 }
 
+fn apply_aria_variant(selector: String, aria_key: &str) -> Option<String> {
+    if aria_key.is_empty() {
+        return None;
+    }
+
+    if let Some(raw) = aria_key.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return Some(format!("{}[aria-{}]", selector, raw));
+    }
+
+    let condition = match aria_key {
+        "busy" => "busy=true",
+        "checked" => "checked=true",
+        "disabled" => "disabled=true",
+        "expanded" => "expanded=true",
+        "hidden" => "hidden=true",
+        "pressed" => "pressed=true",
+        "readonly" => "readonly=true",
+        "required" => "required=true",
+        "selected" => "selected=true",
+        _ => return Some(format!("{}[aria-{}]", selector, aria_key)),
+    };
+
+    let (key, value) = condition.split_once('=')?;
+    Some(format!("{}[aria-{}=\"{}\"]", selector, key, value))
+}
+
+#[derive(Clone, Debug)]
+enum RuleWrapper {
+    Media(String),
+    Supports(String),
+    Container(String),
+    StartingStyle,
+}
+
+fn apply_selector_variant(
+    selector: String,
+    variant: &str,
+    wrappers: &mut Vec<RuleWrapper>,
+    needs_generated_content: &mut bool,
+) -> Option<String> {
+    match variant {
+        "dark" => {
+            wrappers.push(RuleWrapper::Media("(prefers-color-scheme: dark)".to_string()));
+            return Some(selector);
+        }
+        "motion-safe" => {
+            wrappers.push(RuleWrapper::Media(
+                "(prefers-reduced-motion: no-preference)".to_string(),
+            ));
+            return Some(selector);
+        }
+        "motion-reduce" => {
+            wrappers.push(RuleWrapper::Media(
+                "(prefers-reduced-motion: reduce)".to_string(),
+            ));
+            return Some(selector);
+        }
+        "contrast-more" => {
+            wrappers.push(RuleWrapper::Media("(prefers-contrast: more)".to_string()));
+            return Some(selector);
+        }
+        "contrast-less" => {
+            wrappers.push(RuleWrapper::Media("(prefers-contrast: less)".to_string()));
+            return Some(selector);
+        }
+        "forced-colors" => {
+            wrappers.push(RuleWrapper::Media("(forced-colors: active)".to_string()));
+            return Some(selector);
+        }
+        "not-forced-colors" => {
+            wrappers.push(RuleWrapper::Media("(not (forced-colors: active))".to_string()));
+            return Some(selector);
+        }
+        "inverted-colors" => {
+            wrappers.push(RuleWrapper::Media("(inverted-colors: inverted)".to_string()));
+            return Some(selector);
+        }
+        "pointer-fine" => {
+            wrappers.push(RuleWrapper::Media("(pointer: fine)".to_string()));
+            return Some(selector);
+        }
+        "pointer-coarse" => {
+            wrappers.push(RuleWrapper::Media("(pointer: coarse)".to_string()));
+            return Some(selector);
+        }
+        "pointer-none" => {
+            wrappers.push(RuleWrapper::Media("(pointer: none)".to_string()));
+            return Some(selector);
+        }
+        "any-pointer-fine" => {
+            wrappers.push(RuleWrapper::Media("(any-pointer: fine)".to_string()));
+            return Some(selector);
+        }
+        "any-pointer-coarse" => {
+            wrappers.push(RuleWrapper::Media("(any-pointer: coarse)".to_string()));
+            return Some(selector);
+        }
+        "any-pointer-none" => {
+            wrappers.push(RuleWrapper::Media("(any-pointer: none)".to_string()));
+            return Some(selector);
+        }
+        "portrait" => {
+            wrappers.push(RuleWrapper::Media("(orientation: portrait)".to_string()));
+            return Some(selector);
+        }
+        "landscape" => {
+            wrappers.push(RuleWrapper::Media("(orientation: landscape)".to_string()));
+            return Some(selector);
+        }
+        "noscript" => {
+            wrappers.push(RuleWrapper::Media("(scripting: none)".to_string()));
+            return Some(selector);
+        }
+        "print" => {
+            wrappers.push(RuleWrapper::Media("print".to_string()));
+            return Some(selector);
+        }
+        "sm" => {
+            wrappers.push(RuleWrapper::Media("(min-width: 640px)".to_string()));
+            return Some(selector);
+        }
+        "md" => {
+            wrappers.push(RuleWrapper::Media("(min-width: 768px)".to_string()));
+            return Some(selector);
+        }
+        "lg" => {
+            wrappers.push(RuleWrapper::Media("(min-width: 1024px)".to_string()));
+            return Some(selector);
+        }
+        "xl" => {
+            wrappers.push(RuleWrapper::Media("(min-width: 1280px)".to_string()));
+            return Some(selector);
+        }
+        "2xl" => {
+            wrappers.push(RuleWrapper::Media("(min-width: 1536px)".to_string()));
+            return Some(selector);
+        }
+        "max-sm" => {
+            wrappers.push(RuleWrapper::Media("(max-width: 639px)".to_string()));
+            return Some(selector);
+        }
+        "max-md" => {
+            wrappers.push(RuleWrapper::Media("(max-width: 767px)".to_string()));
+            return Some(selector);
+        }
+        "max-lg" => {
+            wrappers.push(RuleWrapper::Media("(max-width: 1023px)".to_string()));
+            return Some(selector);
+        }
+        "max-xl" => {
+            wrappers.push(RuleWrapper::Media("(max-width: 1279px)".to_string()));
+            return Some(selector);
+        }
+        "max-2xl" => {
+            wrappers.push(RuleWrapper::Media("(max-width: 1535px)".to_string()));
+            return Some(selector);
+        }
+        "starting" => {
+            wrappers.push(RuleWrapper::StartingStyle);
+            return Some(selector);
+        }
+        _ => {}
+    }
+
+    if variant.starts_with("min-[") && variant.ends_with(']') {
+        let value = variant.strip_prefix("min-[")?.strip_suffix(']')?;
+        wrappers.push(RuleWrapper::Media(format!("(min-width: {})", value)));
+        return Some(selector);
+    }
+
+    if variant.starts_with("max-[") && variant.ends_with(']') {
+        let value = variant.strip_prefix("max-[")?.strip_suffix(']')?;
+        wrappers.push(RuleWrapper::Media(format!("(max-width: {})", value)));
+        return Some(selector);
+    }
+
+    if variant.starts_with('@') {
+        let query = container_query_for_variant(variant)?;
+        wrappers.push(RuleWrapper::Container(query));
+        return Some(selector);
+    }
+
+    if let Some(expr) = supports_query_for_variant(variant) {
+        wrappers.push(RuleWrapper::Supports(expr));
+        return Some(selector);
+    }
+
+    if let Some(raw) = variant.strip_prefix("group-") {
+        return apply_group_or_peer_variant(
+            selector,
+            raw,
+            "group",
+            " ",
+            wrappers,
+            needs_generated_content,
+        );
+    }
+
+    if let Some(raw) = variant.strip_prefix("peer-") {
+        return apply_group_or_peer_variant(
+            selector,
+            raw,
+            "peer",
+            " ~ ",
+            wrappers,
+            needs_generated_content,
+        );
+    }
+
+    if variant != "in-range" {
+        if let Some(raw) = variant.strip_prefix("in-") {
+            let mut parent_selector = in_parent_selector(raw)?;
+            if parent_selector.contains('&') {
+                parent_selector = parent_selector.replace('&', &selector);
+                return Some(parent_selector);
+            }
+            return Some(format!("{} {}", parent_selector, selector));
+        }
+    }
+
+    if let Some(data_key) = variant.strip_prefix("data-") {
+        return apply_data_variant(selector, data_key);
+    }
+
+    if let Some(aria_key) = variant.strip_prefix("aria-") {
+        return apply_aria_variant(selector, aria_key);
+    }
+
+    if let Some(raw_not) = variant.strip_prefix("not-") {
+        if raw_not.starts_with("supports-") {
+            let query = supports_query_for_variant(raw_not)?;
+            wrappers.push(RuleWrapper::Supports(format!("not ({})", query)));
+            return Some(selector);
+        }
+
+        if let Some(inner) = raw_not.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            let not_selector = normalize_arbitrary_variant_content(inner);
+            if not_selector.is_empty() {
+                return None;
+            }
+            return Some(format!("{}:not({})", selector, not_selector));
+        }
+
+        let not_selector = selector_for_simple_variant(raw_not, wrappers, needs_generated_content)?;
+        return Some(format!("{}:not({})", selector, not_selector));
+    }
+
+    if let Some(has_raw) = variant.strip_prefix("has-") {
+        let has_selector = has_argument(has_raw)?;
+        return Some(format!("{}:has({})", selector, has_selector));
+    }
+
+    if variant.starts_with('[') && variant.ends_with(']') {
+        return apply_arbitrary_variant_selector(selector, variant);
+    }
+
+    if variant == "marker" {
+        return Some(format!("{}::marker, {} *::marker", selector, selector));
+    }
+
+    if variant == "selection" {
+        return Some(format!("{}::selection, {} *::selection", selector, selector));
+    }
+
+    if variant == "*" {
+        return Some(format!(":is({} > *)", selector));
+    }
+    if variant == "**" {
+        return Some(format!(":is({} *)", selector));
+    }
+
+    selector_for_simple_variant(variant, wrappers, needs_generated_content)
+        .map(|suffix| format!("{}{}", selector, suffix))
+}
+
+fn selector_for_simple_variant(
+    variant: &str,
+    wrappers: &mut Vec<RuleWrapper>,
+    needs_generated_content: &mut bool,
+) -> Option<String> {
+    let suffix = match variant {
+        "hover" => {
+            wrappers.push(RuleWrapper::Media("(hover: hover)".to_string()));
+            ":hover".to_string()
+        }
+        "focus" => ":focus".to_string(),
+        "focus-within" => ":focus-within".to_string(),
+        "focus-visible" => ":focus-visible".to_string(),
+        "active" => ":active".to_string(),
+        "visited" => ":visited".to_string(),
+        "target" => ":target".to_string(),
+        "first" => ":first-child".to_string(),
+        "last" => ":last-child".to_string(),
+        "only" => ":only-child".to_string(),
+        "odd" => ":nth-child(odd)".to_string(),
+        "even" => ":nth-child(even)".to_string(),
+        "first-of-type" => ":first-of-type".to_string(),
+        "last-of-type" => ":last-of-type".to_string(),
+        "only-of-type" => ":only-of-type".to_string(),
+        "empty" => ":empty".to_string(),
+        "disabled" => ":disabled".to_string(),
+        "enabled" => ":enabled".to_string(),
+        "checked" => ":checked".to_string(),
+        "indeterminate" => ":indeterminate".to_string(),
+        "default" => ":default".to_string(),
+        "optional" => ":optional".to_string(),
+        "required" => ":required".to_string(),
+        "valid" => ":valid".to_string(),
+        "invalid" => ":invalid".to_string(),
+        "user-valid" => ":user-valid".to_string(),
+        "user-invalid" => ":user-invalid".to_string(),
+        "in-range" => ":in-range".to_string(),
+        "out-of-range" => ":out-of-range".to_string(),
+        "placeholder-shown" => ":placeholder-shown".to_string(),
+        "details-content" => ":details-content".to_string(),
+        "autofill" => ":autofill".to_string(),
+        "read-only" => ":read-only".to_string(),
+        "open" => ":is([open], :popover-open, :open)".to_string(),
+        "inert" => ":is([inert], [inert] *)".to_string(),
+        "rtl" => ":where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)".to_string(),
+        "ltr" => ":where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)".to_string(),
+        "before" => {
+            *needs_generated_content = true;
+            ":before".to_string()
+        }
+        "after" => {
+            *needs_generated_content = true;
+            ":after".to_string()
+        }
+        "first-letter" => "::first-letter".to_string(),
+        "first-line" => "::first-line".to_string(),
+        "marker" => ":marker".to_string(),
+        "selection" => ":selection".to_string(),
+        "file" => "::file-selector-button".to_string(),
+        "backdrop" => "::backdrop".to_string(),
+        "placeholder" => "::placeholder".to_string(),
+        _ => {
+            if let Some(expr) = parse_nth_like_variant(variant) {
+                return Some(expr);
+            }
+            return None;
+        }
+    };
+    Some(suffix)
+}
+
+fn parse_nth_like_variant(variant: &str) -> Option<String> {
+    if let Some(raw) = variant.strip_prefix("nth-last-of-type-") {
+        return Some(format!(":nth-last-of-type({})", nth_argument(raw)?));
+    }
+    if let Some(raw) = variant.strip_prefix("nth-last-") {
+        return Some(format!(":nth-last-child({})", nth_argument(raw)?));
+    }
+    if let Some(raw) = variant.strip_prefix("nth-of-type-") {
+        return Some(format!(":nth-of-type({})", nth_argument(raw)?));
+    }
+    if let Some(raw) = variant.strip_prefix("nth-") {
+        return Some(format!(":nth-child({})", nth_argument(raw)?));
+    }
+    None
+}
+
+fn nth_argument(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if let Some(inner) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if inner.is_empty() {
+            return None;
+        }
+        return Some(normalize_arbitrary_variant_content(inner));
+    }
+    Some(normalize_arbitrary_variant_content(raw))
+}
+
+fn has_argument(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if let Some(inner) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if inner.is_empty() {
+            return None;
+        }
+        return Some(normalize_arbitrary_variant_content(inner));
+    }
+    Some(format!(":{}", raw))
+}
+
+fn in_parent_selector(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if let Some(inner) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if inner.is_empty() {
+            return None;
+        }
+        return Some(format!(
+            ":where({})",
+            normalize_arbitrary_variant_content(inner)
+        ));
+    }
+    Some(format!(":where(:{})", raw))
+}
+
+fn split_named_variant(raw: &str) -> (&str, Option<&str>) {
+    let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
+
+    for (idx, ch) in raw.char_indices() {
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            '/' if bracket_depth == 0 && paren_depth == 0 => {
+                return (&raw[..idx], Some(&raw[idx + 1..]));
+            }
+            _ => {}
+        }
+    }
+
+    (raw, None)
+}
+
+fn apply_group_or_peer_variant(
+    selector: String,
+    raw: &str,
+    marker_class: &str,
+    combinator: &str,
+    wrappers: &mut Vec<RuleWrapper>,
+    needs_generated_content: &mut bool,
+) -> Option<String> {
+    let (core, name) = split_named_variant(raw);
+    let marker = if let Some(name) = name {
+        format!(".{}", escape_selector(&format!("{}/{}", marker_class, name)))
+    } else {
+        format!(".{}", marker_class)
+    };
+
+    if core.starts_with('[') && core.ends_with(']') {
+        let inner = normalize_arbitrary_variant_content(core.strip_prefix('[')?.strip_suffix(']')?);
+        if inner.contains('&') {
+            let replaced = inner.replace('&', &marker);
+            return Some(format!("{}{}{}", replaced, combinator, selector));
+        }
+        return Some(format!("{}{}{}{}{}", marker, inner, combinator, selector, ""));
+    }
+
+    if let Some(has_raw) = core.strip_prefix("has-") {
+        let argument = has_argument(has_raw)?;
+        return Some(format!("{}:has({}){}{}", marker, argument, combinator, selector));
+    }
+
+    if let Some(data_raw) = core.strip_prefix("data-") {
+        let conditioned = apply_data_variant(marker.clone(), data_raw)?;
+        return Some(format!("{}{}{}", conditioned, combinator, selector));
+    }
+
+    if let Some(aria_raw) = core.strip_prefix("aria-") {
+        let conditioned = apply_aria_variant(marker.clone(), aria_raw)?;
+        return Some(format!("{}{}{}", conditioned, combinator, selector));
+    }
+
+    let marker_suffix = selector_for_simple_variant(core, wrappers, needs_generated_content)?;
+    Some(format!("{}{}{}{}", marker, marker_suffix, combinator, selector))
+}
+
 fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<String> {
     let raw = variant.strip_prefix('[')?.strip_suffix(']')?;
     if raw.is_empty() {
@@ -7110,12 +7565,139 @@ fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<S
     Some(format!("{} {}", normalized, selector))
 }
 
-fn wrap_media(query: &str, rule: &str, minify: bool) -> String {
-    if minify {
-        format!("@media {}{{{}}}", query, rule)
-    } else {
-        format!("@media {} {{ {} }}", query, rule)
+fn supports_query_for_variant(variant: &str) -> Option<String> {
+    if let Some(inner) = variant
+        .strip_prefix("supports-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        let value = normalize_arbitrary_variant_content(inner);
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value);
     }
+
+    if let Some(inner) = variant
+        .strip_prefix("not-supports-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        let value = normalize_arbitrary_variant_content(inner);
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("not ({})", value));
+    }
+
+    if let Some(property) = variant.strip_prefix("supports-") {
+        if property.is_empty() {
+            return None;
+        }
+        return Some(format!("{}: var(--tw)", property));
+    }
+
+    None
+}
+
+fn container_query_for_variant(variant: &str) -> Option<String> {
+    if let Some(inner) = variant
+        .strip_prefix("@min-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        return Some(format!("(min-width: {})", inner));
+    }
+
+    if let Some(inner) = variant
+        .strip_prefix("@max-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        return Some(format!("(max-width: {})", inner));
+    }
+
+    if let Some(size) = variant.strip_prefix("@max-") {
+        let width = container_breakpoint(size)?;
+        return Some(format!("(max-width: {})", width));
+    }
+
+    if let Some(size) = variant.strip_prefix('@') {
+        let width = container_breakpoint(size)?;
+        return Some(format!("(min-width: {})", width));
+    }
+
+    None
+}
+
+fn container_breakpoint(key: &str) -> Option<&'static str> {
+    match key {
+        "3xs" => Some("16rem"),
+        "2xs" => Some("18rem"),
+        "xs" => Some("20rem"),
+        "sm" => Some("24rem"),
+        "md" => Some("28rem"),
+        "lg" => Some("32rem"),
+        "xl" => Some("36rem"),
+        "2xl" => Some("42rem"),
+        "3xl" => Some("48rem"),
+        "4xl" => Some("56rem"),
+        "5xl" => Some("64rem"),
+        "6xl" => Some("72rem"),
+        "7xl" => Some("80rem"),
+        _ => None,
+    }
+}
+
+fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
+    match wrapper {
+        RuleWrapper::Media(query) => {
+            if minify {
+                format!("@media {}{{{}}}", query, rule)
+            } else {
+                format!("@media {} {{ {} }}", query, rule)
+            }
+        }
+        RuleWrapper::Supports(query) => {
+            if minify {
+                format!("@supports ({}){{{}}}", query, rule)
+            } else {
+                format!("@supports ({}) {{ {} }}", query, rule)
+            }
+        }
+        RuleWrapper::Container(query) => {
+            if minify {
+                format!("@container {}{{{}}}", query, rule)
+            } else {
+                format!("@container {} {{ {} }}", query, rule)
+            }
+        }
+        RuleWrapper::StartingStyle => {
+            if minify {
+                format!("@starting-style{{{}}}", rule)
+            } else {
+                format!("@starting-style {{ {} }}", rule)
+            }
+        }
+    }
+}
+
+fn normalize_arbitrary_variant_content(raw: &str) -> String {
+    raw.replace('_', " ")
+}
+
+fn ensure_generated_content(declarations_block: &str) -> Option<String> {
+    let open = declarations_block.find('{')?;
+    let close = declarations_block.rfind('}')?;
+    if close <= open {
+        return None;
+    }
+    let body = declarations_block[open + 1..close].trim();
+    if body.contains("content:") {
+        return Some(declarations_block.to_string());
+    }
+    let with_content = if body.is_empty() {
+        "content:\"\"".to_string()
+    } else {
+        format!("{};content:\"\"", body)
+    };
+    Some(format!("{{{}}}", with_content))
 }
 
 fn strip_important_modifier(class: &str) -> (&str, bool) {
@@ -11008,6 +11590,235 @@ mod tests {
             .css
             .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]"));
         assert!(result.css.contains("background-color: #3b82f6"));
+    }
+
+    #[test]
+    fn generates_extended_state_and_structural_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "focus-visible:underline".to_string(),
+                "visited:text-blue-600".to_string(),
+                "first:underline".to_string(),
+                "last:underline".to_string(),
+                "odd:bg-gray-100".to_string(),
+                "even:bg-gray-200".to_string(),
+                "nth-3:underline".to_string(),
+                "nth-[2n+1]:underline".to_string(),
+                "nth-last-2:underline".to_string(),
+                "nth-of-type-4:underline".to_string(),
+                "nth-last-of-type-[2n+1]:underline".to_string(),
+                "only:underline".to_string(),
+                "only-of-type:underline".to_string(),
+                "empty:hidden".to_string(),
+                "read-only:bg-gray-100".to_string(),
+                "placeholder-shown:text-gray-500".to_string(),
+                "autofill:bg-blue-100".to_string(),
+                "in-range:text-blue-600".to_string(),
+                "out-of-range:text-gray-700".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".focus-visible\\:underline:focus-visible"));
+        assert!(result.css.contains(".visited\\:text-blue-600:visited"));
+        assert!(result.css.contains(".first\\:underline:first-child"));
+        assert!(result.css.contains(".last\\:underline:last-child"));
+        assert!(result.css.contains(".odd\\:bg-gray-100:nth-child(odd)"));
+        assert!(result.css.contains(".even\\:bg-gray-200:nth-child(even)"));
+        assert!(result.css.contains(".nth-3\\:underline:nth-child(3)"));
+        assert!(result.css.contains(".nth-\\[2n\\+1\\]\\:underline:nth-child(2n+1)"));
+        assert!(result.css.contains(".nth-last-2\\:underline:nth-last-child(2)"));
+        assert!(result
+            .css
+            .contains(".nth-of-type-4\\:underline:nth-of-type(4)"));
+        assert!(result.css.contains(
+            ".nth-last-of-type-\\[2n\\+1\\]\\:underline:nth-last-of-type(2n+1)"
+        ));
+        assert!(result.css.contains(".only\\:underline:only-child"));
+        assert!(result.css.contains(".only-of-type\\:underline:only-of-type"));
+        assert!(result.css.contains(".empty\\:hidden:empty"));
+        assert!(result.css.contains(".read-only\\:bg-gray-100:read-only"));
+        assert!(result
+            .css
+            .contains(".placeholder-shown\\:text-gray-500:placeholder-shown"));
+        assert!(result.css.contains(".autofill\\:bg-blue-100:autofill"));
+        assert!(result.css.contains(".in-range\\:text-blue-600:in-range"));
+        assert!(result.css.contains(".out-of-range\\:text-gray-700:out-of-range"));
+    }
+
+    #[test]
+    fn generates_extended_group_peer_and_attribute_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "group-focus:text-blue-600".to_string(),
+                "group-hover/item:text-blue-600".to_string(),
+                "group-has-checked:underline".to_string(),
+                "group-data-[state=open]:underline".to_string(),
+                "group-aria-[sort=ascending]:underline".to_string(),
+                "peer-checked:text-blue-600".to_string(),
+                "peer-invalid:text-gray-700".to_string(),
+                "peer-checked/draft:text-blue-600".to_string(),
+                "peer-has-checked:hidden".to_string(),
+                "peer-data-[size=large]:underline".to_string(),
+                "in-focus:underline".to_string(),
+                "has-checked:bg-blue-100".to_string(),
+                "has-[:focus]:underline".to_string(),
+                "not-focus:hover:bg-blue-500".to_string(),
+                "not-[:focus]:hover:bg-blue-500".to_string(),
+                "aria-checked:bg-blue-500".to_string(),
+                "aria-[sort=ascending]:underline".to_string(),
+                "data-active:bg-blue-500".to_string(),
+                "data-[state=open]:bg-blue-500".to_string(),
+                "rtl:ml-4".to_string(),
+                "ltr:mr-4".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".group:focus .group-focus\\:text-blue-600"));
+        assert!(result
+            .css
+            .contains(".group\\/item:hover .group-hover\\/item\\:text-blue-600"));
+        assert!(result
+            .css
+            .contains(".group:has(:checked) .group-has-checked\\:underline"));
+        assert!(result.css.contains(
+            ".group[data-state=open] .group-data-\\[state\\=open\\]\\:underline"
+        ));
+        assert!(result.css.contains(
+            ".group[aria-sort=ascending] .group-aria-\\[sort\\=ascending\\]\\:underline"
+        ));
+        assert!(result.css.contains(".peer:checked ~ .peer-checked\\:text-blue-600"));
+        assert!(result.css.contains(".peer:invalid ~ .peer-invalid\\:text-gray-700"));
+        assert!(result
+            .css
+            .contains(".peer\\/draft:checked ~ .peer-checked\\/draft\\:text-blue-600"));
+        assert!(result.css.contains(".peer:has(:checked) ~ .peer-has-checked\\:hidden"));
+        assert!(result.css.contains(
+            ".peer[data-size=large] ~ .peer-data-\\[size\\=large\\]\\:underline"
+        ));
+        assert!(result.css.contains(":where(:focus) .in-focus\\:underline"));
+        assert!(result.css.contains(".has-checked\\:bg-blue-100:has(:checked)"));
+        assert!(result.css.contains(".has-\\[\\:focus\\]\\:underline:has(:focus)"));
+        assert!(result
+            .css
+            .contains(".not-focus\\:hover\\:bg-blue-500:not(:focus):hover"));
+        assert!(result
+            .css
+            .contains(".not-\\[\\:focus\\]\\:hover\\:bg-blue-500:not(:focus):hover"));
+        assert!(result
+            .css
+            .contains(".aria-checked\\:bg-blue-500[aria-checked=\"true\"]"));
+        assert!(result
+            .css
+            .contains(".aria-\\[sort\\=ascending\\]\\:underline[aria-sort=ascending]"));
+        assert!(result
+            .css
+            .contains(".data-active\\:bg-blue-500[data-active]"));
+        assert!(result
+            .css
+            .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]"));
+        assert!(result
+            .css
+            .contains(".rtl\\:ml-4:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)"));
+        assert!(result
+            .css
+            .contains(".ltr\\:mr-4:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)"));
+    }
+
+    #[test]
+    fn generates_extended_pseudo_element_and_wrapper_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "before:bg-blue-500".to_string(),
+                "after:text-blue-600".to_string(),
+                "first-letter:text-blue-600".to_string(),
+                "first-line:uppercase".to_string(),
+                "marker:text-blue-600".to_string(),
+                "selection:bg-blue-100".to_string(),
+                "file:bg-blue-100".to_string(),
+                "backdrop:bg-gray-100".to_string(),
+                "placeholder:text-gray-500".to_string(),
+                "*:underline".to_string(),
+                "**:underline".to_string(),
+                "open:bg-gray-100".to_string(),
+                "inert:bg-gray-100".to_string(),
+                "supports-[display:grid]:grid".to_string(),
+                "not-supports-[display:grid]:flex".to_string(),
+                "supports-backdrop-filter:backdrop-blur-sm".to_string(),
+                "starting:open:bg-gray-100".to_string(),
+                "@md:flex".to_string(),
+                "@max-lg:hidden".to_string(),
+                "min-[900px]:grid".to_string(),
+                "max-[1200px]:hidden".to_string(),
+                "contrast-more:text-gray-900".to_string(),
+                "contrast-less:text-gray-500".to_string(),
+                "forced-colors:appearance-auto".to_string(),
+                "not-forced-colors:appearance-none".to_string(),
+                "inverted-colors:shadow-none".to_string(),
+                "pointer-fine:underline".to_string(),
+                "pointer-coarse:underline".to_string(),
+                "any-pointer-none:underline".to_string(),
+                "portrait:hidden".to_string(),
+                "landscape:block".to_string(),
+                "noscript:block".to_string(),
+                "print:hidden".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".before\\:bg-blue-500:before"));
+        assert!(result.css.contains("content:\"\""));
+        assert!(result.css.contains(".after\\:text-blue-600:after"));
+        assert!(result.css.contains(".first-letter\\:text-blue-600::first-letter"));
+        assert!(result.css.contains(".first-line\\:uppercase::first-line"));
+        assert!(result
+            .css
+            .contains(".marker\\:text-blue-600::marker, .marker\\:text-blue-600 *::marker"));
+        assert!(result.css.contains(
+            ".selection\\:bg-blue-100::selection, .selection\\:bg-blue-100 *::selection"
+        ));
+        assert!(result.css.contains(".file\\:bg-blue-100::file-selector-button"));
+        assert!(result.css.contains(".backdrop\\:bg-gray-100::backdrop"));
+        assert!(result.css.contains(".placeholder\\:text-gray-500::placeholder"));
+        assert!(result.css.contains(":is(.\\*\\:underline > *)"));
+        assert!(result.css.contains(":is(.\\*\\*\\:underline *)"));
+        assert!(result
+            .css
+            .contains(".open\\:bg-gray-100:is([open], :popover-open, :open)"));
+        assert!(result.css.contains(".inert\\:bg-gray-100:is([inert]"));
+        assert!(result.css.contains("@supports (display:grid)"));
+        assert!(result.css.contains("@supports (not (display:grid))"));
+        assert!(result.css.contains("@supports (backdrop-filter: var(--tw))"));
+        assert!(result.css.contains("@starting-style"));
+        assert!(result.css.contains("@container (min-width: 28rem)"));
+        assert!(result.css.contains("@container (max-width: 32rem)"));
+        assert!(result.css.contains("@media (min-width: 900px)"));
+        assert!(result.css.contains("@media (max-width: 1200px)"));
+        assert!(result.css.contains("@media (prefers-contrast: more)"));
+        assert!(result.css.contains("@media (prefers-contrast: less)"));
+        assert!(result.css.contains("@media (forced-colors: active)"));
+        assert!(result.css.contains("@media (not (forced-colors: active))"));
+        assert!(result.css.contains("@media (inverted-colors: inverted)"));
+        assert!(result.css.contains("@media (pointer: fine)"));
+        assert!(result.css.contains("@media (pointer: coarse)"));
+        assert!(result.css.contains("@media (any-pointer: none)"));
+        assert!(result.css.contains("@media (orientation: portrait)"));
+        assert!(result.css.contains("@media (orientation: landscape)"));
+        assert!(result.css.contains("@media (scripting: none)"));
+        assert!(result.css.contains("@media print"));
     }
 
     #[test]
