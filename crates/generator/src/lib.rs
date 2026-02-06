@@ -370,6 +370,16 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_inset_rule(base, config))
             .or_else(|| generate_z_index_rule(base, config))
             .or_else(|| generate_visibility_rule(base, config))
+            .or_else(|| generate_backface_visibility_rule(base, config))
+            .or_else(|| generate_perspective_origin_rule(base, config))
+            .or_else(|| generate_perspective_rule(base, config))
+            .or_else(|| generate_transform_style_rule(base, config))
+            .or_else(|| generate_transform_rule(base, config))
+            .or_else(|| generate_transform_origin_rule(base, config))
+            .or_else(|| generate_translate_rule(base, config))
+            .or_else(|| generate_rotate_rule(base, config))
+            .or_else(|| generate_scale_rule(base, config))
+            .or_else(|| generate_skew_rule(base, config))
             .or_else(|| generate_flex_basis_rule(base, config))
             .or_else(|| generate_flex_shorthand_rule(base, config))
             .or_else(|| generate_flex_grow_rule(base, config))
@@ -4272,6 +4282,817 @@ fn generate_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         "collapse" => rule(&selector, "visibility:collapse", config),
         _ => None,
     }
+}
+
+fn generate_backface_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "backface-hidden" => rule(&selector, "backface-visibility:hidden", config),
+        "backface-visible" => rule(&selector, "backface-visibility:visible", config),
+        _ => None,
+    }
+}
+
+fn generate_perspective_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "perspective-dramatic" => rule(
+            &selector,
+            "perspective:var(--perspective-dramatic)",
+            config,
+        ),
+        "perspective-near" => rule(&selector, "perspective:var(--perspective-near)", config),
+        "perspective-normal" => {
+            rule(&selector, "perspective:var(--perspective-normal)", config)
+        }
+        "perspective-midrange" => {
+            rule(&selector, "perspective:var(--perspective-midrange)", config)
+        }
+        "perspective-distant" => {
+            rule(&selector, "perspective:var(--perspective-distant)", config)
+        }
+        "perspective-none" => rule(&selector, "perspective:none", config),
+        _ => {
+            if let Some(raw) = class
+                .strip_prefix("perspective-(")
+                .and_then(|value| value.strip_suffix(')'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("perspective:var({})", raw), config);
+                }
+            }
+            if let Some(raw) = class
+                .strip_prefix("perspective-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("perspective:{}", raw), config);
+                }
+            }
+            if let Some(raw) = class.strip_prefix("perspective-") {
+                if !raw.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("perspective:var(--perspective-{})", raw),
+                        config,
+                    );
+                }
+            }
+            None
+        }
+    }
+}
+
+fn generate_perspective_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "perspective-origin-center" => rule(&selector, "perspective-origin:center", config),
+        "perspective-origin-top" => rule(&selector, "perspective-origin:top", config),
+        "perspective-origin-top-right" => {
+            rule(&selector, "perspective-origin:top right", config)
+        }
+        "perspective-origin-right" => rule(&selector, "perspective-origin:right", config),
+        "perspective-origin-bottom-right" => {
+            rule(&selector, "perspective-origin:bottom right", config)
+        }
+        "perspective-origin-bottom" => rule(&selector, "perspective-origin:bottom", config),
+        "perspective-origin-bottom-left" => {
+            rule(&selector, "perspective-origin:bottom left", config)
+        }
+        "perspective-origin-left" => rule(&selector, "perspective-origin:left", config),
+        "perspective-origin-top-left" => {
+            rule(&selector, "perspective-origin:top left", config)
+        }
+        _ => {
+            if let Some(raw) = class
+                .strip_prefix("perspective-origin-(")
+                .and_then(|value| value.strip_suffix(')'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("perspective-origin:var({})", raw), config);
+                }
+            }
+            if let Some(raw) = class
+                .strip_prefix("perspective-origin-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("perspective-origin:{}", raw), config);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn generate_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(number) = class.strip_prefix("rotate-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:rotateX({}deg) var(--tw-rotate-y)", number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-rotate-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:rotateX(-{}deg) var(--tw-rotate-y)", number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-x-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:rotateX(var({})) var(--tw-rotate-y)", raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-x-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:rotateX({}) var(--tw-rotate-y)", raw),
+                config,
+            );
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("rotate-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:var(--tw-rotate-x) rotateY({}deg)", number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-rotate-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:var(--tw-rotate-x) rotateY(-{}deg)", number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-y-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:var(--tw-rotate-x) rotateY(var({}))", raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-y-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:var(--tw-rotate-x) rotateY({})", raw),
+                config,
+            );
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("rotate-z-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "transform:var(--tw-rotate-x) var(--tw-rotate-y) rotateZ({}deg)",
+                    number
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-rotate-z-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "transform:var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(-{}deg)",
+                    number
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-z-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "transform:var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(var({}))",
+                    raw
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-z-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "transform:var(--tw-rotate-x) var(--tw-rotate-y) rotateZ({})",
+                    raw
+                ),
+                config,
+            );
+        }
+    }
+
+    if class == "rotate-none" {
+        return rule(&selector, "rotate:none", config);
+    }
+    if let Some(number) = class.strip_prefix("rotate-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("rotate:{}deg", number), config);
+        }
+    }
+    if let Some(number) = class.strip_prefix("-rotate-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("rotate:calc({}deg * -1)", number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("rotate:var({})", raw), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("rotate-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("rotate:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "scale-3d" {
+        return rule(
+            &selector,
+            "scale:var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)",
+            config,
+        );
+    }
+
+    if let Some(number) = class.strip_prefix("scale-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:{}% var(--tw-scale-y)", number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-scale-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:calc({}% * -1) var(--tw-scale-y)", number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-x-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var({}) var(--tw-scale-y)", raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-x-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:{} var(--tw-scale-y)", raw),
+                config,
+            );
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("scale-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) {}%", number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-scale-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) calc({}% * -1)", number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-y-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) var({})", raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-y-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) {}", raw),
+                config,
+            );
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("scale-z-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) var(--tw-scale-y) {}%", number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-scale-z-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!(
+                    "scale:var(--tw-scale-x) var(--tw-scale-y) calc({}% * -1)",
+                    number
+                ),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-z-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) var(--tw-scale-y) var({})", raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-z-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:var(--tw-scale-x) var(--tw-scale-y) {}", raw),
+                config,
+            );
+        }
+    }
+
+    if class == "scale-none" {
+        return rule(&selector, "scale:none", config);
+    }
+    if let Some(number) = class.strip_prefix("scale-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("scale:{}% {}%", number, number), config);
+        }
+    }
+    if let Some(number) = class.strip_prefix("-scale-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("scale:calc({}% * -1) calc({}% * -1)", number, number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("scale:var({}) var({})", raw, raw), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("scale-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("scale:{}", raw), config);
+        }
+    }
+
+    None
+}
+
+fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(number) = class.strip_prefix("skew-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("transform:skewX({}deg)", number), config);
+        }
+    }
+    if let Some(number) = class.strip_prefix("-skew-x-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("transform:skewX(-{}deg)", number), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-x-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("transform:skewX(var({}))", raw), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-x-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("transform:skewX({})", raw), config);
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("skew-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("transform:skewY({}deg)", number), config);
+        }
+    }
+    if let Some(number) = class.strip_prefix("-skew-y-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(&selector, &format!("transform:skewY(-{}deg)", number), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-y-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("transform:skewY(var({}))", raw), config);
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-y-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(&selector, &format!("transform:skewY({})", raw), config);
+        }
+    }
+
+    if let Some(number) = class.strip_prefix("skew-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:skewX({}deg) skewY({}deg)", number, number),
+                config,
+            );
+        }
+    }
+    if let Some(number) = class.strip_prefix("-skew-") {
+        if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:skewX(-{}deg) skewY(-{}deg)", number, number),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:skewX(var({})) skewY(var({}))", raw, raw),
+                config,
+            );
+        }
+    }
+    if let Some(raw) = class
+        .strip_prefix("skew-[")
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if !raw.is_empty() {
+            return rule(
+                &selector,
+                &format!("transform:skewX({}) skewY({})", raw, raw),
+                config,
+            );
+        }
+    }
+
+    None
+}
+
+fn generate_transform_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "transform-none" => rule(&selector, "transform:none", config),
+        "transform-gpu" => rule(
+            &selector,
+            "transform:translateZ(0) var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            config,
+        ),
+        "transform-cpu" => rule(
+            &selector,
+            "transform:var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)",
+            config,
+        ),
+        _ => {
+            if let Some(raw) = class
+                .strip_prefix("transform-(")
+                .and_then(|value| value.strip_suffix(')'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("transform:var({})", raw), config);
+                }
+            }
+            if let Some(raw) = class
+                .strip_prefix("transform-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("transform:{}", raw), config);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn generate_transform_style_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "transform-3d" => rule(&selector, "transform-style:preserve-3d", config),
+        "transform-flat" => rule(&selector, "transform-style:flat", config),
+        _ => None,
+    }
+}
+
+fn generate_transform_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "origin-center" => rule(&selector, "transform-origin:center", config),
+        "origin-top" => rule(&selector, "transform-origin:top", config),
+        "origin-top-right" => rule(&selector, "transform-origin:top right", config),
+        "origin-right" => rule(&selector, "transform-origin:right", config),
+        "origin-bottom-right" => rule(&selector, "transform-origin:bottom right", config),
+        "origin-bottom" => rule(&selector, "transform-origin:bottom", config),
+        "origin-bottom-left" => rule(&selector, "transform-origin:bottom left", config),
+        "origin-left" => rule(&selector, "transform-origin:left", config),
+        "origin-top-left" => rule(&selector, "transform-origin:top left", config),
+        _ => {
+            if let Some(raw) = class
+                .strip_prefix("origin-(")
+                .and_then(|value| value.strip_suffix(')'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("transform-origin:var({})", raw), config);
+                }
+            }
+            if let Some(raw) = class
+                .strip_prefix("origin-[")
+                .and_then(|value| value.strip_suffix(']'))
+            {
+                if !raw.is_empty() {
+                    return rule(&selector, &format!("transform-origin:{}", raw), config);
+                }
+            }
+            None
+        }
+    }
+}
+
+fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "translate-none" {
+        return rule(&selector, "translate:none", config);
+    }
+
+    let (negative, raw) = if let Some(rest) = class.strip_prefix('-') {
+        (true, rest)
+    } else {
+        (false, class)
+    };
+
+    if let Some(token) = raw.strip_prefix("translate-x-") {
+        if !negative {
+            if let Some(custom) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("translate:var({}) var(--tw-translate-y)", custom),
+                        config,
+                    );
+                }
+            }
+            if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("translate:{} var(--tw-translate-y)", custom),
+                        config,
+                    );
+                }
+            }
+        }
+        let value = parse_translate_value(token, negative, true, true)?;
+        return rule(
+            &selector,
+            &format!("translate:{} var(--tw-translate-y)", value),
+            config,
+        );
+    }
+
+    if let Some(token) = raw.strip_prefix("translate-y-") {
+        if !negative {
+            if let Some(custom) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("translate:var(--tw-translate-x) var({})", custom),
+                        config,
+                    );
+                }
+            }
+            if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("translate:var(--tw-translate-x) {}", custom),
+                        config,
+                    );
+                }
+            }
+        }
+        let value = parse_translate_value(token, negative, true, true)?;
+        return rule(
+            &selector,
+            &format!("translate:var(--tw-translate-x) {}", value),
+            config,
+        );
+    }
+
+    if let Some(token) = raw.strip_prefix("translate-z-") {
+        if !negative {
+            if let Some(custom) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!(
+                            "translate:var(--tw-translate-x) var(--tw-translate-y) var({})",
+                            custom
+                        ),
+                        config,
+                    );
+                }
+            }
+            if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!(
+                            "translate:var(--tw-translate-x) var(--tw-translate-y) {}",
+                            custom
+                        ),
+                        config,
+                    );
+                }
+            }
+        }
+        let value = parse_translate_value(token, negative, false, false)?;
+        return rule(
+            &selector,
+            &format!("translate:var(--tw-translate-x) var(--tw-translate-y) {}", value),
+            config,
+        );
+    }
+
+    if let Some(token) = raw.strip_prefix("translate-") {
+        if !negative {
+            if let Some(custom) = token.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+                if !custom.is_empty() {
+                    return rule(
+                        &selector,
+                        &format!("translate:var({}) var({})", custom, custom),
+                        config,
+                    );
+                }
+            }
+            if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+                if !custom.is_empty() {
+                    return rule(&selector, &format!("translate:{} {}", custom, custom), config);
+                }
+            }
+        }
+        let value = parse_translate_value(token, negative, true, true)?;
+        return rule(&selector, &format!("translate:{} {}", value, value), config);
+    }
+
+    None
+}
+
+fn parse_translate_value(
+    token: &str,
+    negative: bool,
+    allow_fraction: bool,
+    allow_full: bool,
+) -> Option<String> {
+    if token == "px" {
+        return Some(if negative {
+            "-1px".to_string()
+        } else {
+            "1px".to_string()
+        });
+    }
+    if allow_full && token == "full" {
+        return Some(if negative {
+            "-100%".to_string()
+        } else {
+            "100%".to_string()
+        });
+    }
+    if token.chars().all(|c| c.is_ascii_digit()) && !token.is_empty() {
+        return Some(if negative {
+            format!("calc(var(--spacing) * -{})", token)
+        } else {
+            format!("calc(var(--spacing) * {})", token)
+        });
+    }
+    if allow_fraction && is_fraction(token) {
+        return Some(if negative {
+            format!("calc({} * -100%)", token)
+        } else {
+            format!("calc({} * 100%)", token)
+        });
+    }
+    None
 }
 
 fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -10316,6 +11137,605 @@ mod tests {
         assert!(result.css.contains("visibility: collapse"));
         assert!(result.css.contains("@media (min-width: 768px)"));
         assert!(result.css.contains(".md\\:invisible"));
+    }
+
+    #[test]
+    fn generates_backface_visibility_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "backface-hidden".to_string(),
+                "backface-visible".to_string(),
+                "md:backface-hidden".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".backface-hidden"));
+        assert!(result.css.contains("backface-visibility: hidden"));
+        assert!(result.css.contains(".backface-visible"));
+        assert!(result.css.contains("backface-visibility: visible"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:backface-hidden"));
+    }
+
+    #[test]
+    fn generates_perspective_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "perspective-dramatic".to_string(),
+                "perspective-near".to_string(),
+                "perspective-normal".to_string(),
+                "perspective-midrange".to_string(),
+                "perspective-distant".to_string(),
+                "perspective-none".to_string(),
+                "perspective-(--my-perspective)".to_string(),
+                "perspective-[750px]".to_string(),
+                "perspective-remote".to_string(),
+                "md:perspective-dramatic".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".perspective-dramatic"));
+        assert!(result.css.contains("perspective: var(--perspective-dramatic)"));
+        assert!(result.css.contains(".perspective-near"));
+        assert!(result.css.contains("perspective: var(--perspective-near)"));
+        assert!(result.css.contains(".perspective-normal"));
+        assert!(result.css.contains("perspective: var(--perspective-normal)"));
+        assert!(result.css.contains(".perspective-midrange"));
+        assert!(result.css.contains("perspective: var(--perspective-midrange)"));
+        assert!(result.css.contains(".perspective-distant"));
+        assert!(result.css.contains("perspective: var(--perspective-distant)"));
+        assert!(result.css.contains(".perspective-none"));
+        assert!(result.css.contains("perspective: none"));
+        assert!(result.css.contains(".perspective-\\(--my-perspective\\)"));
+        assert!(result.css.contains("perspective: var(--my-perspective)"));
+        assert!(result.css.contains(".perspective-\\[750px\\]"));
+        assert!(result.css.contains("perspective: 750px"));
+        assert!(result.css.contains(".perspective-remote"));
+        assert!(result.css.contains("perspective: var(--perspective-remote)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:perspective-dramatic"));
+    }
+
+    #[test]
+    fn generates_perspective_origin_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "perspective-origin-center".to_string(),
+                "perspective-origin-top".to_string(),
+                "perspective-origin-top-right".to_string(),
+                "perspective-origin-right".to_string(),
+                "perspective-origin-bottom-right".to_string(),
+                "perspective-origin-bottom".to_string(),
+                "perspective-origin-bottom-left".to_string(),
+                "perspective-origin-left".to_string(),
+                "perspective-origin-top-left".to_string(),
+                "perspective-origin-(--my-perspective-origin)".to_string(),
+                "perspective-origin-[200%_150%]".to_string(),
+                "md:perspective-origin-bottom-left".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".perspective-origin-center"));
+        assert!(result.css.contains("perspective-origin: center"));
+        assert!(result.css.contains(".perspective-origin-top"));
+        assert!(result.css.contains("perspective-origin: top"));
+        assert!(result.css.contains(".perspective-origin-top-right"));
+        assert!(result.css.contains("perspective-origin: top right"));
+        assert!(result.css.contains(".perspective-origin-right"));
+        assert!(result.css.contains("perspective-origin: right"));
+        assert!(result.css.contains(".perspective-origin-bottom-right"));
+        assert!(result.css.contains("perspective-origin: bottom right"));
+        assert!(result.css.contains(".perspective-origin-bottom"));
+        assert!(result.css.contains("perspective-origin: bottom"));
+        assert!(result.css.contains(".perspective-origin-bottom-left"));
+        assert!(result.css.contains("perspective-origin: bottom left"));
+        assert!(result.css.contains(".perspective-origin-left"));
+        assert!(result.css.contains("perspective-origin: left"));
+        assert!(result.css.contains(".perspective-origin-top-left"));
+        assert!(result.css.contains("perspective-origin: top left"));
+        assert!(result
+            .css
+            .contains(".perspective-origin-\\(--my-perspective-origin\\)"));
+        assert!(result.css.contains("perspective-origin: var(--my-perspective-origin)"));
+        assert!(result.css.contains(".perspective-origin-\\[200\\%_150\\%\\]"));
+        assert!(result.css.contains("perspective-origin: 200%_150%"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:perspective-origin-bottom-left"));
+    }
+
+    #[test]
+    fn generates_rotate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "rotate-none".to_string(),
+                "rotate-45".to_string(),
+                "-rotate-90".to_string(),
+                "rotate-(--my-rotation)".to_string(),
+                "rotate-[3.142rad]".to_string(),
+                "rotate-x-50".to_string(),
+                "-rotate-x-15".to_string(),
+                "rotate-x-(--my-rotate-x)".to_string(),
+                "rotate-x-[25deg]".to_string(),
+                "rotate-y-25".to_string(),
+                "-rotate-y-30".to_string(),
+                "rotate-y-(--my-rotate-y)".to_string(),
+                "rotate-y-[0.5turn]".to_string(),
+                "rotate-z-45".to_string(),
+                "-rotate-z-60".to_string(),
+                "rotate-z-(--my-rotate-z)".to_string(),
+                "rotate-z-[1.25rad]".to_string(),
+                "md:rotate-60".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".rotate-none"));
+        assert!(result.css.contains("rotate: none"));
+        assert!(result.css.contains(".rotate-45"));
+        assert!(result.css.contains("rotate: 45deg"));
+        assert!(result.css.contains(".-rotate-90"));
+        assert!(result.css.contains("rotate: calc(90deg * -1)"));
+        assert!(result.css.contains(".rotate-\\(--my-rotation\\)"));
+        assert!(result.css.contains("rotate: var(--my-rotation)"));
+        assert!(result.css.contains(".rotate-\\[3.142rad\\]"));
+        assert!(result.css.contains("rotate: 3.142rad"));
+
+        assert!(result.css.contains(".rotate-x-50"));
+        assert!(result.css.contains("transform: rotateX(50deg) var(--tw-rotate-y)"));
+        assert!(result.css.contains(".-rotate-x-15"));
+        assert!(result.css.contains("transform: rotateX(-15deg) var(--tw-rotate-y)"));
+        assert!(result.css.contains(".rotate-x-\\(--my-rotate-x\\)"));
+        assert!(result
+            .css
+            .contains("transform: rotateX(var(--my-rotate-x)) var(--tw-rotate-y)"));
+        assert!(result.css.contains(".rotate-x-\\[25deg\\]"));
+        assert!(result.css.contains("transform: rotateX(25deg) var(--tw-rotate-y)"));
+
+        assert!(result.css.contains(".rotate-y-25"));
+        assert!(result.css.contains("transform: var(--tw-rotate-x) rotateY(25deg)"));
+        assert!(result.css.contains(".-rotate-y-30"));
+        assert!(result.css.contains("transform: var(--tw-rotate-x) rotateY(-30deg)"));
+        assert!(result.css.contains(".rotate-y-\\(--my-rotate-y\\)"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) rotateY(var(--my-rotate-y))"));
+        assert!(result.css.contains(".rotate-y-\\[0.5turn\\]"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) rotateY(0.5turn)"));
+
+        assert!(result.css.contains(".rotate-z-45"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(45deg)"));
+        assert!(result.css.contains(".-rotate-z-60"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(-60deg)"));
+        assert!(result.css.contains(".rotate-z-\\(--my-rotate-z\\)"));
+        assert!(result.css.contains(
+            "transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(var(--my-rotate-z))"
+        ));
+        assert!(result.css.contains(".rotate-z-\\[1.25rad\\]"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(1.25rad)"));
+
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:rotate-60"));
+        assert!(result.css.contains("rotate: 60deg"));
+    }
+
+    #[test]
+    fn generates_scale_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "scale-none".to_string(),
+                "scale-75".to_string(),
+                "-scale-125".to_string(),
+                "scale-(--my-scale)".to_string(),
+                "scale-[1.7]".to_string(),
+                "scale-x-75".to_string(),
+                "-scale-x-150".to_string(),
+                "scale-x-(--my-scale-x)".to_string(),
+                "scale-x-[1.2]".to_string(),
+                "scale-y-125".to_string(),
+                "-scale-y-90".to_string(),
+                "scale-y-(--my-scale-y)".to_string(),
+                "scale-y-[1.3]".to_string(),
+                "scale-z-110".to_string(),
+                "-scale-z-80".to_string(),
+                "scale-z-(--my-scale-z)".to_string(),
+                "scale-z-[0.8]".to_string(),
+                "scale-3d".to_string(),
+                "hover:scale-120".to_string(),
+                "md:scale-150".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".scale-none"));
+        assert!(result.css.contains("scale: none"));
+        assert!(result.css.contains(".scale-75"));
+        assert!(result.css.contains("scale: 75% 75%"));
+        assert!(result.css.contains(".-scale-125"));
+        assert!(result.css.contains("scale: calc(125% * -1) calc(125% * -1)"));
+        assert!(result.css.contains(".scale-\\(--my-scale\\)"));
+        assert!(result.css.contains("scale: var(--my-scale) var(--my-scale)"));
+        assert!(result.css.contains(".scale-\\[1.7\\]"));
+        assert!(result.css.contains("scale: 1.7"));
+
+        assert!(result.css.contains(".scale-x-75"));
+        assert!(result.css.contains("scale: 75% var(--tw-scale-y)"));
+        assert!(result.css.contains(".-scale-x-150"));
+        assert!(result.css.contains("scale: calc(150% * -1) var(--tw-scale-y)"));
+        assert!(result.css.contains(".scale-x-\\(--my-scale-x\\)"));
+        assert!(result.css.contains("scale: var(--my-scale-x) var(--tw-scale-y)"));
+        assert!(result.css.contains(".scale-x-\\[1.2\\]"));
+        assert!(result.css.contains("scale: 1.2 var(--tw-scale-y)"));
+
+        assert!(result.css.contains(".scale-y-125"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) 125%"));
+        assert!(result.css.contains(".-scale-y-90"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) calc(90% * -1)"));
+        assert!(result.css.contains(".scale-y-\\(--my-scale-y\\)"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) var(--my-scale-y)"));
+        assert!(result.css.contains(".scale-y-\\[1.3\\]"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) 1.3"));
+
+        assert!(result.css.contains(".scale-z-110"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y) 110%"));
+        assert!(result.css.contains(".-scale-z-80"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--tw-scale-y) calc(80% * -1)"));
+        assert!(result.css.contains(".scale-z-\\(--my-scale-z\\)"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--tw-scale-y) var(--my-scale-z)"));
+        assert!(result.css.contains(".scale-z-\\[0.8\\]"));
+        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y) 0.8"));
+        assert!(result.css.contains(".scale-3d"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)"));
+
+        assert!(result.css.contains(".hover\\:scale-120:hover"));
+        assert!(result.css.contains("scale: 120% 120%"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:scale-150"));
+        assert!(result.css.contains("scale: 150% 150%"));
+    }
+
+    #[test]
+    fn generates_skew_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "skew-3".to_string(),
+                "-skew-12".to_string(),
+                "skew-(--my-skew)".to_string(),
+                "skew-[3.142rad]".to_string(),
+                "skew-x-6".to_string(),
+                "-skew-x-10".to_string(),
+                "skew-x-(--my-skew-x)".to_string(),
+                "skew-x-[25deg]".to_string(),
+                "skew-y-6".to_string(),
+                "-skew-y-10".to_string(),
+                "skew-y-(--my-skew-y)".to_string(),
+                "skew-y-[0.25turn]".to_string(),
+                "md:skew-12".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".skew-3"));
+        assert!(result.css.contains("transform: skewX(3deg) skewY(3deg)"));
+        assert!(result.css.contains(".-skew-12"));
+        assert!(result.css.contains("transform: skewX(-12deg) skewY(-12deg)"));
+        assert!(result.css.contains(".skew-\\(--my-skew\\)"));
+        assert!(result
+            .css
+            .contains("transform: skewX(var(--my-skew)) skewY(var(--my-skew))"));
+        assert!(result.css.contains(".skew-\\[3.142rad\\]"));
+        assert!(result
+            .css
+            .contains("transform: skewX(3.142rad) skewY(3.142rad)"));
+
+        assert!(result.css.contains(".skew-x-6"));
+        assert!(result.css.contains("transform: skewX(6deg)"));
+        assert!(result.css.contains(".-skew-x-10"));
+        assert!(result.css.contains("transform: skewX(-10deg)"));
+        assert!(result.css.contains(".skew-x-\\(--my-skew-x\\)"));
+        assert!(result.css.contains("transform: skewX(var(--my-skew-x))"));
+        assert!(result.css.contains(".skew-x-\\[25deg\\]"));
+        assert!(result.css.contains("transform: skewX(25deg)"));
+
+        assert!(result.css.contains(".skew-y-6"));
+        assert!(result.css.contains("transform: skewY(6deg)"));
+        assert!(result.css.contains(".-skew-y-10"));
+        assert!(result.css.contains("transform: skewY(-10deg)"));
+        assert!(result.css.contains(".skew-y-\\(--my-skew-y\\)"));
+        assert!(result.css.contains("transform: skewY(var(--my-skew-y))"));
+        assert!(result.css.contains(".skew-y-\\[0.25turn\\]"));
+        assert!(result.css.contains("transform: skewY(0.25turn)"));
+
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:skew-12"));
+        assert!(result.css.contains("transform: skewX(12deg) skewY(12deg)"));
+    }
+
+    #[test]
+    fn generates_transform_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "transform-none".to_string(),
+                "transform-gpu".to_string(),
+                "transform-cpu".to_string(),
+                "transform-(--my-transform)".to_string(),
+                "transform-[matrix(1,2,3,4,5,6)]".to_string(),
+                "md:transform-none".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".transform-none"));
+        assert!(result.css.contains("transform: none"));
+        assert!(result.css.contains(".transform-gpu"));
+        assert!(result.css.contains(
+            "transform: translateZ(0) var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+        ));
+        assert!(result.css.contains(".transform-cpu"));
+        assert!(result.css.contains(
+            "transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y)"
+        ));
+        assert!(result.css.contains(".transform-\\(--my-transform\\)"));
+        assert!(result.css.contains("transform: var(--my-transform)"));
+        assert!(result
+            .css
+            .contains(".transform-\\[matrix\\(1\\,2\\,3\\,4\\,5\\,6\\)\\]"));
+        assert!(result.css.contains("transform: matrix(1,2,3,4,5,6)"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:transform-none"));
+    }
+
+    #[test]
+    fn generates_transform_style_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "transform-3d".to_string(),
+                "transform-flat".to_string(),
+                "md:transform-flat".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".transform-3d"));
+        assert!(result.css.contains("transform-style: preserve-3d"));
+        assert!(result.css.contains(".transform-flat"));
+        assert!(result.css.contains("transform-style: flat"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:transform-flat"));
+    }
+
+    #[test]
+    fn generates_transform_origin_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "origin-center".to_string(),
+                "origin-top".to_string(),
+                "origin-top-right".to_string(),
+                "origin-right".to_string(),
+                "origin-bottom-right".to_string(),
+                "origin-bottom".to_string(),
+                "origin-bottom-left".to_string(),
+                "origin-left".to_string(),
+                "origin-top-left".to_string(),
+                "origin-(--my-transform-origin)".to_string(),
+                "origin-[33%_75%]".to_string(),
+                "md:origin-top".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".origin-center"));
+        assert!(result.css.contains("transform-origin: center"));
+        assert!(result.css.contains(".origin-top"));
+        assert!(result.css.contains("transform-origin: top"));
+        assert!(result.css.contains(".origin-top-right"));
+        assert!(result.css.contains("transform-origin: top right"));
+        assert!(result.css.contains(".origin-right"));
+        assert!(result.css.contains("transform-origin: right"));
+        assert!(result.css.contains(".origin-bottom-right"));
+        assert!(result.css.contains("transform-origin: bottom right"));
+        assert!(result.css.contains(".origin-bottom"));
+        assert!(result.css.contains("transform-origin: bottom"));
+        assert!(result.css.contains(".origin-bottom-left"));
+        assert!(result.css.contains("transform-origin: bottom left"));
+        assert!(result.css.contains(".origin-left"));
+        assert!(result.css.contains("transform-origin: left"));
+        assert!(result.css.contains(".origin-top-left"));
+        assert!(result.css.contains("transform-origin: top left"));
+        assert!(result.css.contains(".origin-\\(--my-transform-origin\\)"));
+        assert!(result.css.contains("transform-origin: var(--my-transform-origin)"));
+        assert!(result.css.contains(".origin-\\[33\\%_75\\%\\]"));
+        assert!(result.css.contains("transform-origin: 33%_75%"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:origin-top"));
+    }
+
+    #[test]
+    fn generates_translate_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "translate-none".to_string(),
+                "translate-2".to_string(),
+                "-translate-4".to_string(),
+                "translate-1/2".to_string(),
+                "-translate-1/4".to_string(),
+                "translate-full".to_string(),
+                "-translate-full".to_string(),
+                "translate-px".to_string(),
+                "-translate-px".to_string(),
+                "translate-(--my-translate)".to_string(),
+                "translate-[3.142rad]".to_string(),
+                "translate-x-3".to_string(),
+                "-translate-x-6".to_string(),
+                "translate-x-1/2".to_string(),
+                "-translate-x-1/4".to_string(),
+                "translate-x-full".to_string(),
+                "-translate-x-full".to_string(),
+                "translate-x-px".to_string(),
+                "-translate-x-px".to_string(),
+                "translate-x-(--my-translate-x)".to_string(),
+                "translate-x-[4px]".to_string(),
+                "translate-y-8".to_string(),
+                "-translate-y-2".to_string(),
+                "translate-y-1/3".to_string(),
+                "-translate-y-1/2".to_string(),
+                "translate-y-full".to_string(),
+                "-translate-y-full".to_string(),
+                "translate-y-px".to_string(),
+                "-translate-y-px".to_string(),
+                "translate-y-(--my-translate-y)".to_string(),
+                "translate-y-[5px]".to_string(),
+                "translate-z-12".to_string(),
+                "-translate-z-8".to_string(),
+                "translate-z-px".to_string(),
+                "-translate-z-px".to_string(),
+                "translate-z-(--my-translate-z)".to_string(),
+                "translate-z-[2rem]".to_string(),
+                "md:translate-6".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".translate-none"));
+        assert!(result.css.contains("translate: none"));
+        assert!(result.css.contains(".translate-2"));
+        assert!(result.css.contains("translate: calc(var(--spacing) * 2) calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".-translate-4"));
+        assert!(result.css.contains("translate: calc(var(--spacing) * -4) calc(var(--spacing) * -4)"));
+        assert!(result.css.contains(".translate-1\\/2"));
+        assert!(result.css.contains("translate: calc(1/2 * 100%) calc(1/2 * 100%)"));
+        assert!(result.css.contains(".-translate-1\\/4"));
+        assert!(result.css.contains("translate: calc(1/4 * -100%) calc(1/4 * -100%)"));
+        assert!(result.css.contains(".translate-full"));
+        assert!(result.css.contains("translate: 100% 100%"));
+        assert!(result.css.contains(".-translate-full"));
+        assert!(result.css.contains("translate: -100% -100%"));
+        assert!(result.css.contains(".translate-px"));
+        assert!(result.css.contains("translate: 1px 1px"));
+        assert!(result.css.contains(".-translate-px"));
+        assert!(result.css.contains("translate: -1px -1px"));
+        assert!(result.css.contains(".translate-\\(--my-translate\\)"));
+        assert!(result.css.contains("translate: var(--my-translate) var(--my-translate)"));
+        assert!(result.css.contains(".translate-\\[3.142rad\\]"));
+        assert!(result.css.contains("translate: 3.142rad 3.142rad"));
+
+        assert!(result.css.contains(".translate-x-3"));
+        assert!(result.css.contains("translate: calc(var(--spacing) * 3) var(--tw-translate-y)"));
+        assert!(result.css.contains(".-translate-x-6"));
+        assert!(result.css.contains("translate: calc(var(--spacing) * -6) var(--tw-translate-y)"));
+        assert!(result.css.contains(".translate-x-1\\/2"));
+        assert!(result.css.contains("translate: calc(1/2 * 100%) var(--tw-translate-y)"));
+        assert!(result.css.contains(".-translate-x-1\\/4"));
+        assert!(result.css.contains("translate: calc(1/4 * -100%) var(--tw-translate-y)"));
+        assert!(result.css.contains(".translate-x-full"));
+        assert!(result.css.contains("translate: 100% var(--tw-translate-y)"));
+        assert!(result.css.contains(".-translate-x-full"));
+        assert!(result.css.contains("translate: -100% var(--tw-translate-y)"));
+        assert!(result.css.contains(".translate-x-px"));
+        assert!(result.css.contains("translate: 1px var(--tw-translate-y)"));
+        assert!(result.css.contains(".-translate-x-px"));
+        assert!(result.css.contains("translate: -1px var(--tw-translate-y)"));
+        assert!(result.css.contains(".translate-x-\\(--my-translate-x\\)"));
+        assert!(result.css.contains("translate: var(--my-translate-x) var(--tw-translate-y)"));
+        assert!(result.css.contains(".translate-x-\\[4px\\]"));
+        assert!(result.css.contains("translate: 4px var(--tw-translate-y)"));
+
+        assert!(result.css.contains(".translate-y-8"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) calc(var(--spacing) * 8)"));
+        assert!(result.css.contains(".-translate-y-2"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) calc(var(--spacing) * -2)"));
+        assert!(result.css.contains(".translate-y-1\\/3"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) calc(1/3 * 100%)"));
+        assert!(result.css.contains(".-translate-y-1\\/2"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) calc(1/2 * -100%)"));
+        assert!(result.css.contains(".translate-y-full"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) 100%"));
+        assert!(result.css.contains(".-translate-y-full"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) -100%"));
+        assert!(result.css.contains(".translate-y-px"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) 1px"));
+        assert!(result.css.contains(".-translate-y-px"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) -1px"));
+        assert!(result.css.contains(".translate-y-\\(--my-translate-y\\)"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) var(--my-translate-y)"));
+        assert!(result.css.contains(".translate-y-\\[5px\\]"));
+        assert!(result.css.contains("translate: var(--tw-translate-x) 5px"));
+
+        assert!(result.css.contains(".translate-z-12"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * 12)"));
+        assert!(result.css.contains(".-translate-z-8"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * -8)"));
+        assert!(result.css.contains(".translate-z-px"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) 1px"));
+        assert!(result.css.contains(".-translate-z-px"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) -1px"));
+        assert!(result.css.contains(".translate-z-\\(--my-translate-z\\)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) var(--my-translate-z)"));
+        assert!(result.css.contains(".translate-z-\\[2rem\\]"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) 2rem"));
+
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:translate-6"));
+        assert!(result.css.contains("translate: calc(var(--spacing) * 6) calc(var(--spacing) * 6)"));
     }
 
     #[test]
