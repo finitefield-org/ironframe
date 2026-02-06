@@ -172,7 +172,11 @@ pub fn emit_css(result: &GenerationResult) -> String {
     result.css.clone()
 }
 
-fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &VariantTables) -> Option<String> {
+fn generate_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let (variants, base_with_modifier) = parse_variants(class);
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
     let rule = generate_color_rule(base, config).or_else(|| match base {
@@ -201,7 +205,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         "ordinal" => rule(".ordinal", "font-variant-numeric:ordinal", config),
         "slashed-zero" => rule(".slashed-zero", "font-variant-numeric:slashed-zero", config),
         "lining-nums" => rule(".lining-nums", "font-variant-numeric:lining-nums", config),
-        "oldstyle-nums" => rule(".oldstyle-nums", "font-variant-numeric:oldstyle-nums", config),
+        "oldstyle-nums" => rule(
+            ".oldstyle-nums",
+            "font-variant-numeric:oldstyle-nums",
+            config,
+        ),
         "proportional-nums" => rule(
             ".proportional-nums",
             "font-variant-numeric:proportional-nums",
@@ -251,9 +259,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         "whitespace-pre" => rule(".whitespace-pre", "white-space:pre", config),
         "whitespace-pre-line" => rule(".whitespace-pre-line", "white-space:pre-line", config),
         "whitespace-pre-wrap" => rule(".whitespace-pre-wrap", "white-space:pre-wrap", config),
-        "whitespace-break-spaces" => {
-            rule(".whitespace-break-spaces", "white-space:break-spaces", config)
-        }
+        "whitespace-break-spaces" => rule(
+            ".whitespace-break-spaces",
+            "white-space:break-spaces",
+            config,
+        ),
         "break-normal" => rule(".break-normal", "word-break:normal", config),
         "break-all" => rule(".break-all", "word-break:break-all", config),
         "break-keep" => rule(".break-keep", "word-break:keep-all", config),
@@ -269,19 +279,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         "line-through" => rule(".line-through", "text-decoration-line:line-through", config),
         "no-underline" => rule(".no-underline", "text-decoration-line:none", config),
         "decoration-solid" => rule(".decoration-solid", "text-decoration-style:solid", config),
-        "decoration-double" => {
-            rule(".decoration-double", "text-decoration-style:double", config)
-        }
-        "decoration-dotted" => {
-            rule(".decoration-dotted", "text-decoration-style:dotted", config)
-        }
-        "decoration-dashed" => {
-            rule(".decoration-dashed", "text-decoration-style:dashed", config)
-        }
+        "decoration-double" => rule(".decoration-double", "text-decoration-style:double", config),
+        "decoration-dotted" => rule(".decoration-dotted", "text-decoration-style:dotted", config),
+        "decoration-dashed" => rule(".decoration-dashed", "text-decoration-style:dashed", config),
         "decoration-wavy" => rule(".decoration-wavy", "text-decoration-style:wavy", config),
-        "decoration-auto" => {
-            rule(".decoration-auto", "text-decoration-thickness:auto", config)
-        }
+        "decoration-auto" => rule(".decoration-auto", "text-decoration-thickness:auto", config),
         "decoration-from-font" => rule(
             ".decoration-from-font",
             "text-decoration-thickness:from-font",
@@ -351,10 +353,26 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         ),
         "shadow-none" => rule(".shadow-none", "box-shadow:none", config),
         "ring-0" => rule(".ring-0", "box-shadow:0 0 0 0 rgba(59,130,246,0.5)", config),
-        "ring-1" => rule(".ring-1", "box-shadow:0 0 0 1px rgba(59,130,246,0.5)", config),
-        "ring-2" => rule(".ring-2", "box-shadow:0 0 0 2px rgba(59,130,246,0.5)", config),
-        "ring-4" => rule(".ring-4", "box-shadow:0 0 0 4px rgba(59,130,246,0.5)", config),
-        "ring-8" => rule(".ring-8", "box-shadow:0 0 0 8px rgba(59,130,246,0.5)", config),
+        "ring-1" => rule(
+            ".ring-1",
+            "box-shadow:0 0 0 1px rgba(59,130,246,0.5)",
+            config,
+        ),
+        "ring-2" => rule(
+            ".ring-2",
+            "box-shadow:0 0 0 2px rgba(59,130,246,0.5)",
+            config,
+        ),
+        "ring-4" => rule(
+            ".ring-4",
+            "box-shadow:0 0 0 4px rgba(59,130,246,0.5)",
+            config,
+        ),
+        "ring-8" => rule(
+            ".ring-8",
+            "box-shadow:0 0 0 8px rgba(59,130,246,0.5)",
+            config,
+        ),
         "ring" => rule(".ring", "box-shadow:0 0 0 3px rgba(59,130,246,0.5)", config),
         "bg-fixed" => rule(".bg-fixed", "background-attachment:fixed", config),
         "bg-local" => rule(".bg-local", "background-attachment:local", config),
@@ -364,12 +382,16 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         "bg-clip-content" => rule(".bg-clip-content", "background-clip:content-box", config),
         "bg-clip-text" => rule(".bg-clip-text", "background-clip:text", config),
         "bg-origin-border" => rule(".bg-origin-border", "background-origin:border-box", config),
-        "bg-origin-padding" => {
-            rule(".bg-origin-padding", "background-origin:padding-box", config)
-        }
-        "bg-origin-content" => {
-            rule(".bg-origin-content", "background-origin:content-box", config)
-        }
+        "bg-origin-padding" => rule(
+            ".bg-origin-padding",
+            "background-origin:padding-box",
+            config,
+        ),
+        "bg-origin-content" => rule(
+            ".bg-origin-content",
+            "background-origin:content-box",
+            config,
+        ),
         "bg-top-left" => rule(".bg-top-left", "background-position:top left", config),
         "bg-top" => rule(".bg-top", "background-position:top", config),
         "bg-top-right" => rule(".bg-top-right", "background-position:top right", config),
@@ -378,9 +400,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
         "bg-right" => rule(".bg-right", "background-position:right", config),
         "bg-bottom-left" => rule(".bg-bottom-left", "background-position:bottom left", config),
         "bg-bottom" => rule(".bg-bottom", "background-position:bottom", config),
-        "bg-bottom-right" => {
-            rule(".bg-bottom-right", "background-position:bottom right", config)
-        }
+        "bg-bottom-right" => rule(
+            ".bg-bottom-right",
+            "background-position:bottom right",
+            config,
+        ),
         "bg-repeat" => rule(".bg-repeat", "background-repeat:repeat", config),
         "bg-repeat-x" => rule(".bg-repeat-x", "background-repeat:repeat-x", config),
         "bg-repeat-y" => rule(".bg-repeat-y", "background-repeat:repeat-y", config),
@@ -554,14 +578,7 @@ fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &Variant
             .or_else(|| generate_layout_rule(base, config, variant_tables)),
     });
 
-    let generated = apply_variants(
-        &variants,
-        class,
-        base,
-        rule,
-        config.minify,
-        variant_tables,
-    )?;
+    let generated = apply_variants(&variants, class, base, rule, config.minify, variant_tables)?;
     if important_modifier {
         let important = add_important_to_rule(&generated, config.minify)?;
         if !rule_allowed_by_theme(base, &important, variant_tables) {
@@ -586,12 +603,12 @@ fn rule_allowed_by_theme(base_class: &str, rule: &str, tables: &VariantTables) -
         }
     }
 
-    if class_looks_like_color_utility(base_class) {
+    if rule_looks_like_color_utility(rule) {
         let namespace_disabled = tables.disabled_namespaces.contains("color");
-        if tables.global_theme_reset || namespace_disabled {
-            if !color_utility_token_is_declared(base_class, &tables.declared_theme_vars) {
-                return false;
-            }
+        if (tables.global_theme_reset || namespace_disabled)
+            && !color_utility_token_is_declared(base_class, &tables.declared_theme_vars)
+        {
+            return false;
         }
     }
 
@@ -661,6 +678,7 @@ fn theme_variable_namespace(variable: &str) -> Option<&str> {
         "shadow",
         "inset-shadow",
         "drop-shadow",
+        "text-shadow",
         "blur",
         "perspective",
         "aspect",
@@ -675,23 +693,30 @@ fn theme_variable_namespace(variable: &str) -> Option<&str> {
     None
 }
 
-fn class_looks_like_color_utility(base_class: &str) -> bool {
+fn rule_looks_like_color_utility(rule: &str) -> bool {
     [
-        "text-",
-        "bg-",
-        "border-",
-        "outline-",
-        "decoration-",
-        "accent-",
-        "caret-",
-        "fill-",
-        "stroke-",
-        "from-",
-        "via-",
-        "to-",
+        "color:",
+        "background-color:",
+        "border-color:",
+        "border-top-color:",
+        "border-right-color:",
+        "border-bottom-color:",
+        "border-left-color:",
+        "border-inline-color:",
+        "border-inline-start-color:",
+        "border-inline-end-color:",
+        "outline-color:",
+        "text-decoration-color:",
+        "accent-color:",
+        "caret-color:",
+        "fill:",
+        "stroke:",
+        "--tw-gradient-from:",
+        "--tw-gradient-via:",
+        "--tw-gradient-to:",
     ]
     .iter()
-    .any(|prefix| base_class.starts_with(prefix))
+    .any(|property| rule.contains(property))
 }
 
 fn color_utility_token_is_declared(base_class: &str, declared: &BTreeSet<String>) -> bool {
@@ -708,14 +733,20 @@ fn color_utility_token_is_declared(base_class: &str, declared: &BTreeSet<String>
 fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
-    if let Some(raw) = class.strip_prefix("text-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("text-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.starts_with("length:") {
             return None;
         }
         return rule(&selector, &format!("color:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("text-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("text-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if is_color_like_value(raw) {
             return rule(&selector, &format!("color:{}", raw), config);
         }
@@ -731,14 +762,20 @@ fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String>
         return rule(&selector, "filter:none", config);
     }
 
-    if let Some(raw) = class.strip_prefix("filter-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("filter-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if raw.is_empty() {
             return None;
         }
         return rule(&selector, &format!("filter:{}", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("filter-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("filter-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -771,7 +808,12 @@ fn composed_filter_rule(
     config: &GeneratorConfig,
 ) -> Option<String> {
     let declarations = if let Some(legacy) = legacy_filter_decl {
-        format!("{};{};{}", variable_decl, legacy, composed_filter_property())
+        format!(
+            "{};{};{}",
+            variable_decl,
+            legacy,
+            composed_filter_property()
+        )
     } else {
         format!("{};{}", variable_decl, composed_filter_property())
     };
@@ -910,7 +952,11 @@ fn generate_animation_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         if token.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("animation:var(--animate-{})", token), config);
+        return rule(
+            &selector,
+            &format!("animation:var(--animate-{})", token),
+            config,
+        );
     }
 
     None
@@ -958,7 +1004,11 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
 
     if let Some(value) = class.strip_prefix("duration-") {
         if !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()) {
-            return rule(&selector, &format!("transition-duration:{}ms", value), config);
+            return rule(
+                &selector,
+                &format!("transition-duration:{}ms", value),
+                config,
+            );
         }
     }
 
@@ -968,14 +1018,24 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
 fn generate_transition_delay_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
-    if let Some(value) = class.strip_prefix("delay-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(value) = class
+        .strip_prefix("delay-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("transition-delay:var({})", value), config);
+        return rule(
+            &selector,
+            &format!("transition-delay:var({})", value),
+            config,
+        );
     }
 
-    if let Some(value) = class.strip_prefix("delay-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(value) = class
+        .strip_prefix("delay-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -999,8 +1059,20 @@ fn generate_transition_timing_function_rule(
 
     match class {
         "ease-linear" => return rule(&selector, "transition-timing-function:linear", config),
-        "ease-in" => return rule(&selector, "transition-timing-function:var(--ease-in)", config),
-        "ease-out" => return rule(&selector, "transition-timing-function:var(--ease-out)", config),
+        "ease-in" => {
+            return rule(
+                &selector,
+                "transition-timing-function:var(--ease-in)",
+                config,
+            )
+        }
+        "ease-out" => {
+            return rule(
+                &selector,
+                "transition-timing-function:var(--ease-out)",
+                config,
+            )
+        }
         "ease-in-out" => {
             return rule(
                 &selector,
@@ -1012,7 +1084,10 @@ fn generate_transition_timing_function_rule(
         _ => {}
     }
 
-    if let Some(value) = class.strip_prefix("ease-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(value) = class
+        .strip_prefix("ease-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -1023,7 +1098,10 @@ fn generate_transition_timing_function_rule(
         );
     }
 
-    if let Some(value) = class.strip_prefix("ease-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(value) = class
+        .strip_prefix("ease-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -1060,7 +1138,10 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         );
     }
 
-    if let Some(raw) = class.strip_prefix("blur-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("blur-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -1072,7 +1153,10 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
         );
     }
 
-    if let Some(raw) = class.strip_prefix("blur-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("blur-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -1180,7 +1264,11 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
                 config,
             );
         }
-        return rule(&selector, &format!("--tw-drop-shadow-color:{}", color), config);
+        return rule(
+            &selector,
+            &format!("--tw-drop-shadow-color:{}", color),
+            config,
+        );
     }
 
     if !token
@@ -1932,7 +2020,10 @@ fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         );
     }
 
-    if let Some(raw) = class.strip_prefix("sepia-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("sepia-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -1944,7 +2035,10 @@ fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         );
     }
 
-    if let Some(raw) = class.strip_prefix("sepia-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("sepia-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -2003,14 +2097,20 @@ fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String
     if class == "content-none" {
         return rule(&selector, "content:none", config);
     }
-    if let Some(raw) = class.strip_prefix("content-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("content-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         let value = normalize_content_value(raw);
         if value.is_empty() {
             return None;
         }
         return rule(&selector, &format!("content:{}", value), config);
     }
-    if let Some(raw) = class.strip_prefix("content-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("content-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -2019,27 +2119,22 @@ fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String
     None
 }
 
-fn generate_background_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_background_arbitrary_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if let Some(raw) = class.strip_prefix("bg-(").and_then(|v| v.strip_suffix(')')) {
         if raw.starts_with("image:") {
             return None;
         }
-        return rule(
-            &selector,
-            &format!("background-color:var({})", raw),
-            config,
-        );
+        return rule(&selector, &format!("background-color:var({})", raw), config);
     }
 
     if let Some(raw) = class.strip_prefix("bg-[").and_then(|v| v.strip_suffix(']')) {
         if is_color_like_value(raw) {
-            return rule(
-                &selector,
-                &format!("background-color:{}", raw),
-                config,
-            );
+            return rule(&selector, &format!("background-color:{}", raw), config);
         }
     }
 
@@ -2099,20 +2194,30 @@ fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig)
         );
     }
 
-    rule(&selector, &format!("background-color:{}", color_value), config)
+    rule(
+        &selector,
+        &format!("background-color:{}", color_value),
+        config,
+    )
 }
 
 fn generate_fill_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
-    if let Some(raw) = class.strip_prefix("fill-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("fill-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
         return rule(&selector, &format!("fill:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("fill-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("fill-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if is_color_like_value(raw) {
             return rule(&selector, &format!("fill:{}", raw), config);
         }
@@ -2180,7 +2285,10 @@ fn generate_stroke_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -
         return rule(&selector, &format!("stroke:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("stroke-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("stroke-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if is_color_like_value(raw) {
             return rule(&selector, &format!("stroke:{}", raw), config);
         }
@@ -2251,7 +2359,10 @@ fn parse_stroke_width_value(raw: &str) -> Option<String> {
         }
         return Some(format!("var({})", value));
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() || is_color_like_value(value) {
             return None;
         }
@@ -2289,11 +2400,7 @@ fn generate_background_position_rule(class: &str, config: &GeneratorConfig) -> O
         if raw.is_empty() {
             return None;
         }
-        return rule(
-            &selector,
-            &format!("background-position:{}", raw),
-            config,
-        );
+        return rule(&selector, &format!("background-position:{}", raw), config);
     }
     None
 }
@@ -2597,7 +2704,10 @@ fn is_color_like_value(raw: &str) -> bool {
         || lower == "inherit"
 }
 
-fn generate_decoration_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_decoration_arbitrary_color_rule(
+    class: &str,
+    config: &GeneratorConfig,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if let Some(raw) = class
@@ -2619,11 +2729,7 @@ fn generate_decoration_arbitrary_color_rule(class: &str, config: &GeneratorConfi
         .and_then(|v| v.strip_suffix(']'))
     {
         if is_color_like_value(raw) {
-            return rule(
-                &selector,
-                &format!("text-decoration-color:{}", raw),
-                config,
-            );
+            return rule(&selector, &format!("text-decoration-color:{}", raw), config);
         }
     }
 
@@ -2643,7 +2749,10 @@ fn generate_decoration_thickness_rule(class: &str, config: &GeneratorConfig) -> 
             config,
         );
     }
-    if let Some(value) = raw.strip_prefix("(length:").and_then(|v| v.strip_suffix(')')) {
+    if let Some(value) = raw
+        .strip_prefix("(length:")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -2766,13 +2875,19 @@ fn generate_vertical_align_rule(class: &str, config: &GeneratorConfig) -> Option
         "align-super" => return rule(&selector, "vertical-align:super", config),
         _ => {}
     }
-    if let Some(raw) = class.strip_prefix("align-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("align-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
         return rule(&selector, &format!("vertical-align:var({})", raw), config);
     }
-    if let Some(raw) = class.strip_prefix("align-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("align-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if raw.is_empty() {
             return None;
         }
@@ -2832,14 +2947,20 @@ fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig)
 fn generate_accent_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
-    if let Some(raw) = class.strip_prefix("accent-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("accent-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
         return rule(&selector, &format!("accent-color:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("accent-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("accent-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if is_color_like_value(raw) {
             return rule(&selector, &format!("accent-color:{}", raw), config);
         }
@@ -2892,14 +3013,20 @@ fn generate_accent_palette_color_rule(class: &str, config: &GeneratorConfig) -> 
 fn generate_caret_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
-    if let Some(raw) = class.strip_prefix("caret-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(raw) = class
+        .strip_prefix("caret-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if raw.is_empty() {
             return None;
         }
         return rule(&selector, &format!("caret-color:var({})", raw), config);
     }
 
-    if let Some(raw) = class.strip_prefix("caret-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(raw) = class
+        .strip_prefix("caret-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if is_color_like_value(raw) {
             return rule(&selector, &format!("caret-color:{}", raw), config);
         }
@@ -3034,14 +3161,20 @@ fn generate_text_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         );
     }
 
-    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+    if let Some(value) = raw
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
         return rule(&selector, &format!("text-shadow:var({})", value), config);
     }
 
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -3176,7 +3309,11 @@ fn generate_list_style_type_rule(class: &str, config: &GeneratorConfig) -> Optio
     }
     if let Some(raw) = class.strip_prefix("list-(") {
         if let Some(custom) = raw.strip_suffix(')') {
-            return rule(&selector, &format!("list-style-type:var({})", custom), config);
+            return rule(
+                &selector,
+                &format!("list-style-type:var({})", custom),
+                config,
+            );
         }
     }
     None
@@ -3194,7 +3331,11 @@ fn generate_list_style_image_rule(class: &str, config: &GeneratorConfig) -> Opti
     }
     if let Some(raw) = class.strip_prefix("list-image-(") {
         if let Some(custom) = raw.strip_suffix(')') {
-            return rule(&selector, &format!("list-style-image:var({})", custom), config);
+            return rule(
+                &selector,
+                &format!("list-style-image:var({})", custom),
+                config,
+            );
         }
     }
     None
@@ -3259,9 +3400,7 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         }
     }
 
-    let Some(token) = class.strip_prefix("text-") else {
-        return None;
-    };
+    let token = class.strip_prefix("text-")?;
     if token.is_empty() {
         return None;
     }
@@ -3274,11 +3413,9 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         }
         let line_height = if line_raw.chars().all(|c| c.is_ascii_digit()) {
             format!("calc(var(--spacing) * {})", line_raw)
-        } else if let Some(custom) = line_raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
-        {
+        } else if let Some(custom) = line_raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
             format!("var({})", custom)
-        } else if let Some(custom) = line_raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
-        {
+        } else if let Some(custom) = line_raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
             custom.to_string()
         } else {
             return None;
@@ -3306,9 +3443,7 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 
 fn generate_leading_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let Some(raw) = class.strip_prefix("leading-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("leading-")?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return rule(
             &selector,
@@ -3364,7 +3499,11 @@ fn generate_font_family_rule(class: &str, config: &GeneratorConfig) -> Option<St
                     | "black"
             )
         {
-            return rule(&selector, &format!("font-family:var(--font-{})", token), config);
+            return rule(
+                &selector,
+                &format!("font-family:var(--font-{})", token),
+                config,
+            );
         }
     }
 
@@ -3378,9 +3517,7 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
     } else {
         (false, class)
     };
-    let Some(raw) = raw_class.strip_prefix("tracking-") else {
-        return None;
-    };
+    let raw = raw_class.strip_prefix("tracking-")?;
 
     if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
         let value = if negative {
@@ -3415,9 +3552,7 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
 
 fn generate_font_stretch_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let Some(raw) = class.strip_prefix("font-stretch-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("font-stretch-")?;
 
     let value = match raw {
         "ultra-condensed" => "ultra-condensed".to_string(),
@@ -3965,8 +4100,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("max-width:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("max-width:var({})", custom)
                 } else {
@@ -4002,8 +4136,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("min-width:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("min-width:var({})", custom)
                 } else {
@@ -4038,8 +4171,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("min-height:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("min-height:var({})", custom)
                 } else {
@@ -4074,8 +4206,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("max-height:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("max-height:var({})", custom)
                 } else {
@@ -4111,8 +4242,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("width:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("width:var({})", custom)
                 } else {
@@ -4147,8 +4277,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     format!("height:{}", custom)
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("height:var({})", custom)
                 } else {
@@ -4181,8 +4310,7 @@ fn generate_sizing_rule(
                 } else if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']'))
                 {
                     custom.to_string()
-                } else if let Some(custom) =
-                    raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
+                } else if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')'))
                 {
                     format!("var({})", custom)
                 } else {
@@ -4340,7 +4468,11 @@ fn generate_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String
             return rule(&selector, &format!("columns:{}", raw), config);
         }
         if is_container_token(raw) {
-            return rule(&selector, &format!("columns:var(--container-{})", raw), config);
+            return rule(
+                &selector,
+                &format!("columns:var(--container-{})", raw),
+                config,
+            );
         }
     }
     None
@@ -4734,7 +4866,11 @@ fn generate_background_blend_mode_rule(class: &str, config: &GeneratorConfig) ->
         "bg-blend-luminosity" => "luminosity",
         _ => return None,
     };
-    rule(&selector, &format!("background-blend-mode:{}", value), config)
+    rule(
+        &selector,
+        &format!("background-blend-mode:{}", value),
+        config,
+    )
 }
 
 #[derive(Clone)]
@@ -4818,11 +4954,7 @@ fn mask_linear_side_from_gradient(
     }
 }
 
-fn mask_linear_side_to_gradient(
-    direction: &str,
-    side_token: &str,
-    stop: MaskStopValue,
-) -> String {
+fn mask_linear_side_to_gradient(direction: &str, side_token: &str, stop: MaskStopValue) -> String {
     match stop {
         MaskStopValue::Value(value) => format!(
             "linear-gradient({},black var(--tw-mask-{}-from),transparent {})",
@@ -4928,14 +5060,20 @@ fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         return rule(&selector, "mask-image:none", config);
     }
 
-    if let Some(value) = class.strip_prefix("mask-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(value) = class
+        .strip_prefix("mask-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         if value.is_empty() {
             return None;
         }
         return rule(&selector, &format!("mask-image:{}", value), config);
     }
 
-    if let Some(value) = class.strip_prefix("mask-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(value) = class
+        .strip_prefix("mask-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -4947,7 +5085,11 @@ fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<Str
             if value.is_empty() {
                 return None;
             }
-            return rule(&selector, &format!("mask-image:linear-gradient({})", value), config);
+            return rule(
+                &selector,
+                &format!("mask-image:linear-gradient({})", value),
+                config,
+            );
         }
         if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
             if value.is_empty() {
@@ -5096,7 +5238,11 @@ fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<Str
                     config,
                 );
             }
-            return rule(&selector, &format!("--tw-mask-radial-size:{}", value), config);
+            return rule(
+                &selector,
+                &format!("--tw-mask-radial-size:{}", value),
+                config,
+            );
         }
     }
 
@@ -5114,7 +5260,11 @@ fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<Str
             _ => None,
         };
         if let Some(value) = value {
-            return rule(&selector, &format!("--tw-mask-radial-position:{}", value), config);
+            return rule(
+                &selector,
+                &format!("--tw-mask-radial-position:{}", value),
+                config,
+            );
         }
         if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
             if value.is_empty() {
@@ -5381,7 +5531,11 @@ fn generate_object_position_rule(class: &str, config: &GeneratorConfig) -> Optio
                 .strip_prefix("object-(")
                 .and_then(|raw| raw.strip_suffix(')'))
             {
-                return rule(&selector, &format!("object-position:var({})", custom), config);
+                return rule(
+                    &selector,
+                    &format!("object-position:var({})", custom),
+                    config,
+                );
             }
             if let Some(raw) = class
                 .strip_prefix("object-[")
@@ -5446,21 +5600,15 @@ fn generate_backface_visibility_rule(class: &str, config: &GeneratorConfig) -> O
 fn generate_perspective_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     match class {
-        "perspective-dramatic" => rule(
-            &selector,
-            "perspective:var(--perspective-dramatic)",
-            config,
-        ),
-        "perspective-near" => rule(&selector, "perspective:var(--perspective-near)", config),
-        "perspective-normal" => {
-            rule(&selector, "perspective:var(--perspective-normal)", config)
+        "perspective-dramatic" => {
+            rule(&selector, "perspective:var(--perspective-dramatic)", config)
         }
+        "perspective-near" => rule(&selector, "perspective:var(--perspective-near)", config),
+        "perspective-normal" => rule(&selector, "perspective:var(--perspective-normal)", config),
         "perspective-midrange" => {
             rule(&selector, "perspective:var(--perspective-midrange)", config)
         }
-        "perspective-distant" => {
-            rule(&selector, "perspective:var(--perspective-distant)", config)
-        }
+        "perspective-distant" => rule(&selector, "perspective:var(--perspective-distant)", config),
         "perspective-none" => rule(&selector, "perspective:none", config),
         _ => {
             if let Some(raw) = class
@@ -5498,9 +5646,7 @@ fn generate_perspective_origin_rule(class: &str, config: &GeneratorConfig) -> Op
     match class {
         "perspective-origin-center" => rule(&selector, "perspective-origin:center", config),
         "perspective-origin-top" => rule(&selector, "perspective-origin:top", config),
-        "perspective-origin-top-right" => {
-            rule(&selector, "perspective-origin:top right", config)
-        }
+        "perspective-origin-top-right" => rule(&selector, "perspective-origin:top right", config),
         "perspective-origin-right" => rule(&selector, "perspective-origin:right", config),
         "perspective-origin-bottom-right" => {
             rule(&selector, "perspective-origin:bottom right", config)
@@ -5510,16 +5656,18 @@ fn generate_perspective_origin_rule(class: &str, config: &GeneratorConfig) -> Op
             rule(&selector, "perspective-origin:bottom left", config)
         }
         "perspective-origin-left" => rule(&selector, "perspective-origin:left", config),
-        "perspective-origin-top-left" => {
-            rule(&selector, "perspective-origin:top left", config)
-        }
+        "perspective-origin-top-left" => rule(&selector, "perspective-origin:top left", config),
         _ => {
             if let Some(raw) = class
                 .strip_prefix("perspective-origin-(")
                 .and_then(|value| value.strip_suffix(')'))
             {
                 if !raw.is_empty() {
-                    return rule(&selector, &format!("perspective-origin:var({})", raw), config);
+                    return rule(
+                        &selector,
+                        &format!("perspective-origin:var({})", raw),
+                        config,
+                    );
                 }
             }
             if let Some(raw) = class
@@ -5881,7 +6029,11 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
         .and_then(|value| value.strip_suffix(')'))
     {
         if !raw.is_empty() {
-            return rule(&selector, &format!("scale:var({}) var({})", raw, raw), config);
+            return rule(
+                &selector,
+                &format!("scale:var({}) var({})", raw, raw),
+                config,
+            );
         }
     }
     if let Some(raw) = class
@@ -5901,12 +6053,20 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
 
     if let Some(number) = class.strip_prefix("skew-x-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
-            return rule(&selector, &format!("transform:skewX({}deg)", number), config);
+            return rule(
+                &selector,
+                &format!("transform:skewX({}deg)", number),
+                config,
+            );
         }
     }
     if let Some(number) = class.strip_prefix("-skew-x-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
-            return rule(&selector, &format!("transform:skewX(-{}deg)", number), config);
+            return rule(
+                &selector,
+                &format!("transform:skewX(-{}deg)", number),
+                config,
+            );
         }
     }
     if let Some(raw) = class
@@ -5928,12 +6088,20 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
 
     if let Some(number) = class.strip_prefix("skew-y-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
-            return rule(&selector, &format!("transform:skewY({}deg)", number), config);
+            return rule(
+                &selector,
+                &format!("transform:skewY({}deg)", number),
+                config,
+            );
         }
     }
     if let Some(number) = class.strip_prefix("-skew-y-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
-            return rule(&selector, &format!("transform:skewY(-{}deg)", number), config);
+            return rule(
+                &selector,
+                &format!("transform:skewY(-{}deg)", number),
+                config,
+            );
         }
     }
     if let Some(raw) = class
@@ -6179,7 +6347,10 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         let value = parse_translate_value(token, negative, false, false)?;
         return rule(
             &selector,
-            &format!("translate:var(--tw-translate-x) var(--tw-translate-y) {}", value),
+            &format!(
+                "translate:var(--tw-translate-x) var(--tw-translate-y) {}",
+                value
+            ),
             config,
         );
     }
@@ -6197,7 +6368,11 @@ fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
             }
             if let Some(custom) = token.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
                 if !custom.is_empty() {
-                    return rule(&selector, &format!("translate:{} {}", custom, custom), config);
+                    return rule(
+                        &selector,
+                        &format!("translate:{} {}", custom, custom),
+                        config,
+                    );
                 }
             }
         }
@@ -6271,9 +6446,7 @@ fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String
 
 fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let Some(raw) = class.strip_prefix("basis-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("basis-")?;
 
     if raw == "auto" {
         return rule(&selector, "flex-basis:auto", config);
@@ -6295,10 +6468,18 @@ fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         );
     }
     if is_fraction(raw) {
-        return rule(&selector, &format!("flex-basis:calc({} * 100%)", raw), config);
+        return rule(
+            &selector,
+            &format!("flex-basis:calc({} * 100%)", raw),
+            config,
+        );
     }
     if is_container_token(raw) {
-        return rule(&selector, &format!("flex-basis:var(--container-{})", raw), config);
+        return rule(
+            &selector,
+            &format!("flex-basis:var(--container-{})", raw),
+            config,
+        );
     }
 
     None
@@ -6306,9 +6487,7 @@ fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 
 fn generate_flex_shorthand_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
-    let Some(raw) = class.strip_prefix("flex-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("flex-")?;
 
     if matches!(
         raw,
@@ -6345,9 +6524,7 @@ fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     if class == "grow" {
         return rule(&selector, "flex-grow:1", config);
     }
-    let Some(raw) = class.strip_prefix("grow-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("grow-")?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return rule(&selector, &format!("flex-grow:{}", raw), config);
     }
@@ -6365,9 +6542,7 @@ fn generate_flex_shrink_rule(class: &str, config: &GeneratorConfig) -> Option<St
     if class == "shrink" {
         return rule(&selector, "flex-shrink:1", config);
     }
-    let Some(raw) = class.strip_prefix("shrink-") else {
-        return None;
-    };
+    let raw = class.strip_prefix("shrink-")?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return rule(&selector, &format!("flex-shrink:{}", raw), config);
     }
@@ -6427,7 +6602,11 @@ fn generate_grid_template_columns_rule(class: &str, config: &GeneratorConfig) ->
             );
         }
         if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
-            return rule(&selector, &format!("grid-template-columns:{}", custom), config);
+            return rule(
+                &selector,
+                &format!("grid-template-columns:{}", custom),
+                config,
+            );
         }
         if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
             return rule(
@@ -6464,7 +6643,11 @@ fn generate_grid_auto_columns_rule(class: &str, config: &GeneratorConfig) -> Opt
                 .strip_prefix("auto-cols-(")
                 .and_then(|v| v.strip_suffix(')'))
             {
-                return rule(&selector, &format!("grid-auto-columns:var({})", custom), config);
+                return rule(
+                    &selector,
+                    &format!("grid-auto-columns:var({})", custom),
+                    config,
+                );
             }
             if let Some(custom) = class
                 .strip_prefix("auto-cols-[")
@@ -6489,7 +6672,11 @@ fn generate_grid_auto_rows_rule(class: &str, config: &GeneratorConfig) -> Option
                 .strip_prefix("auto-rows-(")
                 .and_then(|v| v.strip_suffix(')'))
             {
-                return rule(&selector, &format!("grid-auto-rows:var({})", custom), config);
+                return rule(
+                    &selector,
+                    &format!("grid-auto-rows:var({})", custom),
+                    config,
+                );
             }
             if let Some(custom) = class
                 .strip_prefix("auto-rows-[")
@@ -6518,7 +6705,10 @@ fn parse_border_width_value(raw: &str) -> Option<String> {
         }
         return Some(format!("var({})", value));
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() || is_color_like_value(value) {
             return None;
         }
@@ -6531,13 +6721,19 @@ fn parse_border_spacing_value(raw: &str) -> Option<String> {
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         return Some(format!("calc(var(--spacing) * {})", raw));
     }
-    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+    if let Some(value) = raw
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
         return Some(format!("var({})", value));
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -6699,13 +6895,19 @@ fn parse_border_color_value(raw: &str) -> Option<String> {
     if raw.is_empty() {
         return None;
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() || !is_color_like_value(value) {
             return None;
         }
         return Some(value.to_string());
     }
-    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+    if let Some(value) = raw
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
         if value.is_empty() {
             return None;
         }
@@ -6786,7 +6988,10 @@ fn parse_outline_width_value(raw: &str) -> Option<String> {
         }
         return Some(format!("var({})", value));
     }
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() || is_color_like_value(value) {
             return None;
         }
@@ -6800,14 +7005,20 @@ fn parse_outline_color_value(raw: &str) -> Option<String> {
         return None;
     }
 
-    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+    if let Some(value) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
         if value.is_empty() || !is_color_like_value(value) {
             return None;
         }
         return Some(value.to_string());
     }
 
-    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+    if let Some(value) = raw
+        .strip_prefix('(')
+        .and_then(|value| value.strip_suffix(')'))
+    {
         if value.is_empty() || value.starts_with("length:") {
             return None;
         }
@@ -6851,13 +7062,19 @@ fn generate_outline_offset_rule(class: &str, config: &GeneratorConfig) -> Option
         if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
             return rule(&selector, &format!("outline-offset:{}px", raw), config);
         }
-        if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        if let Some(value) = raw
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+        {
             if value.is_empty() {
                 return None;
             }
             return rule(&selector, &format!("outline-offset:var({})", value), config);
         }
-        if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if let Some(value) = raw
+            .strip_prefix('[')
+            .and_then(|value| value.strip_suffix(']'))
+        {
             if value.is_empty() {
                 return None;
             }
@@ -7012,10 +7229,7 @@ fn generate_grid_column_rule(class: &str, config: &GeneratorConfig) -> Option<St
         if let Some(custom) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
             return rule(
                 &selector,
-                &format!(
-                    "grid-column:span var({}) / span var({})",
-                    custom, custom
-                ),
+                &format!("grid-column:span var({}) / span var({})", custom, custom),
                 config,
             );
         }
@@ -7038,14 +7252,24 @@ fn generate_grid_column_rule(class: &str, config: &GeneratorConfig) -> Option<St
     }
     if let Some(num) = class.strip_prefix("-col-") {
         if num.chars().all(|c| c.is_ascii_digit()) && !num.is_empty() {
-            return rule(&selector, &format!("grid-column:calc({} * -1)", num), config);
+            return rule(
+                &selector,
+                &format!("grid-column:calc({} * -1)", num),
+                config,
+            );
         }
     }
 
-    if let Some(custom) = class.strip_prefix("col-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(custom) = class
+        .strip_prefix("col-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         return rule(&selector, &format!("grid-column:var({})", custom), config);
     }
-    if let Some(custom) = class.strip_prefix("col-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(custom) = class
+        .strip_prefix("col-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         return rule(&selector, &format!("grid-column:{}", custom), config);
     }
 
@@ -7103,10 +7327,16 @@ fn generate_grid_row_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         }
     }
 
-    if let Some(custom) = class.strip_prefix("row-(").and_then(|v| v.strip_suffix(')')) {
+    if let Some(custom) = class
+        .strip_prefix("row-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
         return rule(&selector, &format!("grid-row:var({})", custom), config);
     }
-    if let Some(custom) = class.strip_prefix("row-[").and_then(|v| v.strip_suffix(']')) {
+    if let Some(custom) = class
+        .strip_prefix("row-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
         return rule(&selector, &format!("grid-row:{}", custom), config);
     }
 
@@ -7257,12 +7487,8 @@ fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn split_color_class(class: &str) -> Option<(&str, &str, &str)> {
-    let mut parts = class.splitn(2, '-');
-    let prefix = parts.next()?;
-    let rest = parts.next()?;
-    let mut color_parts = rest.rsplitn(2, '-');
-    let shade = color_parts.next()?;
-    let color = color_parts.next()?;
+    let (prefix, rest) = class.split_once('-')?;
+    let (color, shade) = rest.rsplit_once('-')?;
     if shade.is_empty() || color.is_empty() {
         return None;
     }
@@ -7305,9 +7531,7 @@ fn apply_variants(
     minify: bool,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let Some(rule) = rule else {
-        return None;
-    };
+    let rule = rule?;
     if variants.is_empty() {
         if full_class != base_class {
             if let Some(start) = rule.find('{') {
@@ -7436,10 +7660,7 @@ fn apply_aria_variant(selector: String, aria_key: &str) -> Option<String> {
 enum RuleWrapper {
     Media(String),
     Supports(String),
-    Container {
-        name: Option<String>,
-        query: String,
-    },
+    Container { name: Option<String>, query: String },
     StartingStyle,
 }
 
@@ -7455,7 +7676,9 @@ fn apply_selector_variant(
             if let Some(custom_selector) = variant_tables.dark_variant_selector.as_ref() {
                 return apply_custom_variant_selector(selector, custom_selector);
             }
-            wrappers.push(RuleWrapper::Media("(prefers-color-scheme: dark)".to_string()));
+            wrappers.push(RuleWrapper::Media(
+                "(prefers-color-scheme: dark)".to_string(),
+            ));
             return Some(selector);
         }
         "motion-safe" => {
@@ -7483,11 +7706,15 @@ fn apply_selector_variant(
             return Some(selector);
         }
         "not-forced-colors" => {
-            wrappers.push(RuleWrapper::Media("(not (forced-colors: active))".to_string()));
+            wrappers.push(RuleWrapper::Media(
+                "(not (forced-colors: active))".to_string(),
+            ));
             return Some(selector);
         }
         "inverted-colors" => {
-            wrappers.push(RuleWrapper::Media("(inverted-colors: inverted)".to_string()));
+            wrappers.push(RuleWrapper::Media(
+                "(inverted-colors: inverted)".to_string(),
+            ));
             return Some(selector);
         }
         "pointer-fine" => {
@@ -7646,7 +7873,10 @@ fn apply_selector_variant(
     }
 
     if variant == "selection" {
-        return Some(format!("{}::selection, {} *::selection", selector, selector));
+        return Some(format!(
+            "{}::selection, {} *::selection",
+            selector, selector
+        ));
     }
 
     if variant == "*" {
@@ -7819,7 +8049,10 @@ fn apply_group_or_peer_variant(
 ) -> Option<String> {
     let (core, name) = split_named_variant(raw);
     let marker = if let Some(name) = name {
-        format!(".{}", escape_selector(&format!("{}/{}", marker_class, name)))
+        format!(
+            ".{}",
+            escape_selector(&format!("{}/{}", marker_class, name))
+        )
     } else {
         format!(".{}", marker_class)
     };
@@ -7830,12 +8063,18 @@ fn apply_group_or_peer_variant(
             let replaced = inner.replace('&', &marker);
             return Some(format!("{}{}{}", replaced, combinator, selector));
         }
-        return Some(format!("{}{}{}{}{}", marker, inner, combinator, selector, ""));
+        return Some(format!(
+            "{}{}{}{}{}",
+            marker, inner, combinator, selector, ""
+        ));
     }
 
     if let Some(has_raw) = core.strip_prefix("has-") {
         let argument = has_argument(has_raw)?;
-        return Some(format!("{}:has({}){}{}", marker, argument, combinator, selector));
+        return Some(format!(
+            "{}:has({}){}{}",
+            marker, argument, combinator, selector
+        ));
     }
 
     if let Some(data_raw) = core.strip_prefix("data-") {
@@ -7849,7 +8088,10 @@ fn apply_group_or_peer_variant(
     }
 
     let marker_suffix = selector_for_simple_variant(core, wrappers, needs_generated_content)?;
-    Some(format!("{}{}{}{}", marker, marker_suffix, combinator, selector))
+    Some(format!(
+        "{}{}{}{}",
+        marker, marker_suffix, combinator, selector
+    ))
 }
 
 fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<String> {
@@ -8211,7 +8453,9 @@ mod tests {
         assert!(result.css.contains(".transition-none"));
         assert!(result.css.contains("transition-property: none"));
         assert!(result.css.contains(".transition-\\(--my-properties\\)"));
-        assert!(result.css.contains("transition-property: var(--my-properties)"));
+        assert!(result
+            .css
+            .contains("transition-property: var(--my-properties)"));
         assert!(result.css.contains(".transition-\\[height\\]"));
         assert!(result.css.contains("transition-property: height"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -8270,7 +8514,9 @@ mod tests {
         assert!(result.css.contains(".duration-initial"));
         assert!(result.css.contains("transition-duration: initial"));
         assert!(result.css.contains(".duration-\\(--my-duration\\)"));
-        assert!(result.css.contains("transition-duration: var(--my-duration)"));
+        assert!(result
+            .css
+            .contains("transition-duration: var(--my-duration)"));
         assert!(result.css.contains(".duration-\\[1s\\,15s\\]"));
         assert!(result.css.contains("transition-duration: 1s,15s"));
         assert!(result
@@ -8342,15 +8588,23 @@ mod tests {
         assert!(result.css.contains(".ease-linear"));
         assert!(result.css.contains("transition-timing-function: linear"));
         assert!(result.css.contains(".ease-in"));
-        assert!(result.css.contains("transition-timing-function: var(--ease-in)"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--ease-in)"));
         assert!(result.css.contains(".ease-out"));
-        assert!(result.css.contains("transition-timing-function: var(--ease-out)"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--ease-out)"));
         assert!(result.css.contains(".ease-in-out"));
-        assert!(result.css.contains("transition-timing-function: var(--ease-in-out)"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--ease-in-out)"));
         assert!(result.css.contains(".ease-initial"));
         assert!(result.css.contains("transition-timing-function: initial"));
         assert!(result.css.contains(".ease-\\(--my-ease\\)"));
-        assert!(result.css.contains("transition-timing-function: var(--my-ease)"));
+        assert!(result
+            .css
+            .contains("transition-timing-function: var(--my-ease)"));
         assert!(result
             .css
             .contains(".ease-\\[cubic-bezier\\(0.95\\,0.05\\,0.795\\,0.035\\)\\]"));
@@ -8432,9 +8686,7 @@ mod tests {
         assert!(result
             .css
             .contains("@media (prefers-reduced-motion: reduce)"));
-        assert!(result
-            .css
-            .contains(".motion-reduce\\:transition-none"));
+        assert!(result.css.contains(".motion-reduce\\:transition-none"));
         assert!(result
             .css
             .contains("@media (prefers-reduced-motion: no-preference)"));
@@ -8487,9 +8739,13 @@ mod tests {
         assert!(result.css.contains(".p-\\(--my-padding\\)"));
         assert!(result.css.contains("padding: var(--my-padding)"));
         assert!(result.css.contains(".px-4"));
-        assert!(result.css.contains("padding-inline: calc(var(--spacing) * 4)"));
+        assert!(result
+            .css
+            .contains("padding-inline: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".py-2"));
-        assert!(result.css.contains("padding-block: calc(var(--spacing) * 2)"));
+        assert!(result
+            .css
+            .contains("padding-block: calc(var(--spacing) * 2)"));
         assert!(result.css.contains(".pt-6"));
         assert!(result.css.contains("padding-top: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".pr-px"));
@@ -8499,9 +8755,13 @@ mod tests {
         assert!(result.css.contains(".pl-\\(--pad-left\\)"));
         assert!(result.css.contains("padding-left: var(--pad-left)"));
         assert!(result.css.contains(".ps-8"));
-        assert!(result.css.contains("padding-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("padding-inline-start: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".pe-1"));
-        assert!(result.css.contains("padding-inline-end: calc(var(--spacing) * 1)"));
+        assert!(result
+            .css
+            .contains("padding-inline-end: calc(var(--spacing) * 1)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:py-8"));
     }
@@ -8557,25 +8817,39 @@ mod tests {
         assert!(result.css.contains(".-m-\\(--my-margin\\)"));
         assert!(result.css.contains("margin: calc(var(--my-margin) * -1)"));
         assert!(result.css.contains(".mx-8"));
-        assert!(result.css.contains("margin-inline: calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("margin-inline: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-mx-2"));
-        assert!(result.css.contains("margin-inline: calc(var(--spacing) * -2)"));
+        assert!(result
+            .css
+            .contains("margin-inline: calc(var(--spacing) * -2)"));
         assert!(result.css.contains(".my-3"));
-        assert!(result.css.contains("margin-block: calc(var(--spacing) * 3)"));
+        assert!(result
+            .css
+            .contains("margin-block: calc(var(--spacing) * 3)"));
         assert!(result.css.contains(".-my-1"));
-        assert!(result.css.contains("margin-block: calc(var(--spacing) * -1)"));
+        assert!(result
+            .css
+            .contains("margin-block: calc(var(--spacing) * -1)"));
         assert!(result.css.contains(".mt-6"));
         assert!(result.css.contains("margin-top: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".-mr-3"));
-        assert!(result.css.contains("margin-right: calc(var(--spacing) * -3)"));
+        assert!(result
+            .css
+            .contains("margin-right: calc(var(--spacing) * -3)"));
         assert!(result.css.contains(".mb-auto"));
         assert!(result.css.contains("margin-bottom: auto"));
         assert!(result.css.contains(".ml-px"));
         assert!(result.css.contains("margin-left: 1px"));
         assert!(result.css.contains(".ms-4"));
-        assert!(result.css.contains("margin-inline-start: calc(var(--spacing) * 4)"));
+        assert!(result
+            .css
+            .contains("margin-inline-start: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".-me-2"));
-        assert!(result.css.contains("margin-inline-end: calc(var(--spacing) * -2)"));
+        assert!(result
+            .css
+            .contains("margin-inline-end: calc(var(--spacing) * -2)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:mt-8"));
     }
@@ -8605,23 +8879,39 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".scroll-m-4"));
-        assert!(result.css.contains("scroll-margin: calc(var(--spacing) * 4)"));
+        assert!(result
+            .css
+            .contains("scroll-margin: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".-scroll-m-2"));
-        assert!(result.css.contains("scroll-margin: calc(var(--spacing) * -2)"));
+        assert!(result
+            .css
+            .contains("scroll-margin: calc(var(--spacing) * -2)"));
         assert!(result.css.contains(".scroll-m-\\(--my-scroll-margin\\)"));
-        assert!(result.css.contains("scroll-margin: var(--my-scroll-margin)"));
+        assert!(result
+            .css
+            .contains("scroll-margin: var(--my-scroll-margin)"));
         assert!(result.css.contains(".scroll-m-\\[24rem\\]"));
         assert!(result.css.contains("scroll-margin: 24rem"));
         assert!(result.css.contains(".scroll-mx-6"));
-        assert!(result.css.contains("scroll-margin-inline: calc(var(--spacing) * 6)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-inline: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".-scroll-my-1"));
-        assert!(result.css.contains("scroll-margin-block: calc(var(--spacing) * -1)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-block: calc(var(--spacing) * -1)"));
         assert!(result.css.contains(".scroll-ms-8"));
-        assert!(result.css.contains("scroll-margin-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-inline-start: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-scroll-me-3"));
-        assert!(result.css.contains("scroll-margin-inline-end: calc(var(--spacing) * -3)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-inline-end: calc(var(--spacing) * -3)"));
         assert!(result.css.contains(".scroll-mt-5"));
-        assert!(result.css.contains("scroll-margin-top: calc(var(--spacing) * 5)"));
+        assert!(result
+            .css
+            .contains("scroll-margin-top: calc(var(--spacing) * 5)"));
         assert!(result.css.contains(".scroll-mr-\\[10vh\\]"));
         assert!(result.css.contains("scroll-margin-right: 10vh"));
         assert!(result
@@ -8661,23 +8951,39 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".scroll-p-4"));
-        assert!(result.css.contains("scroll-padding: calc(var(--spacing) * 4)"));
+        assert!(result
+            .css
+            .contains("scroll-padding: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".-scroll-p-2"));
-        assert!(result.css.contains("scroll-padding: calc(var(--spacing) * -2)"));
+        assert!(result
+            .css
+            .contains("scroll-padding: calc(var(--spacing) * -2)"));
         assert!(result.css.contains(".scroll-p-\\(--my-scroll-padding\\)"));
-        assert!(result.css.contains("scroll-padding: var(--my-scroll-padding)"));
+        assert!(result
+            .css
+            .contains("scroll-padding: var(--my-scroll-padding)"));
         assert!(result.css.contains(".scroll-p-\\[24rem\\]"));
         assert!(result.css.contains("scroll-padding: 24rem"));
         assert!(result.css.contains(".scroll-px-6"));
-        assert!(result.css.contains("scroll-padding-inline: calc(var(--spacing) * 6)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-inline: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".-scroll-py-1"));
-        assert!(result.css.contains("scroll-padding-block: calc(var(--spacing) * -1)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-block: calc(var(--spacing) * -1)"));
         assert!(result.css.contains(".scroll-ps-8"));
-        assert!(result.css.contains("scroll-padding-inline-start: calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-inline-start: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-scroll-pe-3"));
-        assert!(result.css.contains("scroll-padding-inline-end: calc(var(--spacing) * -3)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-inline-end: calc(var(--spacing) * -3)"));
         assert!(result.css.contains(".scroll-pt-5"));
-        assert!(result.css.contains("scroll-padding-top: calc(var(--spacing) * 5)"));
+        assert!(result
+            .css
+            .contains("scroll-padding-top: calc(var(--spacing) * 5)"));
         assert!(result.css.contains(".scroll-pr-\\[10vh\\]"));
         assert!(result.css.contains("scroll-padding-right: 10vh"));
         assert!(result
@@ -8725,7 +9031,9 @@ mod tests {
         );
         assert!(result.css.contains(".text-xs"));
         assert!(result.css.contains("font-size: var(--text-xs)"));
-        assert!(result.css.contains("line-height: var(--text-xs--line-height)"));
+        assert!(result
+            .css
+            .contains("line-height: var(--text-xs--line-height)"));
         assert!(result.css.contains(".text-sm"));
         assert!(result.css.contains("font-size: var(--text-sm)"));
         assert!(result.css.contains(".text-base"));
@@ -8849,7 +9157,9 @@ mod tests {
         assert!(result.css.contains(".font-\\(weight\\:--my-font-weight\\)"));
         assert!(result.css.contains("font-weight: var(--my-font-weight)"));
         assert!(result.css.contains(".font-extrablack"));
-        assert!(result.css.contains("font-weight: var(--font-weight-extrablack)"));
+        assert!(result
+            .css
+            .contains("font-weight: var(--font-weight-extrablack)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-bold"));
         assert!(result.css.contains(".leading-none"));
@@ -8975,13 +9285,19 @@ mod tests {
         assert!(result.css.contains(".oldstyle-nums"));
         assert!(result.css.contains("font-variant-numeric: oldstyle-nums"));
         assert!(result.css.contains(".proportional-nums"));
-        assert!(result.css.contains("font-variant-numeric: proportional-nums"));
+        assert!(result
+            .css
+            .contains("font-variant-numeric: proportional-nums"));
         assert!(result.css.contains(".tabular-nums"));
         assert!(result.css.contains("font-variant-numeric: tabular-nums"));
         assert!(result.css.contains(".diagonal-fractions"));
-        assert!(result.css.contains("font-variant-numeric: diagonal-fractions"));
+        assert!(result
+            .css
+            .contains("font-variant-numeric: diagonal-fractions"));
         assert!(result.css.contains(".stacked-fractions"));
-        assert!(result.css.contains("font-variant-numeric: stacked-fractions"));
+        assert!(result
+            .css
+            .contains("font-variant-numeric: stacked-fractions"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:normal-nums"));
     }
@@ -9008,23 +9324,31 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".tracking-tighter"));
-        assert!(result.css.contains("letter-spacing: var(--tracking-tighter)"));
+        assert!(result
+            .css
+            .contains("letter-spacing: var(--tracking-tighter)"));
         assert!(result.css.contains(".tracking-tight"));
         assert!(result.css.contains("letter-spacing: var(--tracking-tight)"));
         assert!(result.css.contains(".tracking-normal"));
-        assert!(result.css.contains("letter-spacing: var(--tracking-normal)"));
+        assert!(result
+            .css
+            .contains("letter-spacing: var(--tracking-normal)"));
         assert!(result.css.contains(".tracking-wide"));
         assert!(result.css.contains("letter-spacing: var(--tracking-wide)"));
         assert!(result.css.contains(".tracking-wider"));
         assert!(result.css.contains("letter-spacing: var(--tracking-wider)"));
         assert!(result.css.contains(".tracking-widest"));
-        assert!(result.css.contains("letter-spacing: var(--tracking-widest)"));
+        assert!(result
+            .css
+            .contains("letter-spacing: var(--tracking-widest)"));
         assert!(result.css.contains(".tracking-\\(--my-tracking\\)"));
         assert!(result.css.contains("letter-spacing: var(--my-tracking)"));
         assert!(result.css.contains(".tracking-\\[.25em\\]"));
         assert!(result.css.contains("letter-spacing: .25em"));
         assert!(result.css.contains(".-tracking-2"));
-        assert!(result.css.contains("letter-spacing: calc(var(--tracking-2) * -1)"));
+        assert!(result
+            .css
+            .contains("letter-spacing: calc(var(--tracking-2) * -1)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:tracking-wide"));
     }
@@ -9055,12 +9379,16 @@ mod tests {
         assert!(result.css.contains("display: block"));
         assert!(result.css.contains("-webkit-box-orient: horizontal"));
         assert!(result.css.contains("-webkit-line-clamp: unset"));
-        assert!(result.css.contains(".line-clamp-\\[calc\\(var\\(--characters\\)\\/100\\)\\]"));
+        assert!(result
+            .css
+            .contains(".line-clamp-\\[calc\\(var\\(--characters\\)\\/100\\)\\]"));
         assert!(result
             .css
             .contains("-webkit-line-clamp: calc(var(--characters)/100)"));
         assert!(result.css.contains(".line-clamp-\\(--my-line-count\\)"));
-        assert!(result.css.contains("-webkit-line-clamp: var(--my-line-count)"));
+        assert!(result
+            .css
+            .contains("-webkit-line-clamp: var(--my-line-count)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:line-clamp-4"));
     }
@@ -9082,10 +9410,16 @@ mod tests {
         );
         assert!(result.css.contains(".list-image-none"));
         assert!(result.css.contains("list-style-image: none"));
-        assert!(result.css.contains(".list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]"));
-        assert!(result.css.contains("list-style-image: url(/img/checkmark.png)"));
+        assert!(result
+            .css
+            .contains(".list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]"));
+        assert!(result
+            .css
+            .contains("list-style-image: url(/img/checkmark.png)"));
         assert!(result.css.contains(".list-image-\\(--my-list-image\\)"));
-        assert!(result.css.contains("list-style-image: var(--my-list-image)"));
+        assert!(result
+            .css
+            .contains("list-style-image: var(--my-list-image)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result
             .css
@@ -9402,7 +9736,9 @@ mod tests {
         assert!(result.css.contains(".content-\\(--my-content\\)"));
         assert!(result.css.contains("content: var(--my-content)"));
         assert!(result.css.contains(".before\\:content-\\['x'\\]:before"));
-        assert!(result.css.contains(".md\\:before\\:content-\\['Desktop'\\]:before"));
+        assert!(result
+            .css
+            .contains(".md\\:before\\:content-\\['Desktop'\\]:before"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
@@ -9518,7 +9854,9 @@ mod tests {
         assert!(result.css.contains(".brightness-\\[1.75\\]"));
         assert!(result.css.contains("filter: brightness(1.75)"));
         assert!(result.css.contains(".brightness-\\(--my-brightness\\)"));
-        assert!(result.css.contains("filter: brightness(var(--my-brightness))"));
+        assert!(result
+            .css
+            .contains("filter: brightness(var(--my-brightness))"));
         assert!(result.css.contains(".md\\:brightness-150"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9581,15 +9919,19 @@ mod tests {
         assert!(result.css.contains(".drop-shadow-none"));
         assert!(result.css.contains("filter: drop-shadow(0 0 #0000)"));
         assert!(result.css.contains(".drop-shadow-md"));
-        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-md))"));
+        assert!(result
+            .css
+            .contains("filter: drop-shadow(var(--drop-shadow-md))"));
         assert!(result.css.contains(".drop-shadow-3xl"));
-        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-3xl))"));
-        assert!(
-            result
-                .css
-                .contains(".drop-shadow-\\[0_35px_35px_rgba\\(0\\,0\\,0\\,0.25\\)\\]")
-        );
-        assert!(result.css.contains("filter: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))"));
+        assert!(result
+            .css
+            .contains("filter: drop-shadow(var(--drop-shadow-3xl))"));
+        assert!(result
+            .css
+            .contains(".drop-shadow-\\[0_35px_35px_rgba\\(0\\,0\\,0\\,0.25\\)\\]"));
+        assert!(result
+            .css
+            .contains("filter: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))"));
         assert!(result.css.contains(".drop-shadow-\\(--my-drop-shadow\\)"));
         assert!(result
             .css
@@ -9609,10 +9951,12 @@ mod tests {
             "--tw-drop-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
         ));
         assert!(result.css.contains(".drop-shadow-xl\\/25"));
-        assert!(result.css.contains("filter: drop-shadow(var(--drop-shadow-xl))"));
-        assert!(result.css.contains(
-            "--tw-drop-shadow-color: color-mix(in oklab,currentColor 25%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("filter: drop-shadow(var(--drop-shadow-xl))"));
+        assert!(result
+            .css
+            .contains("--tw-drop-shadow-color: color-mix(in oklab,currentColor 25%,transparent)"));
         assert!(result.css.contains(".md\\:drop-shadow-xl"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9646,7 +9990,9 @@ mod tests {
         assert!(result.css.contains(".grayscale-\\[0.5\\]"));
         assert!(result.css.contains("filter: grayscale(0.5)"));
         assert!(result.css.contains(".grayscale-\\(--my-grayscale\\)"));
-        assert!(result.css.contains("filter: grayscale(var(--my-grayscale))"));
+        assert!(result
+            .css
+            .contains("filter: grayscale(var(--my-grayscale))"));
         assert!(result.css.contains(".md\\:grayscale-0"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9689,7 +10035,9 @@ mod tests {
         assert!(result.css.contains(".hue-rotate-\\[3.142rad\\]"));
         assert!(result.css.contains("filter: hue-rotate(3.142rad)"));
         assert!(result.css.contains(".hue-rotate-\\(--my-hue-rotate\\)"));
-        assert!(result.css.contains("filter: hue-rotate(var(--my-hue-rotate))"));
+        assert!(result
+            .css
+            .contains("filter: hue-rotate(var(--my-hue-rotate))"));
         assert!(result.css.contains(".md\\:hue-rotate-0"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9754,7 +10102,9 @@ mod tests {
         assert!(result.css.contains(".saturate-\\[.25\\]"));
         assert!(result.css.contains("filter: saturate(.25)"));
         assert!(result.css.contains(".saturate-\\(--my-saturation\\)"));
-        assert!(result.css.contains("filter: saturate(var(--my-saturation))"));
+        assert!(result
+            .css
+            .contains("filter: saturate(var(--my-saturation))"));
         assert!(result.css.contains(".md\\:saturate-150"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9814,13 +10164,13 @@ mod tests {
         assert!(result
             .css
             .contains("backdrop-filter: url('filters.svg#filter-id')"));
-        assert!(result.css.contains(".backdrop-filter-\\(--my-backdrop-filter\\)"));
+        assert!(result
+            .css
+            .contains(".backdrop-filter-\\(--my-backdrop-filter\\)"));
         assert!(result
             .css
             .contains("backdrop-filter: var(--my-backdrop-filter)"));
-        assert!(result
-            .css
-            .contains(".hover\\:backdrop-filter-none:hover"));
+        assert!(result.css.contains(".hover\\:backdrop-filter-none:hover"));
         assert!(result.css.contains(".md\\:backdrop-filter-none"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -9853,10 +10203,14 @@ mod tests {
         assert!(result.css.contains(".backdrop-blur-lg"));
         assert!(result.css.contains("backdrop-filter: blur(var(--blur-lg))"));
         assert!(result.css.contains(".backdrop-blur-2xs"));
-        assert!(result.css.contains("backdrop-filter: blur(var(--blur-2xs))"));
+        assert!(result
+            .css
+            .contains("backdrop-filter: blur(var(--blur-2xs))"));
         assert!(result.css.contains(".backdrop-blur-\\[2px\\]"));
         assert!(result.css.contains("backdrop-filter: blur(2px)"));
-        assert!(result.css.contains(".backdrop-blur-\\(--my-backdrop-blur\\)"));
+        assert!(result
+            .css
+            .contains(".backdrop-blur-\\(--my-backdrop-blur\\)"));
         assert!(result
             .css
             .contains("backdrop-filter: blur(var(--my-backdrop-blur))"));
@@ -10186,7 +10540,9 @@ mod tests {
         assert!(result.css.contains(".indent-8"));
         assert!(result.css.contains("text-indent: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-indent-8"));
-        assert!(result.css.contains("text-indent: calc(var(--spacing) * -8)"));
+        assert!(result
+            .css
+            .contains("text-indent: calc(var(--spacing) * -8)"));
         assert!(result.css.contains(".indent-px"));
         assert!(result.css.contains("text-indent: 1px"));
         assert!(result.css.contains(".-indent-px"));
@@ -10376,9 +10732,7 @@ mod tests {
         assert!(result.css.contains(".underline-offset-8"));
         assert!(result.css.contains("text-underline-offset: 8px"));
         assert!(result.css.contains(".-underline-offset-2"));
-        assert!(result
-            .css
-            .contains("text-underline-offset: calc(2px * -1)"));
+        assert!(result.css.contains("text-underline-offset: calc(2px * -1)"));
         assert!(result.css.contains(".underline-offset-auto"));
         assert!(result.css.contains("text-underline-offset: auto"));
         assert!(result
@@ -10426,7 +10780,9 @@ mod tests {
         assert!(result.css.contains("z-index: auto"));
         assert!(result.css.contains(".-z-10"));
         assert!(result.css.contains("z-index: -10"));
-        assert!(result.css.contains(".z-\\[calc\\(var\\(--index\\)\\+1\\)\\]"));
+        assert!(result
+            .css
+            .contains(".z-\\[calc\\(var\\(--index\\)\\+1\\)\\]"));
         assert!(result.css.contains("z-index: calc(var(--index)+1)"));
         assert!(result.css.contains(".z-\\(--my-z\\)"));
         assert!(result.css.contains("z-index: var(--my-z)"));
@@ -10454,7 +10810,10 @@ mod tests {
             minify: false,
             colors: BTreeMap::new(),
         };
-        let result = generate(&["bg-gray-100".to_string(), "bg-gray-700".to_string()], &config);
+        let result = generate(
+            &["bg-gray-100".to_string(), "bg-gray-700".to_string()],
+            &config,
+        );
         assert!(result.css.contains(".bg-gray-100"));
         assert!(result.css.contains("background-color: #f3f4f6"));
         assert!(result.css.contains(".bg-gray-700"));
@@ -10467,7 +10826,10 @@ mod tests {
             minify: false,
             colors: BTreeMap::new(),
         };
-        let result = generate(&["bg-blue-100".to_string(), "bg-blue-600".to_string()], &config);
+        let result = generate(
+            &["bg-blue-100".to_string(), "bg-blue-600".to_string()],
+            &config,
+        );
         assert!(result.css.contains(".bg-blue-100"));
         assert!(result.css.contains("background-color: #dbeafe"));
         assert!(result.css.contains(".bg-blue-600"));
@@ -10594,7 +10956,9 @@ mod tests {
         assert!(result.css.contains(".bg-bottom-right"));
         assert!(result.css.contains("background-position: bottom right"));
         assert!(result.css.contains(".bg-position-\\(--my-bg-position\\)"));
-        assert!(result.css.contains("background-position: var(--my-bg-position)"));
+        assert!(result
+            .css
+            .contains("background-position: var(--my-bg-position)"));
         assert!(result.css.contains(".bg-position-\\[center_top_1rem\\]"));
         assert!(result.css.contains("background-position: center_top_1rem"));
         assert!(result.css.contains(".md\\:bg-top"));
@@ -10701,7 +11065,9 @@ mod tests {
         assert!(result.css.contains(".bg-white"));
         assert!(result.css.contains("background-color: var(--color-white)"));
         assert!(result.css.contains(".bg-sky-500"));
-        assert!(result.css.contains("background-color: var(--color-sky-500)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-sky-500)"));
         assert!(result.css.contains(".bg-sky-500\\/75"));
         assert!(result.css.contains(
             "background-color: color-mix(in oklab,var(--color-sky-500) 75%,transparent)"
@@ -10762,8 +11128,12 @@ mod tests {
         );
         assert!(result.css.contains(".bg-none"));
         assert!(result.css.contains("background-image: none"));
-        assert!(result.css.contains(".bg-\\[url\\(\\/img\\/mountains.jpg\\)\\]"));
-        assert!(result.css.contains("background-image: url(/img/mountains.jpg)"));
+        assert!(result
+            .css
+            .contains(".bg-\\[url\\(\\/img\\/mountains.jpg\\)\\]"));
+        assert!(result
+            .css
+            .contains("background-image: url(/img/mountains.jpg)"));
         assert!(result.css.contains(".bg-\\(image\\:--my-image\\)"));
         assert!(result.css.contains("background-image: var(--my-image)"));
         assert!(result.css.contains(".bg-linear-to-r"));
@@ -10782,7 +11152,9 @@ mod tests {
         assert!(result.css.contains(
             "background-image: linear-gradient(-65deg in oklab, var(--tw-gradient-stops))"
         ));
-        assert!(result.css.contains(".bg-linear-\\[25deg\\,red_5\\%\\,yellow_60\\%\\]"));
+        assert!(result
+            .css
+            .contains(".bg-linear-\\[25deg\\,red_5\\%\\,yellow_60\\%\\]"));
         assert!(result.css.contains(
             "background-image: linear-gradient(var(--tw-gradient-stops, 25deg,red_5%,yellow_60%))"
         ));
@@ -10795,9 +11167,9 @@ mod tests {
             .css
             .contains("background-image: radial-gradient(in oklab, var(--tw-gradient-stops))"));
         assert!(result.css.contains(".bg-radial-\\[at_50\\%_75\\%\\]"));
-        assert!(result.css.contains(
-            "background-image: radial-gradient(var(--tw-gradient-stops, at_50%_75%))"
-        ));
+        assert!(result
+            .css
+            .contains("background-image: radial-gradient(var(--tw-gradient-stops, at_50%_75%))"));
         assert!(result.css.contains(".bg-radial-\\(--my-radial\\)"));
         assert!(result.css.contains(
             "background-image: radial-gradient(var(--tw-gradient-stops, var(--my-radial)))"
@@ -10815,9 +11187,13 @@ mod tests {
         assert!(result
             .css
             .contains(".bg-conic-\\[conic-gradient\\(from_0deg\\,red\\,blue\\)\\]"));
-        assert!(result.css.contains("background-image: conic-gradient(from_0deg,red,blue)"));
+        assert!(result
+            .css
+            .contains("background-image: conic-gradient(from_0deg,red,blue)"));
         assert!(result.css.contains(".from-indigo-500"));
-        assert!(result.css.contains("--tw-gradient-from: var(--color-indigo-500)"));
+        assert!(result
+            .css
+            .contains("--tw-gradient-from: var(--color-indigo-500)"));
         assert!(result.css.contains(".from-10\\%"));
         assert!(result.css.contains("--tw-gradient-from-position: 10%"));
         assert!(result.css.contains(".from-\\(--my-from\\)"));
@@ -10825,11 +11201,15 @@ mod tests {
         assert!(result.css.contains(".from-\\[#50d71e\\]"));
         assert!(result.css.contains("--tw-gradient-from: #50d71e"));
         assert!(result.css.contains(".via-purple-500"));
-        assert!(result.css.contains("--tw-gradient-via: var(--color-purple-500)"));
+        assert!(result
+            .css
+            .contains("--tw-gradient-via: var(--color-purple-500)"));
         assert!(result.css.contains(".via-30\\%"));
         assert!(result.css.contains("--tw-gradient-via-position: 30%"));
         assert!(result.css.contains(".to-pink-500"));
-        assert!(result.css.contains("--tw-gradient-to: var(--color-pink-500)"));
+        assert!(result
+            .css
+            .contains("--tw-gradient-to: var(--color-pink-500)"));
         assert!(result.css.contains(".to-90\\%"));
         assert!(result.css.contains("--tw-gradient-to-position: 90%"));
         assert!(result.css.contains(".md\\:from-yellow-500"));
@@ -10882,13 +11262,13 @@ mod tests {
         assert!(result.css.contains(".text-red-500"));
         assert!(result.css.contains("color: var(--color-red-500)"));
         assert!(result.css.contains(".text-red-500\\/75"));
-        assert!(result.css.contains(
-            "color: color-mix(in oklab,var(--color-red-500) 75%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("color: color-mix(in oklab,var(--color-red-500) 75%,transparent)"));
         assert!(result.css.contains(".text-red-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "color: color-mix(in oklab,var(--color-red-500) 37%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("color: color-mix(in oklab,var(--color-red-500) 37%,transparent)"));
         assert!(result.css.contains(".text-red-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
             "color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
@@ -11037,7 +11417,9 @@ mod tests {
         assert!(result.css.contains("stroke-width: 2"));
         assert!(result.css.contains(".stroke-\\[1.5\\]"));
         assert!(result.css.contains("stroke-width: 1.5"));
-        assert!(result.css.contains(".stroke-\\(length\\:--my-stroke-width\\)"));
+        assert!(result
+            .css
+            .contains(".stroke-\\(length\\:--my-stroke-width\\)"));
         assert!(result.css.contains("stroke-width: var(--my-stroke-width)"));
         assert!(result.css.contains(".md\\:stroke-2"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -11071,13 +11453,13 @@ mod tests {
         );
 
         assert!(result.css.contains(".text-shadow-2xs"));
-        assert!(result.css.contains(
-            "text-shadow: 0px 1px 0px var(--tw-shadow-color,rgb(0 0 0 / 0.15))"
-        ));
+        assert!(result
+            .css
+            .contains("text-shadow: 0px 1px 0px var(--tw-shadow-color,rgb(0 0 0 / 0.15))"));
         assert!(result.css.contains(".text-shadow-xs"));
-        assert!(result.css.contains(
-            "text-shadow: 0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.2))"
-        ));
+        assert!(result
+            .css
+            .contains("text-shadow: 0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.2))"));
         assert!(result.css.contains(".text-shadow-sm"));
         assert!(result.css.contains("text-shadow: 0px 1px 0px var(--tw-shadow-color,rgb(0 0 0 / 0.075)),0px 1px 1px var(--tw-shadow-color,rgb(0 0 0 / 0.075)),0px 2px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.075))"));
         assert!(result.css.contains(".text-shadow-md"));
@@ -11088,18 +11470,26 @@ mod tests {
         assert!(result.css.contains("text-shadow: none"));
         assert!(result.css.contains(".text-shadow-\\(--my-text-shadow\\)"));
         assert!(result.css.contains("text-shadow: var(--my-text-shadow)"));
-        assert!(result.css.contains(".text-shadow-\\(color\\:--my-shadow-color\\)"));
-        assert!(result.css.contains("--tw-shadow-color: var(--my-shadow-color)"));
+        assert!(result
+            .css
+            .contains(".text-shadow-\\(color\\:--my-shadow-color\\)"));
+        assert!(result
+            .css
+            .contains("--tw-shadow-color: var(--my-shadow-color)"));
         assert!(result
             .css
             .contains(".text-shadow-\\[0_35px_35px_rgb\\(0_0_0_\\/_0.25\\)\\]"));
-        assert!(result.css.contains("text-shadow: 0_35px_35px_rgb(0_0_0_/_0.25)"));
+        assert!(result
+            .css
+            .contains("text-shadow: 0_35px_35px_rgb(0_0_0_/_0.25)"));
         assert!(result.css.contains(".text-shadow-inherit"));
         assert!(result.css.contains("--tw-shadow-color: inherit"));
         assert!(result.css.contains(".text-shadow-lg\\/20"));
         assert!(result.css.contains("--tw-shadow-color: rgb(0 0 0 / 20%)"));
         assert!(result.css.contains(".text-shadow-sky-300"));
-        assert!(result.css.contains("--tw-shadow-color: var(--color-sky-300)"));
+        assert!(result
+            .css
+            .contains("--tw-shadow-color: var(--color-sky-300)"));
         assert!(result.css.contains(".text-shadow-cyan-500\\/50"));
         assert!(result.css.contains(
             "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
@@ -11141,11 +11531,17 @@ mod tests {
         assert!(result.css.contains(".decoration-transparent"));
         assert!(result.css.contains("text-decoration-color: transparent"));
         assert!(result.css.contains(".decoration-black"));
-        assert!(result.css.contains("text-decoration-color: var(--color-black)"));
+        assert!(result
+            .css
+            .contains("text-decoration-color: var(--color-black)"));
         assert!(result.css.contains(".decoration-white"));
-        assert!(result.css.contains("text-decoration-color: var(--color-white)"));
+        assert!(result
+            .css
+            .contains("text-decoration-color: var(--color-white)"));
         assert!(result.css.contains(".decoration-sky-500"));
-        assert!(result.css.contains("text-decoration-color: var(--color-sky-500)"));
+        assert!(result
+            .css
+            .contains("text-decoration-color: var(--color-sky-500)"));
         assert!(result.css.contains(".decoration-pink-500\\/30"));
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-pink-500) 30%,transparent)"
@@ -11154,14 +11550,18 @@ mod tests {
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-indigo-500) 37%,transparent)"
         ));
-        assert!(result.css.contains(".decoration-red-500\\/\\(--my-opacity\\)"));
+        assert!(result
+            .css
+            .contains(".decoration-red-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
         ));
         assert!(result.css.contains(".decoration-\\[#50d71e\\]"));
         assert!(result.css.contains("text-decoration-color: #50d71e"));
         assert!(result.css.contains(".decoration-\\(--my-color\\)"));
-        assert!(result.css.contains("text-decoration-color: var(--my-color)"));
+        assert!(result
+            .css
+            .contains("text-decoration-color: var(--my-color)"));
         assert!(result.css.contains(".hover\\:decoration-pink-500:hover"));
         assert!(result.css.contains(".md\\:decoration-blue-400"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -11204,14 +11604,16 @@ mod tests {
         assert!(result.css.contains(".accent-rose-500"));
         assert!(result.css.contains("accent-color: var(--color-rose-500)"));
         assert!(result.css.contains(".accent-purple-500\\/25"));
-        assert!(result.css.contains(
-            "accent-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("accent-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"));
         assert!(result.css.contains(".accent-purple-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "accent-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
-        ));
-        assert!(result.css.contains(".accent-purple-500\\/\\(--my-opacity\\)"));
+        assert!(result
+            .css
+            .contains("accent-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"));
+        assert!(result
+            .css
+            .contains(".accent-purple-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
             "accent-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
         ));
@@ -11260,14 +11662,16 @@ mod tests {
         assert!(result.css.contains(".caret-rose-500"));
         assert!(result.css.contains("caret-color: var(--color-rose-500)"));
         assert!(result.css.contains(".caret-purple-500\\/25"));
-        assert!(result.css.contains(
-            "caret-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("caret-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"));
         assert!(result.css.contains(".caret-purple-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "caret-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
-        ));
-        assert!(result.css.contains(".caret-purple-500\\/\\(--my-opacity\\)"));
+        assert!(result
+            .css
+            .contains("caret-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"));
+        assert!(result
+            .css
+            .contains(".caret-purple-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
             "caret-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
         ));
@@ -11302,7 +11706,9 @@ mod tests {
         assert!(result.css.contains(".border-blue-600"));
         assert!(result.css.contains("border-color: var(--color-blue-600)"));
         assert!(result.css.contains(".border-x-indigo-500"));
-        assert!(result.css.contains("border-inline-color: var(--color-indigo-500)"));
+        assert!(result
+            .css
+            .contains("border-inline-color: var(--color-indigo-500)"));
         assert!(result.css.contains(".border-s-emerald-500\\/30"));
         assert!(result.css.contains(
             "border-inline-start-color: color-mix(in oklab,var(--color-emerald-500) 30%,transparent)"
@@ -11352,19 +11758,25 @@ mod tests {
         assert!(result.css.contains("border-inline-width: 4px"));
         assert!(result.css.contains(".border-t-\\[3px\\]"));
         assert!(result.css.contains("border-top-width: 3px"));
-        assert!(result.css.contains(".border-e-\\(length\\:--my-border-width\\)"));
-        assert!(result.css.contains("border-inline-end-width: var(--my-border-width)"));
+        assert!(result
+            .css
+            .contains(".border-e-\\(length\\:--my-border-width\\)"));
+        assert!(result
+            .css
+            .contains("border-inline-end-width: var(--my-border-width)"));
         assert!(result.css.contains(".divide-x-2 > :not(:last-child)"));
-        assert!(result.css.contains(
-            "border-inline-start-width: calc(2px * var(--tw-divide-x-reverse))"
-        ));
-        assert!(result.css.contains(
-            "border-inline-end-width: calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
-        ));
-        assert!(result.css.contains(".divide-y-\\[3px\\] > :not(:last-child)"));
-        assert!(result.css.contains(
-            "border-block-end-width: calc(3px * calc(1 - var(--tw-divide-y-reverse)))"
-        ));
+        assert!(result
+            .css
+            .contains("border-inline-start-width: calc(2px * var(--tw-divide-x-reverse))"));
+        assert!(result
+            .css
+            .contains("border-inline-end-width: calc(2px * calc(1 - var(--tw-divide-x-reverse)))"));
+        assert!(result
+            .css
+            .contains(".divide-y-\\[3px\\] > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains("border-block-end-width: calc(3px * calc(1 - var(--tw-divide-y-reverse)))"));
         assert!(result.css.contains(".divide-x-reverse > :not(:last-child)"));
         assert!(result.css.contains("--tw-divide-x-reverse: 1"));
         assert!(result.css.contains(".divide-y-reverse > :not(:last-child)"));
@@ -11393,29 +11805,45 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".border-spacing-2"));
-        assert!(result.css.contains("border-spacing: calc(var(--spacing) * 2)"));
-        assert!(result.css.contains(".border-spacing-\\(--my-border-spacing\\)"));
-        assert!(result.css.contains("border-spacing: var(--my-border-spacing)"));
+        assert!(result
+            .css
+            .contains("border-spacing: calc(var(--spacing) * 2)"));
+        assert!(result
+            .css
+            .contains(".border-spacing-\\(--my-border-spacing\\)"));
+        assert!(result
+            .css
+            .contains("border-spacing: var(--my-border-spacing)"));
         assert!(result.css.contains(".border-spacing-\\[7px\\]"));
         assert!(result.css.contains("border-spacing: 7px"));
         assert!(result.css.contains(".border-spacing-x-3"));
-        assert!(result.css.contains(
-            "border-spacing: calc(var(--spacing) * 3) var(--tw-border-spacing-y)"
-        ));
-        assert!(result.css.contains(".border-spacing-x-\\(--my-border-spacing-x\\)"));
-        assert!(result.css.contains("border-spacing: var(--my-border-spacing-x) var(--tw-border-spacing-y)"));
+        assert!(result
+            .css
+            .contains("border-spacing: calc(var(--spacing) * 3) var(--tw-border-spacing-y)"));
+        assert!(result
+            .css
+            .contains(".border-spacing-x-\\(--my-border-spacing-x\\)"));
+        assert!(result
+            .css
+            .contains("border-spacing: var(--my-border-spacing-x) var(--tw-border-spacing-y)"));
         assert!(result.css.contains(".border-spacing-x-\\[11px\\]"));
-        assert!(result.css.contains("border-spacing: 11px var(--tw-border-spacing-y)"));
+        assert!(result
+            .css
+            .contains("border-spacing: 11px var(--tw-border-spacing-y)"));
         assert!(result.css.contains(".border-spacing-y-4"));
-        assert!(result.css.contains(
-            "border-spacing: var(--tw-border-spacing-x) calc(var(--spacing) * 4)"
-        ));
-        assert!(result.css.contains(".border-spacing-y-\\(--my-border-spacing-y\\)"));
-        assert!(result.css.contains(
-            "border-spacing: var(--tw-border-spacing-x) var(--my-border-spacing-y)"
-        ));
+        assert!(result
+            .css
+            .contains("border-spacing: var(--tw-border-spacing-x) calc(var(--spacing) * 4)"));
+        assert!(result
+            .css
+            .contains(".border-spacing-y-\\(--my-border-spacing-y\\)"));
+        assert!(result
+            .css
+            .contains("border-spacing: var(--tw-border-spacing-x) var(--my-border-spacing-y)"));
         assert!(result.css.contains(".border-spacing-y-\\[13px\\]"));
-        assert!(result.css.contains("border-spacing: var(--tw-border-spacing-x) 13px"));
+        assert!(result
+            .css
+            .contains("border-spacing: var(--tw-border-spacing-x) 13px"));
         assert!(result.css.contains(".md\\:border-spacing-6"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -11482,8 +11910,12 @@ mod tests {
         assert!(result.css.contains("outline-width: 2px"));
         assert!(result.css.contains(".outline-4"));
         assert!(result.css.contains("outline-width: 4px"));
-        assert!(result.css.contains(".outline-\\(length\\:--my-outline-width\\)"));
-        assert!(result.css.contains("outline-width: var(--my-outline-width)"));
+        assert!(result
+            .css
+            .contains(".outline-\\(length\\:--my-outline-width\\)"));
+        assert!(result
+            .css
+            .contains("outline-width: var(--my-outline-width)"));
         assert!(result.css.contains(".outline-\\[2vw\\]"));
         assert!(result.css.contains("outline-width: 2vw"));
         assert!(result.css.contains(".focus\\:outline-2:focus"));
@@ -11528,13 +11960,13 @@ mod tests {
         assert!(result.css.contains(".outline-blue-500"));
         assert!(result.css.contains("outline-color: var(--color-blue-500)"));
         assert!(result.css.contains(".outline-blue-500\\/75"));
-        assert!(result.css.contains(
-            "outline-color: color-mix(in oklab,var(--color-blue-500) 75%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("outline-color: color-mix(in oklab,var(--color-blue-500) 75%,transparent)"));
         assert!(result.css.contains(".outline-rose-500\\/\\[37\\%\\]"));
-        assert!(result.css.contains(
-            "outline-color: color-mix(in oklab,var(--color-rose-500) 37%,transparent)"
-        ));
+        assert!(result
+            .css
+            .contains("outline-color: color-mix(in oklab,var(--color-rose-500) 37%,transparent)"));
         assert!(result.css.contains(".outline-red-500\\/\\(--my-opacity\\)"));
         assert!(result.css.contains(
             "outline-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
@@ -11614,7 +12046,9 @@ mod tests {
         assert!(result
             .css
             .contains(".outline-offset-\\(--my-outline-offset\\)"));
-        assert!(result.css.contains("outline-offset: var(--my-outline-offset)"));
+        assert!(result
+            .css
+            .contains("outline-offset: var(--my-outline-offset)"));
         assert!(result.css.contains(".outline-offset-\\[2vw\\]"));
         assert!(result.css.contains("outline-offset: 2vw"));
         assert!(result.css.contains(".md\\:outline-offset-2"));
@@ -11675,10 +12109,16 @@ mod tests {
         assert!(result.css.contains(".rounded-\\[2vw\\]"));
         assert!(result.css.contains("border-radius: 2vw"));
         assert!(result.css.contains(".rounded-s-lg"));
-        assert!(result.css.contains("border-start-start-radius: var(--radius-lg)"));
-        assert!(result.css.contains("border-end-start-radius: var(--radius-lg)"));
+        assert!(result
+            .css
+            .contains("border-start-start-radius: var(--radius-lg)"));
+        assert!(result
+            .css
+            .contains("border-end-start-radius: var(--radius-lg)"));
         assert!(result.css.contains(".rounded-se-xl"));
-        assert!(result.css.contains("border-start-end-radius: var(--radius-xl)"));
+        assert!(result
+            .css
+            .contains("border-start-end-radius: var(--radius-xl)"));
         assert!(result.css.contains(".rounded-tr-none"));
         assert!(result.css.contains("border-top-right-radius: 0"));
     }
@@ -11702,17 +12142,29 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".shadow-sm"));
-        assert!(result.css.contains("box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)"));
         assert!(result.css.contains(".shadow"));
-        assert!(result.css.contains("box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1)"));
         assert!(result.css.contains(".shadow-md"));
-        assert!(result.css.contains("box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)"));
         assert!(result.css.contains(".shadow-lg"));
-        assert!(result.css.contains("box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1)"));
         assert!(result.css.contains(".shadow-xl"));
-        assert!(result.css.contains("box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1)"));
         assert!(result.css.contains(".shadow-2xl"));
-        assert!(result.css.contains("box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25)"));
         assert!(result.css.contains(".shadow-none"));
         assert!(result.css.contains("box-shadow: none"));
     }
@@ -11733,13 +12185,21 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".ring"));
-        assert!(result.css.contains("box-shadow: 0 0 0 3px rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 3px rgba(59,130,246,0.5)"));
         assert!(result.css.contains(".ring-0"));
-        assert!(result.css.contains("box-shadow: 0 0 0 0 rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 0 rgba(59,130,246,0.5)"));
         assert!(result.css.contains(".ring-2"));
-        assert!(result.css.contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
         assert!(result.css.contains(".ring-8"));
-        assert!(result.css.contains("box-shadow: 0 0 0 8px rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 8px rgba(59,130,246,0.5)"));
     }
 
     #[test]
@@ -11750,7 +12210,9 @@ mod tests {
         };
         let result = generate(&["focus:ring-2".to_string()], &config);
         assert!(result.css.contains(".focus\\:ring-2:focus"));
-        assert!(result.css.contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 2px rgba(59,130,246,0.5)"));
     }
 
     #[test]
@@ -11760,7 +12222,10 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(
-            &["hover:bg-blue-500".to_string(), "active:bg-blue-600".to_string()],
+            &[
+                "hover:bg-blue-500".to_string(),
+                "active:bg-blue-600".to_string(),
+            ],
             &config,
         );
         assert!(result.css.contains(".hover\\:bg-blue-500:hover"));
@@ -11783,7 +12248,9 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".focus-within\\:ring-1:focus-within"));
-        assert!(result.css.contains("box-shadow: 0 0 0 1px rgba(59,130,246,0.5)"));
+        assert!(result
+            .css
+            .contains("box-shadow: 0 0 0 1px rgba(59,130,246,0.5)"));
         assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
         assert!(result.css.contains("background-color: #e5e7eb"));
     }
@@ -11814,11 +12281,8 @@ mod tests {
             disabled_namespaces: vec![],
             declared_theme_vars: vec![],
         };
-        let result = generate_with_overrides(
-            &["dark:bg-black".to_string()],
-            &config,
-            Some(&overrides),
-        );
+        let result =
+            generate_with_overrides(&["dark:bg-black".to_string()], &config, Some(&overrides));
         assert!(result
             .css
             .contains(".dark\\:bg-black:where(.dark, .dark *)"));
@@ -11971,6 +12435,37 @@ mod tests {
     }
 
     #[test]
+    fn respects_global_theme_reset_for_text_shadow_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: true,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result =
+            generate_with_overrides(&["text-shadow-xl".to_string()], &config, Some(&overrides));
+        assert!(!result.css.contains(".text-shadow-xl"));
+
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            global_theme_reset: true,
+            disabled_namespaces: vec![],
+            declared_theme_vars: vec!["--text-shadow-xl".to_string()],
+        };
+        let result =
+            generate_with_overrides(&["text-shadow-xl".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".text-shadow-xl"));
+    }
+
+    #[test]
     fn generates_stacked_state_variants() {
         let config = GeneratorConfig {
             minify: false,
@@ -12005,9 +12500,7 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["group-hover:underline".to_string()], &config);
-        assert!(result
-            .css
-            .contains(".group:hover .group-hover\\:underline"));
+        assert!(result.css.contains(".group:hover .group-hover\\:underline"));
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains("text-decoration-line: underline"));
     }
@@ -12065,23 +12558,31 @@ mod tests {
             &config,
         );
 
-        assert!(result.css.contains(".focus-visible\\:underline:focus-visible"));
+        assert!(result
+            .css
+            .contains(".focus-visible\\:underline:focus-visible"));
         assert!(result.css.contains(".visited\\:text-blue-600:visited"));
         assert!(result.css.contains(".first\\:underline:first-child"));
         assert!(result.css.contains(".last\\:underline:last-child"));
         assert!(result.css.contains(".odd\\:bg-gray-100:nth-child(odd)"));
         assert!(result.css.contains(".even\\:bg-gray-200:nth-child(even)"));
         assert!(result.css.contains(".nth-3\\:underline:nth-child(3)"));
-        assert!(result.css.contains(".nth-\\[2n\\+1\\]\\:underline:nth-child(2n+1)"));
-        assert!(result.css.contains(".nth-last-2\\:underline:nth-last-child(2)"));
+        assert!(result
+            .css
+            .contains(".nth-\\[2n\\+1\\]\\:underline:nth-child(2n+1)"));
+        assert!(result
+            .css
+            .contains(".nth-last-2\\:underline:nth-last-child(2)"));
         assert!(result
             .css
             .contains(".nth-of-type-4\\:underline:nth-of-type(4)"));
-        assert!(result.css.contains(
-            ".nth-last-of-type-\\[2n\\+1\\]\\:underline:nth-last-of-type(2n+1)"
-        ));
+        assert!(result
+            .css
+            .contains(".nth-last-of-type-\\[2n\\+1\\]\\:underline:nth-last-of-type(2n+1)"));
         assert!(result.css.contains(".only\\:underline:only-child"));
-        assert!(result.css.contains(".only-of-type\\:underline:only-of-type"));
+        assert!(result
+            .css
+            .contains(".only-of-type\\:underline:only-of-type"));
         assert!(result.css.contains(".empty\\:hidden:empty"));
         assert!(result.css.contains(".read-only\\:bg-gray-100:read-only"));
         assert!(result
@@ -12089,7 +12590,9 @@ mod tests {
             .contains(".placeholder-shown\\:text-gray-500:placeholder-shown"));
         assert!(result.css.contains(".autofill\\:bg-blue-100:autofill"));
         assert!(result.css.contains(".in-range\\:text-blue-600:in-range"));
-        assert!(result.css.contains(".out-of-range\\:text-gray-700:out-of-range"));
+        assert!(result
+            .css
+            .contains(".out-of-range\\:text-gray-700:out-of-range"));
     }
 
     #[test]
@@ -12125,31 +12628,43 @@ mod tests {
             &config,
         );
 
-        assert!(result.css.contains(".group:focus .group-focus\\:text-blue-600"));
+        assert!(result
+            .css
+            .contains(".group:focus .group-focus\\:text-blue-600"));
         assert!(result
             .css
             .contains(".group\\/item:hover .group-hover\\/item\\:text-blue-600"));
         assert!(result
             .css
             .contains(".group:has(:checked) .group-has-checked\\:underline"));
-        assert!(result.css.contains(
-            ".group[data-state=open] .group-data-\\[state\\=open\\]\\:underline"
-        ));
+        assert!(result
+            .css
+            .contains(".group[data-state=open] .group-data-\\[state\\=open\\]\\:underline"));
         assert!(result.css.contains(
             ".group[aria-sort=ascending] .group-aria-\\[sort\\=ascending\\]\\:underline"
         ));
-        assert!(result.css.contains(".peer:checked ~ .peer-checked\\:text-blue-600"));
-        assert!(result.css.contains(".peer:invalid ~ .peer-invalid\\:text-gray-700"));
+        assert!(result
+            .css
+            .contains(".peer:checked ~ .peer-checked\\:text-blue-600"));
+        assert!(result
+            .css
+            .contains(".peer:invalid ~ .peer-invalid\\:text-gray-700"));
         assert!(result
             .css
             .contains(".peer\\/draft:checked ~ .peer-checked\\/draft\\:text-blue-600"));
-        assert!(result.css.contains(".peer:has(:checked) ~ .peer-has-checked\\:hidden"));
-        assert!(result.css.contains(
-            ".peer[data-size=large] ~ .peer-data-\\[size\\=large\\]\\:underline"
-        ));
+        assert!(result
+            .css
+            .contains(".peer:has(:checked) ~ .peer-has-checked\\:hidden"));
+        assert!(result
+            .css
+            .contains(".peer[data-size=large] ~ .peer-data-\\[size\\=large\\]\\:underline"));
         assert!(result.css.contains(":where(:focus) .in-focus\\:underline"));
-        assert!(result.css.contains(".has-checked\\:bg-blue-100:has(:checked)"));
-        assert!(result.css.contains(".has-\\[\\:focus\\]\\:underline:has(:focus)"));
+        assert!(result
+            .css
+            .contains(".has-checked\\:bg-blue-100:has(:checked)"));
+        assert!(result
+            .css
+            .contains(".has-\\[\\:focus\\]\\:underline:has(:focus)"));
         assert!(result
             .css
             .contains(".not-focus\\:hover\\:bg-blue-500:not(:focus):hover"));
@@ -12228,7 +12743,9 @@ mod tests {
         assert!(result.css.contains(".before\\:bg-blue-500:before"));
         assert!(result.css.contains("content:\"\""));
         assert!(result.css.contains(".after\\:text-blue-600:after"));
-        assert!(result.css.contains(".first-letter\\:text-blue-600::first-letter"));
+        assert!(result
+            .css
+            .contains(".first-letter\\:text-blue-600::first-letter"));
         assert!(result.css.contains(".first-line\\:uppercase::first-line"));
         assert!(result
             .css
@@ -12236,9 +12753,13 @@ mod tests {
         assert!(result.css.contains(
             ".selection\\:bg-blue-100::selection, .selection\\:bg-blue-100 *::selection"
         ));
-        assert!(result.css.contains(".file\\:bg-blue-100::file-selector-button"));
+        assert!(result
+            .css
+            .contains(".file\\:bg-blue-100::file-selector-button"));
         assert!(result.css.contains(".backdrop\\:bg-gray-100::backdrop"));
-        assert!(result.css.contains(".placeholder\\:text-gray-500::placeholder"));
+        assert!(result
+            .css
+            .contains(".placeholder\\:text-gray-500::placeholder"));
         assert!(result.css.contains(":is(.\\*\\:underline > *)"));
         assert!(result.css.contains(":is(.\\*\\*\\:underline *)"));
         assert!(result
@@ -12247,7 +12768,9 @@ mod tests {
         assert!(result.css.contains(".inert\\:bg-gray-100:is([inert]"));
         assert!(result.css.contains("@supports (display:grid)"));
         assert!(result.css.contains("@supports (not (display:grid))"));
-        assert!(result.css.contains("@supports (backdrop-filter: var(--tw))"));
+        assert!(result
+            .css
+            .contains("@supports (backdrop-filter: var(--tw))"));
         assert!(result.css.contains("@starting-style"));
         assert!(result.css.contains("@container (width >= 28rem)"));
         assert!(result.css.contains("@container (width < 32rem)"));
@@ -12298,9 +12821,9 @@ mod tests {
             &["[&>[data-active]+span]:text-blue-600".to_string()],
             &config,
         );
-        assert!(result.css.contains(
-            ".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"
-        ));
+        assert!(result
+            .css
+            .contains(".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"));
         assert!(result.css.contains("color: #2563eb"));
     }
 
@@ -12310,13 +12833,18 @@ mod tests {
             minify: false,
             colors: BTreeMap::new(),
         };
-        let result = generate(&["dark:lg:data-current:hover:bg-indigo-600".to_string()], &config);
+        let result = generate(
+            &["dark:lg:data-current:hover:bg-indigo-600".to_string()],
+            &config,
+        );
         assert!(result
             .css
             .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600[data-current]:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
-        assert!(result.css.contains("background-color: var(--color-indigo-600)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-indigo-600)"));
     }
 
     #[test]
@@ -12351,9 +12879,9 @@ mod tests {
             &["dark:lg:data-current:hover:bg-indigo-600!".to_string()],
             &config,
         );
-        assert!(result.css.contains(
-            ".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\![data-current]:hover"
-        ));
+        assert!(result
+            .css
+            .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\![data-current]:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result
@@ -12404,13 +12932,9 @@ mod tests {
             ],
             &config,
         );
-        assert!(result
-            .css
-            .contains(".\\[--gutter-width\\:1rem\\]"));
+        assert!(result.css.contains(".\\[--gutter-width\\:1rem\\]"));
         assert!(result.css.contains("--gutter-width: 1rem"));
-        assert!(result
-            .css
-            .contains(".lg\\:\\[--gutter-width\\:2rem\\]"));
+        assert!(result.css.contains(".lg\\:\\[--gutter-width\\:2rem\\]"));
         assert!(result.css.contains("--gutter-width: 2rem"));
         assert!(result.css.contains("@media (width >= 64rem)"));
     }
@@ -12451,7 +12975,10 @@ mod tests {
             minify: false,
             colors,
         };
-        let result = generate(&["text-gray-500".to_string(), "bg-gray-500".to_string()], &config);
+        let result = generate(
+            &["text-gray-500".to_string(), "bg-gray-500".to_string()],
+            &config,
+        );
         assert!(result.css.contains("color: #123456"));
         assert!(result.css.contains("background-color: #123456"));
     }
@@ -13403,7 +13930,9 @@ mod tests {
         assert!(result.css.contains("cursor: zoom-in"));
         assert!(result.css.contains(".cursor-zoom-out"));
         assert!(result.css.contains("cursor: zoom-out"));
-        assert!(result.css.contains(".cursor-\\[url\\(hand.cur\\)\\,_pointer\\]"));
+        assert!(result
+            .css
+            .contains(".cursor-\\[url\\(hand.cur\\)\\,_pointer\\]"));
         assert!(result.css.contains("cursor: url(hand.cur),_pointer"));
         assert!(result.css.contains(".cursor-\\(--my-cursor\\)"));
         assert!(result.css.contains("cursor: var(--my-cursor)"));
@@ -13886,7 +14415,9 @@ mod tests {
         );
         assert!(result.css.contains(".mask-none"));
         assert!(result.css.contains("mask-image: none"));
-        assert!(result.css.contains(".mask-\\[url\\(\\/img\\/scribble.png\\)\\]"));
+        assert!(result
+            .css
+            .contains(".mask-\\[url\\(\\/img\\/scribble.png\\)\\]"));
         assert!(result.css.contains("mask-image: url(/img/scribble.png)"));
         assert!(result.css.contains(".mask-\\(--my-mask\\)"));
         assert!(result.css.contains("mask-image: var(--my-mask)"));
@@ -13903,7 +14434,9 @@ mod tests {
             "mask-image: linear-gradient(var(--tw-mask-linear-position),black calc(var(--spacing) * 20),transparent var(--tw-mask-linear-to))"
         ));
         assert!(result.css.contains(".mask-linear-from-50\\%"));
-        assert!(result.css.contains("black 50%,transparent var(--tw-mask-linear-to)"));
+        assert!(result
+            .css
+            .contains("black 50%,transparent var(--tw-mask-linear-to)"));
         assert!(result.css.contains(".mask-linear-from-regal-blue"));
         assert!(result
             .css
@@ -13917,9 +14450,13 @@ mod tests {
             "mask-image: linear-gradient(var(--tw-mask-linear-position),black var(--tw-mask-linear-from),transparent calc(var(--spacing) * 40))"
         ));
         assert!(result.css.contains(".mask-t-from-50\\%"));
-        assert!(result.css.contains("mask-image: linear-gradient(to top,black 50%,transparent var(--tw-mask-top-to))"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(to top,black 50%,transparent var(--tw-mask-top-to))"
+        ));
         assert!(result.css.contains(".mask-r-to-30\\%"));
-        assert!(result.css.contains("mask-image: linear-gradient(to right,black var(--tw-mask-right-from),transparent 30%)"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(to right,black var(--tw-mask-right-from),transparent 30%)"
+        ));
         assert!(result.css.contains(".mask-y-from-70\\%"));
         assert!(result.css.contains("mask-composite: intersect"));
         assert!(result.css.contains(".mask-x-to-90\\%"));
@@ -13931,13 +14468,19 @@ mod tests {
         assert!(result
             .css
             .contains(".mask-radial-\\[at_30\\%_30\\%\\,black\\,transparent\\]"));
-        assert!(result.css.contains("mask-image: radial-gradient(at_30%_30%,black,transparent)"));
+        assert!(result
+            .css
+            .contains("mask-image: radial-gradient(at_30%_30%,black,transparent)"));
         assert!(result.css.contains(".mask-circle"));
         assert!(result.css.contains("--tw-mask-radial-shape: circle"));
         assert!(result.css.contains(".mask-radial-farthest-corner"));
-        assert!(result.css.contains("--tw-mask-radial-size: farthest-corner"));
+        assert!(result
+            .css
+            .contains("--tw-mask-radial-size: farthest-corner"));
         assert!(result.css.contains(".mask-radial-at-bottom-left"));
-        assert!(result.css.contains("--tw-mask-radial-position: bottom left"));
+        assert!(result
+            .css
+            .contains("--tw-mask-radial-position: bottom left"));
         assert!(result.css.contains(".mask-radial-at-\\[35\\%_35\\%\\]"));
         assert!(result.css.contains("--tw-mask-radial-position: 35%_35%"));
         assert!(result.css.contains(".mask-radial-from-75\\%"));
@@ -13955,7 +14498,9 @@ mod tests {
             "mask-image: conic-gradient(from calc(75deg * -1),black var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))"
         ));
         assert!(result.css.contains(".mask-conic-from-75\\%"));
-        assert!(result.css.contains("from var(--tw-mask-conic-position),black 75%"));
+        assert!(result
+            .css
+            .contains("from var(--tw-mask-conic-position),black 75%"));
         assert!(result.css.contains(".mask-conic-to-regal-blue"));
         assert!(result
             .css
@@ -14086,8 +14631,12 @@ mod tests {
         assert!(result.css.contains("mask-position: bottom"));
         assert!(result.css.contains(".mask-bottom-right"));
         assert!(result.css.contains("mask-position: bottom right"));
-        assert!(result.css.contains(".mask-position-\\(--my-mask-position\\)"));
-        assert!(result.css.contains("mask-position: var(--my-mask-position)"));
+        assert!(result
+            .css
+            .contains(".mask-position-\\(--my-mask-position\\)"));
+        assert!(result
+            .css
+            .contains("mask-position: var(--my-mask-position)"));
         assert!(result.css.contains(".mask-position-\\[center_top_1rem\\]"));
         assert!(result.css.contains("mask-position: center_top_1rem"));
         assert!(result.css.contains(".md\\:mask-top"));
@@ -14411,9 +14960,13 @@ mod tests {
         assert!(result.css.contains(".-inset-4"));
         assert!(result.css.contains("inset: calc(var(--spacing) * -4)"));
         assert!(result.css.contains(".inset-x-2"));
-        assert!(result.css.contains("left: calc(var(--spacing) * 2); right: calc(var(--spacing) * 2)"));
+        assert!(result
+            .css
+            .contains("left: calc(var(--spacing) * 2); right: calc(var(--spacing) * 2)"));
         assert!(result.css.contains(".inset-y-3"));
-        assert!(result.css.contains("top: calc(var(--spacing) * 3); bottom: calc(var(--spacing) * 3)"));
+        assert!(result
+            .css
+            .contains("top: calc(var(--spacing) * 3); bottom: calc(var(--spacing) * 3)"));
         assert!(result.css.contains(".top-1\\/2"));
         assert!(result.css.contains("top: calc(1/2 * 100%)"));
         assert!(result.css.contains(".-top-1\\/2"));
@@ -14429,9 +14982,13 @@ mod tests {
         assert!(result.css.contains(".bottom-auto"));
         assert!(result.css.contains("bottom: auto"));
         assert!(result.css.contains(".start-2"));
-        assert!(result.css.contains("inset-inline-start: calc(var(--spacing) * 2)"));
+        assert!(result
+            .css
+            .contains("inset-inline-start: calc(var(--spacing) * 2)"));
         assert!(result.css.contains(".end-3"));
-        assert!(result.css.contains("inset-inline-end: calc(var(--spacing) * 3)"));
+        assert!(result
+            .css
+            .contains("inset-inline-end: calc(var(--spacing) * 3)"));
         assert!(result.css.contains(".inset-\\(--my-position\\)"));
         assert!(result.css.contains("inset: var(--my-position)"));
         assert!(result.css.contains(".inset-\\[3px\\]"));
@@ -14511,15 +15068,23 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".perspective-dramatic"));
-        assert!(result.css.contains("perspective: var(--perspective-dramatic)"));
+        assert!(result
+            .css
+            .contains("perspective: var(--perspective-dramatic)"));
         assert!(result.css.contains(".perspective-near"));
         assert!(result.css.contains("perspective: var(--perspective-near)"));
         assert!(result.css.contains(".perspective-normal"));
-        assert!(result.css.contains("perspective: var(--perspective-normal)"));
+        assert!(result
+            .css
+            .contains("perspective: var(--perspective-normal)"));
         assert!(result.css.contains(".perspective-midrange"));
-        assert!(result.css.contains("perspective: var(--perspective-midrange)"));
+        assert!(result
+            .css
+            .contains("perspective: var(--perspective-midrange)"));
         assert!(result.css.contains(".perspective-distant"));
-        assert!(result.css.contains("perspective: var(--perspective-distant)"));
+        assert!(result
+            .css
+            .contains("perspective: var(--perspective-distant)"));
         assert!(result.css.contains(".perspective-none"));
         assert!(result.css.contains("perspective: none"));
         assert!(result.css.contains(".perspective-\\(--my-perspective\\)"));
@@ -14527,7 +15092,9 @@ mod tests {
         assert!(result.css.contains(".perspective-\\[750px\\]"));
         assert!(result.css.contains("perspective: 750px"));
         assert!(result.css.contains(".perspective-remote"));
-        assert!(result.css.contains("perspective: var(--perspective-remote)"));
+        assert!(result
+            .css
+            .contains("perspective: var(--perspective-remote)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:perspective-dramatic"));
     }
@@ -14576,8 +15143,12 @@ mod tests {
         assert!(result
             .css
             .contains(".perspective-origin-\\(--my-perspective-origin\\)"));
-        assert!(result.css.contains("perspective-origin: var(--my-perspective-origin)"));
-        assert!(result.css.contains(".perspective-origin-\\[200\\%_150\\%\\]"));
+        assert!(result
+            .css
+            .contains("perspective-origin: var(--my-perspective-origin)"));
+        assert!(result
+            .css
+            .contains(".perspective-origin-\\[200\\%_150\\%\\]"));
         assert!(result.css.contains("perspective-origin: 200%_150%"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:perspective-origin-bottom-left"));
@@ -14624,20 +15195,30 @@ mod tests {
         assert!(result.css.contains("rotate: 3.142rad"));
 
         assert!(result.css.contains(".rotate-x-50"));
-        assert!(result.css.contains("transform: rotateX(50deg) var(--tw-rotate-y)"));
+        assert!(result
+            .css
+            .contains("transform: rotateX(50deg) var(--tw-rotate-y)"));
         assert!(result.css.contains(".-rotate-x-15"));
-        assert!(result.css.contains("transform: rotateX(-15deg) var(--tw-rotate-y)"));
+        assert!(result
+            .css
+            .contains("transform: rotateX(-15deg) var(--tw-rotate-y)"));
         assert!(result.css.contains(".rotate-x-\\(--my-rotate-x\\)"));
         assert!(result
             .css
             .contains("transform: rotateX(var(--my-rotate-x)) var(--tw-rotate-y)"));
         assert!(result.css.contains(".rotate-x-\\[25deg\\]"));
-        assert!(result.css.contains("transform: rotateX(25deg) var(--tw-rotate-y)"));
+        assert!(result
+            .css
+            .contains("transform: rotateX(25deg) var(--tw-rotate-y)"));
 
         assert!(result.css.contains(".rotate-y-25"));
-        assert!(result.css.contains("transform: var(--tw-rotate-x) rotateY(25deg)"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) rotateY(25deg)"));
         assert!(result.css.contains(".-rotate-y-30"));
-        assert!(result.css.contains("transform: var(--tw-rotate-x) rotateY(-30deg)"));
+        assert!(result
+            .css
+            .contains("transform: var(--tw-rotate-x) rotateY(-30deg)"));
         assert!(result.css.contains(".rotate-y-\\(--my-rotate-y\\)"));
         assert!(result
             .css
@@ -14705,32 +15286,46 @@ mod tests {
         assert!(result.css.contains(".scale-75"));
         assert!(result.css.contains("scale: 75% 75%"));
         assert!(result.css.contains(".-scale-125"));
-        assert!(result.css.contains("scale: calc(125% * -1) calc(125% * -1)"));
+        assert!(result
+            .css
+            .contains("scale: calc(125% * -1) calc(125% * -1)"));
         assert!(result.css.contains(".scale-\\(--my-scale\\)"));
-        assert!(result.css.contains("scale: var(--my-scale) var(--my-scale)"));
+        assert!(result
+            .css
+            .contains("scale: var(--my-scale) var(--my-scale)"));
         assert!(result.css.contains(".scale-\\[1.7\\]"));
         assert!(result.css.contains("scale: 1.7"));
 
         assert!(result.css.contains(".scale-x-75"));
         assert!(result.css.contains("scale: 75% var(--tw-scale-y)"));
         assert!(result.css.contains(".-scale-x-150"));
-        assert!(result.css.contains("scale: calc(150% * -1) var(--tw-scale-y)"));
+        assert!(result
+            .css
+            .contains("scale: calc(150% * -1) var(--tw-scale-y)"));
         assert!(result.css.contains(".scale-x-\\(--my-scale-x\\)"));
-        assert!(result.css.contains("scale: var(--my-scale-x) var(--tw-scale-y)"));
+        assert!(result
+            .css
+            .contains("scale: var(--my-scale-x) var(--tw-scale-y)"));
         assert!(result.css.contains(".scale-x-\\[1.2\\]"));
         assert!(result.css.contains("scale: 1.2 var(--tw-scale-y)"));
 
         assert!(result.css.contains(".scale-y-125"));
         assert!(result.css.contains("scale: var(--tw-scale-x) 125%"));
         assert!(result.css.contains(".-scale-y-90"));
-        assert!(result.css.contains("scale: var(--tw-scale-x) calc(90% * -1)"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) calc(90% * -1)"));
         assert!(result.css.contains(".scale-y-\\(--my-scale-y\\)"));
-        assert!(result.css.contains("scale: var(--tw-scale-x) var(--my-scale-y)"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--my-scale-y)"));
         assert!(result.css.contains(".scale-y-\\[1.3\\]"));
         assert!(result.css.contains("scale: var(--tw-scale-x) 1.3"));
 
         assert!(result.css.contains(".scale-z-110"));
-        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y) 110%"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--tw-scale-y) 110%"));
         assert!(result.css.contains(".-scale-z-80"));
         assert!(result
             .css
@@ -14740,7 +15335,9 @@ mod tests {
             .css
             .contains("scale: var(--tw-scale-x) var(--tw-scale-y) var(--my-scale-z)"));
         assert!(result.css.contains(".scale-z-\\[0.8\\]"));
-        assert!(result.css.contains("scale: var(--tw-scale-x) var(--tw-scale-y) 0.8"));
+        assert!(result
+            .css
+            .contains("scale: var(--tw-scale-x) var(--tw-scale-y) 0.8"));
         assert!(result.css.contains(".scale-3d"));
         assert!(result
             .css
@@ -14780,7 +15377,9 @@ mod tests {
         assert!(result.css.contains(".skew-3"));
         assert!(result.css.contains("transform: skewX(3deg) skewY(3deg)"));
         assert!(result.css.contains(".-skew-12"));
-        assert!(result.css.contains("transform: skewX(-12deg) skewY(-12deg)"));
+        assert!(result
+            .css
+            .contains("transform: skewX(-12deg) skewY(-12deg)"));
         assert!(result.css.contains(".skew-\\(--my-skew\\)"));
         assert!(result
             .css
@@ -14914,7 +15513,9 @@ mod tests {
         assert!(result.css.contains(".origin-top-left"));
         assert!(result.css.contains("transform-origin: top left"));
         assert!(result.css.contains(".origin-\\(--my-transform-origin\\)"));
-        assert!(result.css.contains("transform-origin: var(--my-transform-origin)"));
+        assert!(result
+            .css
+            .contains("transform-origin: var(--my-transform-origin)"));
         assert!(result.css.contains(".origin-\\[33\\%_75\\%\\]"));
         assert!(result.css.contains("transform-origin: 33%_75%"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -14974,13 +15575,21 @@ mod tests {
         assert!(result.css.contains(".translate-none"));
         assert!(result.css.contains("translate: none"));
         assert!(result.css.contains(".translate-2"));
-        assert!(result.css.contains("translate: calc(var(--spacing) * 2) calc(var(--spacing) * 2)"));
+        assert!(result
+            .css
+            .contains("translate: calc(var(--spacing) * 2) calc(var(--spacing) * 2)"));
         assert!(result.css.contains(".-translate-4"));
-        assert!(result.css.contains("translate: calc(var(--spacing) * -4) calc(var(--spacing) * -4)"));
+        assert!(result
+            .css
+            .contains("translate: calc(var(--spacing) * -4) calc(var(--spacing) * -4)"));
         assert!(result.css.contains(".translate-1\\/2"));
-        assert!(result.css.contains("translate: calc(1/2 * 100%) calc(1/2 * 100%)"));
+        assert!(result
+            .css
+            .contains("translate: calc(1/2 * 100%) calc(1/2 * 100%)"));
         assert!(result.css.contains(".-translate-1\\/4"));
-        assert!(result.css.contains("translate: calc(1/4 * -100%) calc(1/4 * -100%)"));
+        assert!(result
+            .css
+            .contains("translate: calc(1/4 * -100%) calc(1/4 * -100%)"));
         assert!(result.css.contains(".translate-full"));
         assert!(result.css.contains("translate: 100% 100%"));
         assert!(result.css.contains(".-translate-full"));
@@ -14990,60 +15599,86 @@ mod tests {
         assert!(result.css.contains(".-translate-px"));
         assert!(result.css.contains("translate: -1px -1px"));
         assert!(result.css.contains(".translate-\\(--my-translate\\)"));
-        assert!(result.css.contains("translate: var(--my-translate) var(--my-translate)"));
+        assert!(result
+            .css
+            .contains("translate: var(--my-translate) var(--my-translate)"));
         assert!(result.css.contains(".translate-\\[3.142rad\\]"));
         assert!(result.css.contains("translate: 3.142rad 3.142rad"));
 
         assert!(result.css.contains(".translate-x-3"));
-        assert!(result.css.contains("translate: calc(var(--spacing) * 3) var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: calc(var(--spacing) * 3) var(--tw-translate-y)"));
         assert!(result.css.contains(".-translate-x-6"));
-        assert!(result.css.contains("translate: calc(var(--spacing) * -6) var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: calc(var(--spacing) * -6) var(--tw-translate-y)"));
         assert!(result.css.contains(".translate-x-1\\/2"));
-        assert!(result.css.contains("translate: calc(1/2 * 100%) var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: calc(1/2 * 100%) var(--tw-translate-y)"));
         assert!(result.css.contains(".-translate-x-1\\/4"));
-        assert!(result.css.contains("translate: calc(1/4 * -100%) var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: calc(1/4 * -100%) var(--tw-translate-y)"));
         assert!(result.css.contains(".translate-x-full"));
         assert!(result.css.contains("translate: 100% var(--tw-translate-y)"));
         assert!(result.css.contains(".-translate-x-full"));
-        assert!(result.css.contains("translate: -100% var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: -100% var(--tw-translate-y)"));
         assert!(result.css.contains(".translate-x-px"));
         assert!(result.css.contains("translate: 1px var(--tw-translate-y)"));
         assert!(result.css.contains(".-translate-x-px"));
         assert!(result.css.contains("translate: -1px var(--tw-translate-y)"));
         assert!(result.css.contains(".translate-x-\\(--my-translate-x\\)"));
-        assert!(result.css.contains("translate: var(--my-translate-x) var(--tw-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: var(--my-translate-x) var(--tw-translate-y)"));
         assert!(result.css.contains(".translate-x-\\[4px\\]"));
         assert!(result.css.contains("translate: 4px var(--tw-translate-y)"));
 
         assert!(result.css.contains(".translate-y-8"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".-translate-y-2"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) calc(var(--spacing) * -2)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) calc(var(--spacing) * -2)"));
         assert!(result.css.contains(".translate-y-1\\/3"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) calc(1/3 * 100%)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) calc(1/3 * 100%)"));
         assert!(result.css.contains(".-translate-y-1\\/2"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) calc(1/2 * -100%)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) calc(1/2 * -100%)"));
         assert!(result.css.contains(".translate-y-full"));
         assert!(result.css.contains("translate: var(--tw-translate-x) 100%"));
         assert!(result.css.contains(".-translate-y-full"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) -100%"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) -100%"));
         assert!(result.css.contains(".translate-y-px"));
         assert!(result.css.contains("translate: var(--tw-translate-x) 1px"));
         assert!(result.css.contains(".-translate-y-px"));
         assert!(result.css.contains("translate: var(--tw-translate-x) -1px"));
         assert!(result.css.contains(".translate-y-\\(--my-translate-y\\)"));
-        assert!(result.css.contains("translate: var(--tw-translate-x) var(--my-translate-y)"));
+        assert!(result
+            .css
+            .contains("translate: var(--tw-translate-x) var(--my-translate-y)"));
         assert!(result.css.contains(".translate-y-\\[5px\\]"));
         assert!(result.css.contains("translate: var(--tw-translate-x) 5px"));
 
         assert!(result.css.contains(".translate-z-12"));
-        assert!(result
-            .css
-            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * 12)"));
+        assert!(result.css.contains(
+            "translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * 12)"
+        ));
         assert!(result.css.contains(".-translate-z-8"));
-        assert!(result
-            .css
-            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * -8)"));
+        assert!(result.css.contains(
+            "translate: var(--tw-translate-x) var(--tw-translate-y) calc(var(--spacing) * -8)"
+        ));
         assert!(result.css.contains(".translate-z-px"));
         assert!(result
             .css
@@ -15053,9 +15688,9 @@ mod tests {
             .css
             .contains("translate: var(--tw-translate-x) var(--tw-translate-y) -1px"));
         assert!(result.css.contains(".translate-z-\\(--my-translate-z\\)"));
-        assert!(result
-            .css
-            .contains("translate: var(--tw-translate-x) var(--tw-translate-y) var(--my-translate-z)"));
+        assert!(result.css.contains(
+            "translate: var(--tw-translate-x) var(--tw-translate-y) var(--my-translate-z)"
+        ));
         assert!(result.css.contains(".translate-z-\\[2rem\\]"));
         assert!(result
             .css
@@ -15063,7 +15698,9 @@ mod tests {
 
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:translate-6"));
-        assert!(result.css.contains("translate: calc(var(--spacing) * 6) calc(var(--spacing) * 6)"));
+        assert!(result
+            .css
+            .contains("translate: calc(var(--spacing) * 6) calc(var(--spacing) * 6)"));
     }
 
     #[test]
@@ -15240,8 +15877,12 @@ mod tests {
         assert!(result.css.contains("flex-shrink: 0"));
         assert!(result.css.contains(".shrink-2"));
         assert!(result.css.contains("flex-shrink: 2"));
-        assert!(result.css.contains(".shrink-\\[calc\\(100vw-var\\(--sidebar\\)\\)\\]"));
-        assert!(result.css.contains("flex-shrink: calc(100vw-var(--sidebar))"));
+        assert!(result
+            .css
+            .contains(".shrink-\\[calc\\(100vw-var\\(--sidebar\\)\\)\\]"));
+        assert!(result
+            .css
+            .contains("flex-shrink: calc(100vw-var(--sidebar))"));
         assert!(result.css.contains(".shrink-\\(--my-shrink\\)"));
         assert!(result.css.contains("flex-shrink: var(--my-shrink)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -15267,21 +15908,27 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".grid-cols-1"));
-        assert!(result.css.contains("grid-template-columns: repeat(1, minmax(0, 1fr))"));
+        assert!(result
+            .css
+            .contains("grid-template-columns: repeat(1, minmax(0, 1fr))"));
         assert!(result.css.contains(".grid-cols-6"));
-        assert!(result.css.contains("grid-template-columns: repeat(6, minmax(0, 1fr))"));
+        assert!(result
+            .css
+            .contains("grid-template-columns: repeat(6, minmax(0, 1fr))"));
         assert!(result.css.contains(".grid-cols-none"));
         assert!(result.css.contains("grid-template-columns: none"));
         assert!(result.css.contains(".grid-cols-subgrid"));
         assert!(result.css.contains("grid-template-columns: subgrid"));
-        assert!(
-            result
-                .css
-                .contains(".grid-cols-\\[200px_minmax\\(900px\\,_1fr\\)_100px\\]")
-        );
-        assert!(result.css.contains("grid-template-columns: 200px_minmax(900px,_1fr)_100px"));
+        assert!(result
+            .css
+            .contains(".grid-cols-\\[200px_minmax\\(900px\\,_1fr\\)_100px\\]"));
+        assert!(result
+            .css
+            .contains("grid-template-columns: 200px_minmax(900px,_1fr)_100px"));
         assert!(result.css.contains(".grid-cols-\\(--my-grid-cols\\)"));
-        assert!(result.css.contains("grid-template-columns: var(--my-grid-cols)"));
+        assert!(result
+            .css
+            .contains("grid-template-columns: var(--my-grid-cols)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:grid-cols-6"));
     }
@@ -15346,7 +15993,9 @@ mod tests {
         assert!(result.css.contains(".auto-cols-\\[minmax\\(0\\,2fr\\)\\]"));
         assert!(result.css.contains("grid-auto-columns: minmax(0,2fr)"));
         assert!(result.css.contains(".auto-cols-\\(--my-auto-cols\\)"));
-        assert!(result.css.contains("grid-auto-columns: var(--my-auto-cols)"));
+        assert!(result
+            .css
+            .contains("grid-auto-columns: var(--my-auto-cols)"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:auto-cols-min"));
     }
@@ -15456,9 +16105,9 @@ mod tests {
         );
 
         assert!(result.css.contains(".space-x-4 > :not(:last-child)"));
-        assert!(result
-            .css
-            .contains("margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"));
+        assert!(result.css.contains(
+            "margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"
+        ));
         assert!(result.css.contains(".-space-x-2 > :not(:last-child)"));
         assert!(result
             .css
@@ -15471,18 +16120,22 @@ mod tests {
         assert!(result
             .css
             .contains("margin-inline-end: calc(-1px * calc(1 - var(--tw-space-x-reverse)))"));
-        assert!(result.css.contains(".space-x-\\(--my-space-x\\) > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains(".space-x-\\(--my-space-x\\) > :not(:last-child)"));
         assert!(result
             .css
             .contains("margin-inline-start: calc(var(--my-space-x) * var(--tw-space-x-reverse))"));
-        assert!(result.css.contains(".space-x-\\[3rem\\] > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains(".space-x-\\[3rem\\] > :not(:last-child)"));
         assert!(result
             .css
             .contains("margin-inline-end: calc(3rem * calc(1 - var(--tw-space-x-reverse)))"));
         assert!(result.css.contains(".space-y-6 > :not(:last-child)"));
-        assert!(result
-            .css
-            .contains("margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"));
+        assert!(result.css.contains(
+            "margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
+        ));
         assert!(result.css.contains(".-space-y-1 > :not(:last-child)"));
         assert!(result
             .css
@@ -15495,11 +16148,15 @@ mod tests {
         assert!(result
             .css
             .contains("margin-block-end: calc(-1px * calc(1 - var(--tw-space-y-reverse)))"));
-        assert!(result.css.contains(".space-y-\\(--my-space-y\\) > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains(".space-y-\\(--my-space-y\\) > :not(:last-child)"));
         assert!(result
             .css
             .contains("margin-block-start: calc(var(--my-space-y) * var(--tw-space-y-reverse))"));
-        assert!(result.css.contains(".space-y-\\[10\\%\\] > :not(:last-child)"));
+        assert!(result
+            .css
+            .contains(".space-y-\\[10\\%\\] > :not(:last-child)"));
         assert!(result
             .css
             .contains("margin-block-end: calc(10% * calc(1 - var(--tw-space-y-reverse)))"));
@@ -15597,9 +16254,13 @@ mod tests {
         assert!(result.css.contains("width: 42ch"));
 
         assert!(result.css.contains(".size-8"));
-        assert!(result.css.contains("width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8)"));
+        assert!(result
+            .css
+            .contains("width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".size-1\\/2"));
-        assert!(result.css.contains("width: calc(1/2 * 100%); height: calc(1/2 * 100%)"));
+        assert!(result
+            .css
+            .contains("width: calc(1/2 * 100%); height: calc(1/2 * 100%)"));
         assert!(result.css.contains(".size-auto"));
         assert!(result.css.contains("width: auto; height: auto"));
         assert!(result.css.contains(".size-px"));
@@ -15619,13 +16280,21 @@ mod tests {
         assert!(result.css.contains(".size-svh"));
         assert!(result.css.contains("width: 100svh; height: 100svh"));
         assert!(result.css.contains(".size-min"));
-        assert!(result.css.contains("width: min-content; height: min-content"));
+        assert!(result
+            .css
+            .contains("width: min-content; height: min-content"));
         assert!(result.css.contains(".size-max"));
-        assert!(result.css.contains("width: max-content; height: max-content"));
+        assert!(result
+            .css
+            .contains("width: max-content; height: max-content"));
         assert!(result.css.contains(".size-fit"));
-        assert!(result.css.contains("width: fit-content; height: fit-content"));
+        assert!(result
+            .css
+            .contains("width: fit-content; height: fit-content"));
         assert!(result.css.contains(".size-\\(--my-size\\)"));
-        assert!(result.css.contains("width: var(--my-size); height: var(--my-size)"));
+        assert!(result
+            .css
+            .contains("width: var(--my-size); height: var(--my-size)"));
         assert!(result.css.contains(".size-\\[10rem\\]"));
         assert!(result.css.contains("width: 10rem; height: 10rem"));
 
@@ -16049,7 +16718,9 @@ mod tests {
         assert!(result.css.contains(".col-span-\\[5\\]"));
         assert!(result.css.contains("grid-column: span 5 / span 5"));
         assert!(result.css.contains(".col-span-\\(--my-span\\)"));
-        assert!(result.css.contains("grid-column: span var(--my-span) / span var(--my-span)"));
+        assert!(result
+            .css
+            .contains("grid-column: span var(--my-span) / span var(--my-span)"));
         assert!(result.css.contains(".col-start-2"));
         assert!(result.css.contains("grid-column-start: 2"));
         assert!(result.css.contains(".-col-start-2"));
@@ -16122,7 +16793,9 @@ mod tests {
         assert!(result.css.contains(".row-span-\\[5\\]"));
         assert!(result.css.contains("grid-row: span 5 / span 5"));
         assert!(result.css.contains(".row-span-\\(--my-span\\)"));
-        assert!(result.css.contains("grid-row: span var(--my-span) / span var(--my-span)"));
+        assert!(result
+            .css
+            .contains("grid-row: span var(--my-span) / span var(--my-span)"));
         assert!(result.css.contains(".row-start-2"));
         assert!(result.css.contains("grid-row-start: 2"));
         assert!(result.css.contains(".-row-start-2"));

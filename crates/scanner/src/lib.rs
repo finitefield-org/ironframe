@@ -55,7 +55,11 @@ pub fn scan_globs_with_ignore(
     let mut seen = HashSet::new();
 
     let mut builder = WalkBuilder::new(".");
-    builder.hidden(false).git_ignore(true).git_global(true).git_exclude(true);
+    builder
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true);
     for pattern in ignore_patterns {
         builder.add_ignore(pattern);
     }
@@ -268,8 +272,8 @@ fn is_attr_boundary(text: &str, idx: usize, len: usize) -> bool {
     };
     let next = text[idx + len..].chars().next();
 
-    let prev_ok = prev.map_or(true, is_boundary_char);
-    let next_ok = next.map_or(true, |c| is_boundary_char(c) || c == '=');
+    let prev_ok = prev.is_none_or(is_boundary_char);
+    let next_ok = next.is_none_or(|c| is_boundary_char(c) || c == '=');
 
     prev_ok && next_ok
 }
@@ -282,8 +286,8 @@ fn is_identifier_boundary(text: &str, idx: usize, len: usize) -> bool {
     };
     let next = text[idx + len..].chars().next();
 
-    let prev_ok = prev.map_or(true, |c| !is_identifier_char(c));
-    let next_ok = next.map_or(true, |c| !is_identifier_char(c));
+    let prev_ok = prev.is_none_or(|c| !is_identifier_char(c));
+    let next_ok = next.is_none_or(|c| !is_identifier_char(c));
 
     prev_ok && next_ok
 }
@@ -309,7 +313,7 @@ fn skip_whitespace(text: &str, mut idx: usize) -> usize {
     idx
 }
 
-fn extract_parenthesized<'a>(text: &'a str, idx: usize) -> (&'a str, usize) {
+fn extract_parenthesized(text: &str, idx: usize) -> (&str, usize) {
     let mut depth: usize = 0;
     let mut pos = idx;
     let mut start = None;
@@ -571,7 +575,7 @@ fn extract_object_keys(text: &str) -> Vec<String> {
     keys
 }
 
-fn extract_braced_body<'a>(text: &'a str, idx: usize) -> (&'a str, usize) {
+fn extract_braced_body(text: &str, idx: usize) -> (&str, usize) {
     let mut depth: usize = 0;
     let mut pos = idx;
     let mut start = None;
@@ -693,9 +697,7 @@ fn parse_object_key(segment: &str) -> Option<String> {
     }
 
     let mut idx = 0;
-    let Some((ch, size)) = next_char(trimmed, idx) else {
-        return None;
-    };
+    let (ch, size) = next_char(trimmed, idx)?;
 
     if ch == '"' || ch == '\'' {
         let (value, new_idx) = parse_string_literal(trimmed, idx + size, ch);
@@ -877,8 +879,7 @@ mod tests {
         let file_path = nested.join("example.html");
         let _ = fs::write(&file_path, r#"<div class="p-2"></div>"#);
 
-        let result =
-            scan_globs(&["**/*.html".to_string()]).expect("scan_globs should succeed");
+        let result = scan_globs(&["**/*.html".to_string()]).expect("scan_globs should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
         let _ = fs::remove_dir_all(&base);
@@ -896,8 +897,9 @@ mod tests {
 
     #[test]
     fn keeps_arbitrary_property_classes_intact() {
-        let classes =
-            extract_classes(r#"<div class="[--gutter-width:1rem] lg:[--gutter-width:2rem]"></div>"#);
+        let classes = extract_classes(
+            r#"<div class="[--gutter-width:1rem] lg:[--gutter-width:2rem]"></div>"#,
+        );
         assert!(classes.contains(&"[--gutter-width:1rem]".to_string()));
         assert!(classes.contains(&"lg:[--gutter-width:2rem]".to_string()));
     }

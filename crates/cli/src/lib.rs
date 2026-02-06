@@ -59,13 +59,15 @@ pub fn run(command: Command) -> Result<(), CliError> {
             poll_interval_ms,
         } => run_watch(
             inputs,
-            out,
-            input_css,
-            minify,
-            config,
-            ignore,
-            poll,
-            poll_interval_ms,
+            WatchOptions {
+                out,
+                input_css,
+                minify,
+                config,
+                ignore,
+                poll,
+                poll_interval_ms,
+            },
         ),
         Command::Help => {
             print_help();
@@ -330,12 +332,14 @@ fn run_build(
     ignore: Vec<String>,
 ) -> Result<(), CliError> {
     let mut template_css = None;
+    let mut stripped_template_css = None;
     let mut parsed_theme = None;
     if let Some(path) = input_css_path.as_ref() {
         let template = fs::read_to_string(path).map_err(|err| CliError {
             message: format!("failed to read input css {}: {}", path, err),
         })?;
         parsed_theme = Some(parse_theme(&template));
+        stripped_template_css = Some(strip_tailwind_custom_directives(&template));
         template_css = Some(template);
     }
 
@@ -347,11 +351,11 @@ fn run_build(
     scan_result.classes.dedup();
 
     let config = match config_path {
-        Some(path) => ironframe_config::load(std::path::Path::new(&path)).map_err(|err| {
-            CliError {
+        Some(path) => {
+            ironframe_config::load(std::path::Path::new(&path)).map_err(|err| CliError {
                 message: err.message,
-            }
-        })?,
+            })?
+        }
         None => ironframe_config::Config::default(),
     };
     let _theme = ironframe_config::resolve_theme(&config);
@@ -370,7 +374,12 @@ fn run_build(
         if !theme.inline_variables.is_empty() {
             css = apply_inline_theme_variables(&css, &theme.inline_variables);
         }
-        let theme_css = emit_parsed_theme_css(theme, minify);
+        let usage_css = if let Some(template) = stripped_template_css.as_ref() {
+            format!("{}\n{}", css, template)
+        } else {
+            css.clone()
+        };
+        let theme_css = emit_parsed_theme_css(theme, &usage_css, minify);
         if !theme_css.is_empty() {
             css = if minify {
                 format!("{}{}", theme_css, css)
@@ -379,11 +388,7 @@ fn run_build(
             };
         }
     }
-    let header = build_header(
-        scan_result.files_scanned,
-        scan_result.classes.len(),
-        minify,
-    );
+    let header = build_header(scan_result.files_scanned, scan_result.classes.len(), minify);
     if minify {
         css = format!("{}{}", header, css);
     } else {
@@ -391,7 +396,8 @@ fn run_build(
     }
 
     if let Some(path) = input_css_path {
-        let template = strip_tailwind_custom_directives(&template_css.unwrap_or_default());
+        let template = stripped_template_css
+            .unwrap_or_else(|| strip_tailwind_custom_directives(&template_css.unwrap_or_default()));
         css = apply_framework_import_alias(&template, &css).ok_or_else(|| CliError {
             message: format!(
                 "input css {} must include @import \"tailwindcss\" or @import \"ironframe\"",
@@ -431,7 +437,9 @@ fn print_help() {
     println!("  ironframe_cli build --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe_cli build --input-css src/app.css --out dist/app.css \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe_cli build -c tailwind.toml \"src/**/*.{{html,tsx}}\"");
-    println!("  ironframe_cli watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
+    println!(
+        "  ironframe_cli watch -c tailwind.toml --out dist/tailwind.css \"src/**/*.{{html,tsx}}\""
+    );
     println!("  ironframe_cli build -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe_cli watch --poll --poll-interval 250 \"src/**/*.{{html,tsx}}\"");
 }
@@ -449,8 +457,8 @@ fn build_header(files_scanned: usize, class_count: usize, minify: bool) -> Strin
     )
 }
 
-fn run_watch(
-    inputs: Vec<String>,
+#[derive(Debug, Clone)]
+struct WatchOptions {
     out: Option<String>,
     input_css: Option<String>,
     minify: bool,
@@ -458,7 +466,19 @@ fn run_watch(
     ignore: Vec<String>,
     poll: bool,
     poll_interval_ms: u64,
-) -> Result<(), CliError> {
+}
+
+fn run_watch(inputs: Vec<String>, options: WatchOptions) -> Result<(), CliError> {
+    let WatchOptions {
+        out,
+        input_css,
+        minify,
+        config,
+        ignore,
+        poll,
+        poll_interval_ms,
+    } = options;
+
     run_build(
         inputs.clone(),
         out.clone(),
@@ -528,16 +548,14 @@ fn run_watch(
                 }
                 last_event = Instant::now();
                 eprintln!("change detected, rebuilding...");
-                if let Err(err) =
-                    run_build(
-                        inputs.clone(),
-                        out.clone(),
-                        input_css.clone(),
-                        minify,
-                        config.clone(),
-                        ignore.clone(),
-                    )
-                {
+                if let Err(err) = run_build(
+                    inputs.clone(),
+                    out.clone(),
+                    input_css.clone(),
+                    minify,
+                    config.clone(),
+                    ignore.clone(),
+                ) {
                     eprintln!("build failed: {}", err.message);
                 }
             }
@@ -593,7 +611,7 @@ fn glob_root(pattern: &str) -> PathBuf {
     if trimmed.is_empty() {
         return PathBuf::from(".");
     }
-    let sep_idx = trimmed.rfind(|c| c == '/' || c == '\\');
+    let sep_idx = trimmed.rfind(['/', '\\']);
     match sep_idx {
         Some(idx) => PathBuf::from(&trimmed[..=idx]),
         None => PathBuf::from("."),
@@ -615,7 +633,8 @@ fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Opti
         if let Some(directives) = parse_framework_import_directives(line) {
             if !replaced {
                 if directives.prefix.is_some() {
-                    generated_bundle = apply_prefix_to_css(&generated_bundle, directives.prefix.as_deref()?);
+                    generated_bundle =
+                        apply_prefix_to_css(&generated_bundle, directives.prefix.as_deref()?);
                 }
                 if directives.important {
                     generated_bundle = apply_important_to_css(&generated_bundle);
@@ -642,17 +661,30 @@ fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Opti
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedTheme {
     variant_overrides: ironframe_generator::VariantOverrides,
-    root_variables: Vec<(String, String)>,
-    keyframes: Vec<String>,
+    root_variables: Vec<ThemeVariable>,
+    keyframes: Vec<ThemeKeyframes>,
     inline_variables: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ThemeVariable {
+    name: String,
+    value: String,
+    always_emit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ThemeKeyframes {
+    name: String,
+    css: String,
 }
 
 fn parse_theme(template_css: &str) -> ParsedTheme {
     let mut breakpoint_updates = Vec::<(String, String)>::new();
     let mut container_updates = Vec::<(String, String)>::new();
-    let mut root_variables = Vec::<(String, String)>::new();
+    let mut root_variables = Vec::<ThemeVariable>::new();
     let mut inline_variables = Vec::<(String, String)>::new();
-    let mut keyframes = Vec::<String>::new();
+    let mut keyframes = Vec::<ThemeKeyframes>::new();
     let mut global_theme_reset = false;
     let mut disabled_namespaces = std::collections::BTreeSet::<String>::new();
     let mut declared_theme_vars = std::collections::BTreeSet::<String>::new();
@@ -687,7 +719,11 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
             if block.inline {
                 inline_variables.push((name.to_string(), value.to_string()));
             } else {
-                root_variables.push((name.to_string(), value.to_string()));
+                root_variables.push(ThemeVariable {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                    always_emit: block.static_mode,
+                });
             }
         }
     }
@@ -788,7 +824,10 @@ fn resolve_named_sizes(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ThemeBlock<'a> {
+    start: usize,
+    end: usize,
     inline: bool,
+    static_mode: bool,
     body: &'a str,
 }
 
@@ -798,6 +837,10 @@ fn extract_theme_blocks(css: &str) -> Vec<ThemeBlock<'_>> {
 
     while let Some(rel_start) = css[cursor..].find("@theme") {
         let theme_idx = cursor + rel_start;
+        if !is_top_level_position(css, theme_idx) {
+            cursor = theme_idx + "@theme".len();
+            continue;
+        }
         let Some(open_rel) = css[theme_idx..].find('{') else {
             break;
         };
@@ -807,13 +850,76 @@ fn extract_theme_blocks(css: &str) -> Vec<ThemeBlock<'_>> {
         };
         let header = css[theme_idx..open_idx].trim();
         blocks.push(ThemeBlock {
-            inline: header.contains("inline"),
+            start: theme_idx,
+            end: close_idx + 1,
+            inline: header.split_whitespace().any(|token| token == "inline"),
+            static_mode: header.split_whitespace().any(|token| token == "static"),
             body: &css[open_idx + 1..close_idx],
         });
         cursor = close_idx + 1;
     }
 
     blocks
+}
+
+fn is_top_level_position(css: &str, target_idx: usize) -> bool {
+    let mut depth = 0usize;
+    let mut in_comment = false;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    let mut chars = css.char_indices().peekable();
+
+    while let Some((idx, ch)) = chars.next() {
+        if idx >= target_idx {
+            return depth == 0 && !in_comment && in_string.is_none();
+        }
+
+        if in_comment {
+            if ch == '*' {
+                if let Some((_, '/')) = chars.peek().copied() {
+                    let _ = chars.next();
+                    in_comment = false;
+                }
+            }
+            continue;
+        }
+
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        if ch == '/' {
+            if let Some((_, '*')) = chars.peek().copied() {
+                let _ = chars.next();
+                in_comment = true;
+                continue;
+            }
+        }
+
+        if ch == '"' || ch == '\'' {
+            in_string = Some(ch);
+            continue;
+        }
+
+        match ch {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+
+    depth == 0 && !in_comment && in_string.is_none()
 }
 
 fn extract_theme_variable_declarations(body: &str) -> Vec<(&str, &str)> {
@@ -845,7 +951,7 @@ fn extract_theme_variable_declarations(body: &str) -> Vec<(&str, &str)> {
     declarations
 }
 
-fn extract_keyframes(body: &str) -> Vec<String> {
+fn extract_keyframes(body: &str) -> Vec<ThemeKeyframes> {
     let mut keyframes = Vec::new();
     let mut cursor = 0usize;
 
@@ -858,33 +964,58 @@ fn extract_keyframes(body: &str) -> Vec<String> {
         let Some(close_idx) = find_matching_brace(body, open_idx) else {
             break;
         };
-        keyframes.push(body[start..=close_idx].trim().to_string());
+        let keyframes_css = body[start..=close_idx].trim().to_string();
+        keyframes.push(ThemeKeyframes {
+            name: extract_keyframe_name(&body[start..open_idx]),
+            css: keyframes_css,
+        });
         cursor = close_idx + 1;
     }
 
     keyframes
 }
 
-fn emit_parsed_theme_css(theme: &ParsedTheme, minify: bool) -> String {
+fn extract_keyframe_name(header: &str) -> String {
+    header
+        .trim()
+        .trim_start_matches("@keyframes")
+        .trim()
+        .to_string()
+}
+
+fn emit_parsed_theme_css(theme: &ParsedTheme, generated_css: &str, minify: bool) -> String {
+    let used_variables = extract_css_variables(generated_css);
+    let emitted_root_vars = resolve_emitted_theme_variables(&theme.root_variables, &used_variables);
+    let emitted_animate_names = emitted_root_vars
+        .iter()
+        .filter_map(|var| {
+            if var.name.starts_with("--animate-") {
+                Some(parse_animation_names(&var.value))
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .collect::<std::collections::BTreeSet<_>>();
     let mut parts = Vec::<String>::new();
 
-    if !theme.root_variables.is_empty() {
+    if !emitted_root_vars.is_empty() {
         if minify {
             let mut body = String::new();
-            for (name, value) in &theme.root_variables {
-                body.push_str(name);
+            for variable in &emitted_root_vars {
+                body.push_str(&variable.name);
                 body.push(':');
-                body.push_str(value);
+                body.push_str(&variable.value);
                 body.push(';');
             }
             parts.push(format!(":root{{{}}}", body));
         } else {
             let mut block = String::from(":root {\n");
-            for (name, value) in &theme.root_variables {
+            for variable in &emitted_root_vars {
                 block.push_str("  ");
-                block.push_str(name);
+                block.push_str(&variable.name);
                 block.push_str(": ");
-                block.push_str(value);
+                block.push_str(&variable.value);
                 block.push_str(";\n");
             }
             block.push('}');
@@ -892,12 +1023,122 @@ fn emit_parsed_theme_css(theme: &ParsedTheme, minify: bool) -> String {
         }
     }
 
-    parts.extend(theme.keyframes.iter().cloned());
+    parts.extend(
+        theme
+            .keyframes
+            .iter()
+            .filter(|keyframes| emitted_animate_names.contains(&keyframes.name))
+            .map(|keyframes| keyframes.css.clone()),
+    );
     if minify {
         parts.join("")
     } else {
         parts.join("\n")
     }
+}
+
+fn extract_css_variables(css: &str) -> std::collections::BTreeSet<String> {
+    extract_css_variables_from_value(css).into_iter().collect()
+}
+
+fn resolve_emitted_theme_variables(
+    root_variables: &[ThemeVariable],
+    used_variables: &std::collections::BTreeSet<String>,
+) -> Vec<ThemeVariable> {
+    let mut included_indices = std::collections::BTreeSet::<usize>::new();
+    let index_by_name = root_variables
+        .iter()
+        .enumerate()
+        .map(|(idx, variable)| (variable.name.as_str(), idx))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    for (idx, variable) in root_variables.iter().enumerate() {
+        if variable.always_emit || used_variables.contains(&variable.name) {
+            included_indices.insert(idx);
+        }
+    }
+
+    loop {
+        let mut changed = false;
+        let current_indices = included_indices.iter().copied().collect::<Vec<_>>();
+        for idx in current_indices {
+            let variable = &root_variables[idx];
+            for referenced in extract_css_variables_from_value(&variable.value) {
+                if let Some(referenced_idx) = index_by_name.get(referenced.as_str()).copied() {
+                    if included_indices.insert(referenced_idx) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    root_variables
+        .iter()
+        .enumerate()
+        .filter(|(idx, _)| included_indices.contains(idx))
+        .map(|(_, variable)| variable.clone())
+        .collect()
+}
+
+fn extract_css_variables_from_value(value: &str) -> Vec<String> {
+    let mut vars = Vec::new();
+    let mut cursor = 0usize;
+    while let Some(rel_start) = value[cursor..].find("var(--") {
+        let start = cursor + rel_start + "var(".len();
+        let Some(end_rel) = value[start..].find(')') else {
+            break;
+        };
+        let end = start + end_rel;
+        let raw = &value[start..end];
+        let variable = raw.split(',').next().unwrap_or(raw).trim();
+        if variable.starts_with("--") {
+            vars.push(variable.to_string());
+        }
+        cursor = end + 1;
+    }
+    vars
+}
+
+fn parse_animation_names(value: &str) -> std::collections::BTreeSet<String> {
+    let mut names = std::collections::BTreeSet::new();
+    for entry in split_top_level_commas(value) {
+        let trimmed = entry.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some(first) = trimmed.split_whitespace().next() else {
+            continue;
+        };
+        if first != "none" && !first.contains('(') {
+            names.insert(first.to_string());
+        }
+    }
+    names
+}
+
+fn split_top_level_commas(value: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (idx, ch) in value.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(value[start..idx].trim());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    if start < value.len() {
+        parts.push(value[start..].trim());
+    }
+    parts
 }
 
 fn apply_inline_theme_variables(css: &str, inline_variables: &[(String, String)]) -> String {
@@ -910,25 +1151,17 @@ fn apply_inline_theme_variables(css: &str, inline_variables: &[(String, String)]
 }
 
 fn strip_tailwind_custom_directives(template_css: &str) -> String {
+    let theme_blocks = extract_theme_blocks(template_css);
     let mut out = String::new();
     let mut cursor = 0usize;
-
-    while cursor < template_css.len() {
-        if let Some(rel_start) = template_css[cursor..].find("@theme") {
-            let start = cursor + rel_start;
-            out.push_str(&template_css[cursor..start]);
-            let Some(open_rel) = template_css[start..].find('{') else {
-                break;
-            };
-            let open_idx = start + open_rel;
-            let Some(close_idx) = find_matching_brace(template_css, open_idx) else {
-                break;
-            };
-            cursor = close_idx + 1;
-            continue;
+    for block in theme_blocks {
+        if cursor < block.start {
+            out.push_str(&template_css[cursor..block.start]);
         }
+        cursor = block.end;
+    }
+    if cursor < template_css.len() {
         out.push_str(&template_css[cursor..]);
-        break;
     }
 
     let mut lines = Vec::new();
@@ -1392,22 +1625,18 @@ mod tests {
     #[test]
     fn supports_url_import_form() {
         let generated = ".p-2 { padding: 0.5rem; }";
-        let rendered = apply_framework_import_alias(
-            "@import url('ironframe') prefix(tw);\n",
-            generated,
-        )
-        .expect("url import should be recognized");
+        let rendered =
+            apply_framework_import_alias("@import url('ironframe') prefix(tw);\n", generated)
+                .expect("url import should be recognized");
         assert!(rendered.contains(".tw\\:p-2"));
     }
 
     #[test]
     fn prefixes_framework_variable_definitions_and_references() {
         let generated = ":root { --color-red-500: #ef4444; --my-brand: #123; }\n.text-red-500 { color: var(--color-red-500); }\n.bg-brand { background: var(--my-brand); }";
-        let rendered = apply_framework_import_alias(
-            "@import \"tailwindcss\" prefix(tw);\n",
-            generated,
-        )
-        .expect("prefix import should be replaced");
+        let rendered =
+            apply_framework_import_alias("@import \"tailwindcss\" prefix(tw);\n", generated)
+                .expect("prefix import should be replaced");
         assert!(rendered.contains("--tw-color-red-500: #ef4444"));
         assert!(rendered.contains("color: var(--tw-color-red-500)"));
         assert!(rendered.contains("--my-brand: #123"));
@@ -1449,7 +1678,9 @@ mod tests {
             Some("&:where(.dark, .dark *)".to_string())
         );
         assert!(!overrides.global_theme_reset);
-        assert!(overrides.disabled_namespaces.contains(&"container".to_string()));
+        assert!(overrides
+            .disabled_namespaces
+            .contains(&"container".to_string()));
         assert!(overrides
             .declared_theme_vars
             .contains(&"--breakpoint-xs".to_string()));
@@ -1461,6 +1692,7 @@ mod tests {
 @import "tailwindcss";
 @theme {
   --color-brand: #123456;
+  --animate-wiggle: wiggle 1s ease-in-out infinite;
   @keyframes wiggle {
     0% { transform: rotate(-3deg); }
     100% { transform: rotate(3deg); }
@@ -1473,18 +1705,112 @@ mod tests {
         let parsed = parse_theme(css);
         assert!(parsed
             .root_variables
-            .contains(&("--color-brand".to_string(), "#123456".to_string())));
+            .iter()
+            .any(|entry| entry.name == "--color-brand" && entry.value == "#123456"));
         assert!(parsed
             .inline_variables
             .contains(&("--font-sans".to_string(), "var(--font-inter)".to_string())));
         assert!(parsed
             .keyframes
             .iter()
-            .any(|block| block.contains("@keyframes wiggle")));
-        let emitted = emit_parsed_theme_css(&parsed, false);
+            .any(|block| block.css.contains("@keyframes wiggle")));
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            ".animate-wiggle { animation: var(--animate-wiggle); }",
+            false,
+        );
         assert!(emitted.contains(":root {"));
-        assert!(emitted.contains("--color-brand: #123456;"));
+        assert!(!emitted.contains("--color-brand: #123456;"));
+        assert!(emitted.contains("--animate-wiggle: wiggle 1s ease-in-out infinite;"));
         assert!(emitted.contains("@keyframes wiggle"));
+    }
+
+    #[test]
+    fn theme_static_option_keeps_unused_variables() {
+        let css = r#"
+@theme static {
+  --color-brand: #123456;
+}
+"#;
+        let parsed = parse_theme(css);
+        let emitted = emit_parsed_theme_css(&parsed, ".p-4 { padding: 1rem; }", false);
+        assert!(emitted.contains("--color-brand: #123456;"));
+    }
+
+    #[test]
+    fn theme_variables_default_to_usage_based_output() {
+        let css = r#"
+@theme {
+  --color-brand: #123456;
+  --color-unused: #abcdef;
+  --color-dependent: var(--color-brand);
+}
+"#;
+        let parsed = parse_theme(css);
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            ".bg-brand { background-color: var(--color-dependent); }",
+            false,
+        );
+        assert!(emitted.contains("--color-dependent: var(--color-brand);"));
+        assert!(emitted.contains("--color-brand: #123456;"));
+        assert!(!emitted.contains("--color-unused: #abcdef;"));
+    }
+
+    #[test]
+    fn theme_variables_used_by_template_css_are_emitted() {
+        let css = r#"
+@theme {
+  --color-brand: #123456;
+}
+"#;
+        let parsed = parse_theme(css);
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            ".p-4 { padding: 1rem; }\n.typography { color: var(--color-brand); }",
+            false,
+        );
+        assert!(emitted.contains("--color-brand: #123456;"));
+    }
+
+    #[test]
+    fn ignores_nested_theme_blocks() {
+        let css = r#"
+@media (width >= 40rem) {
+  @theme {
+    --color-nested: #111111;
+  }
+}
+@theme {
+  --color-top: #222222;
+}
+"#;
+        let parsed = parse_theme(css);
+        assert!(parsed
+            .root_variables
+            .iter()
+            .any(|entry| entry.name == "--color-top"));
+        assert!(!parsed
+            .root_variables
+            .iter()
+            .any(|entry| entry.name == "--color-nested"));
+    }
+
+    #[test]
+    fn ignores_theme_markers_inside_comments() {
+        let css = r#"
+/* @theme { --color-comment: #111111; } */
+@theme { --color-top: #222222; }
+"#;
+        let parsed = parse_theme(css);
+        assert!(parsed
+            .root_variables
+            .iter()
+            .any(|entry| entry.name == "--color-top"));
+        assert!(!parsed
+            .root_variables
+            .iter()
+            .any(|entry| entry.name == "--color-comment"));
     }
 
     #[test]
@@ -1500,5 +1826,19 @@ body { margin: 0; }
         assert!(stripped.contains("body { margin: 0; }"));
         assert!(!stripped.contains("@theme"));
         assert!(!stripped.contains("@custom-variant"));
+    }
+
+    #[test]
+    fn preserves_nested_theme_directives_when_stripping_template() {
+        let css = r#"
+@media (width >= 40rem) {
+  @theme { --color-nested: #111111; }
+}
+@theme { --color-top: #222222; }
+"#;
+        let stripped = strip_tailwind_custom_directives(css);
+        assert!(stripped.contains("@media (width >= 40rem)"));
+        assert!(stripped.contains("@theme { --color-nested: #111111; }"));
+        assert!(!stripped.contains("--color-top: #222222"));
     }
 }

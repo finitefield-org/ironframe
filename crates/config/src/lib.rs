@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
 pub struct Config {
     #[serde(default)]
     pub theme: Theme,
@@ -44,14 +44,6 @@ impl Default for Theme {
         Self {
             name: default_theme_name(),
             colors: BTreeMap::new(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            theme: Theme::default(),
         }
     }
 }
