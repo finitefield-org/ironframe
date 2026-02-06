@@ -335,6 +335,7 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_break_inside_rule(base, config))
             .or_else(|| generate_box_decoration_rule(base, config))
             .or_else(|| generate_box_sizing_rule(base, config))
+            .or_else(|| generate_border_spacing_rule(base, config))
             .or_else(|| generate_border_width_rule(base, config))
             .or_else(|| generate_divide_width_rule(base, config))
             .or_else(|| generate_border_style_rule(base, config))
@@ -2609,6 +2610,12 @@ fn generate_layout_rule(class: &str, config: &GeneratorConfig) -> Option<String>
         "table-header-group" => rule(&selector, "display:table-header-group", config),
         "table-row-group" => rule(&selector, "display:table-row-group", config),
         "table-footer-group" => rule(&selector, "display:table-footer-group", config),
+        "table-auto" => rule(&selector, "table-layout:auto", config),
+        "table-fixed" => rule(&selector, "table-layout:fixed", config),
+        "caption-top" => rule(&selector, "caption-side:top", config),
+        "caption-bottom" => rule(&selector, "caption-side:bottom", config),
+        "border-collapse" => rule(&selector, "border-collapse:collapse", config),
+        "border-separate" => rule(&selector, "border-collapse:separate", config),
         "sr-only" => rule(
             &selector,
             "position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0",
@@ -4270,6 +4277,54 @@ fn parse_border_width_value(raw: &str) -> Option<String> {
         }
         return Some(value.to_string());
     }
+    None
+}
+
+fn parse_border_spacing_value(raw: &str) -> Option<String> {
+    if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
+        return Some(format!("calc(var(--spacing) * {})", raw));
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|value| value.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(format!("var({})", value));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(value.to_string());
+    }
+    None
+}
+
+fn generate_border_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if let Some(raw) = class.strip_prefix("border-spacing-x-") {
+        let value = parse_border_spacing_value(raw)?;
+        return rule(
+            &selector,
+            &format!("border-spacing:{} var(--tw-border-spacing-y)", value),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("border-spacing-y-") {
+        let value = parse_border_spacing_value(raw)?;
+        return rule(
+            &selector,
+            &format!("border-spacing:var(--tw-border-spacing-x) {}", value),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("border-spacing-") {
+        let value = parse_border_spacing_value(raw)?;
+        return rule(&selector, &format!("border-spacing:{}", value), config);
+    }
+
     None
 }
 
@@ -7701,6 +7756,55 @@ mod tests {
     }
 
     #[test]
+    fn generates_border_spacing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "border-spacing-2".to_string(),
+                "border-spacing-(--my-border-spacing)".to_string(),
+                "border-spacing-[7px]".to_string(),
+                "border-spacing-x-3".to_string(),
+                "border-spacing-x-(--my-border-spacing-x)".to_string(),
+                "border-spacing-x-[11px]".to_string(),
+                "border-spacing-y-4".to_string(),
+                "border-spacing-y-(--my-border-spacing-y)".to_string(),
+                "border-spacing-y-[13px]".to_string(),
+                "md:border-spacing-6".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".border-spacing-2"));
+        assert!(result.css.contains("border-spacing: calc(var(--spacing) * 2)"));
+        assert!(result.css.contains(".border-spacing-\\(--my-border-spacing\\)"));
+        assert!(result.css.contains("border-spacing: var(--my-border-spacing)"));
+        assert!(result.css.contains(".border-spacing-\\[7px\\]"));
+        assert!(result.css.contains("border-spacing: 7px"));
+        assert!(result.css.contains(".border-spacing-x-3"));
+        assert!(result.css.contains(
+            "border-spacing: calc(var(--spacing) * 3) var(--tw-border-spacing-y)"
+        ));
+        assert!(result.css.contains(".border-spacing-x-\\(--my-border-spacing-x\\)"));
+        assert!(result.css.contains("border-spacing: var(--my-border-spacing-x) var(--tw-border-spacing-y)"));
+        assert!(result.css.contains(".border-spacing-x-\\[11px\\]"));
+        assert!(result.css.contains("border-spacing: 11px var(--tw-border-spacing-y)"));
+        assert!(result.css.contains(".border-spacing-y-4"));
+        assert!(result.css.contains(
+            "border-spacing: var(--tw-border-spacing-x) calc(var(--spacing) * 4)"
+        ));
+        assert!(result.css.contains(".border-spacing-y-\\(--my-border-spacing-y\\)"));
+        assert!(result.css.contains(
+            "border-spacing: var(--tw-border-spacing-x) var(--my-border-spacing-y)"
+        ));
+        assert!(result.css.contains(".border-spacing-y-\\[13px\\]"));
+        assert!(result.css.contains("border-spacing: var(--tw-border-spacing-x) 13px"));
+        assert!(result.css.contains(".md\\:border-spacing-6"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
     fn generates_border_styles() {
         let config = GeneratorConfig {
             minify: false,
@@ -8173,6 +8277,15 @@ mod tests {
                 "table-header-group".to_string(),
                 "table-row-group".to_string(),
                 "table-footer-group".to_string(),
+                "table-auto".to_string(),
+                "table-fixed".to_string(),
+                "md:table-fixed".to_string(),
+                "caption-top".to_string(),
+                "caption-bottom".to_string(),
+                "md:caption-bottom".to_string(),
+                "border-collapse".to_string(),
+                "border-separate".to_string(),
+                "md:border-separate".to_string(),
                 "sr-only".to_string(),
                 "not-sr-only".to_string(),
                 "overflow-auto".to_string(),
@@ -8232,6 +8345,22 @@ mod tests {
         assert!(result.css.contains("display: table-row-group"));
         assert!(result.css.contains(".table-footer-group"));
         assert!(result.css.contains("display: table-footer-group"));
+        assert!(result.css.contains(".table-auto"));
+        assert!(result.css.contains("table-layout: auto"));
+        assert!(result.css.contains(".table-fixed"));
+        assert!(result.css.contains("table-layout: fixed"));
+        assert!(result.css.contains(".md\\:table-fixed"));
+        assert!(result.css.contains(".caption-top"));
+        assert!(result.css.contains("caption-side: top"));
+        assert!(result.css.contains(".caption-bottom"));
+        assert!(result.css.contains("caption-side: bottom"));
+        assert!(result.css.contains(".md\\:caption-bottom"));
+        assert!(result.css.contains(".border-collapse"));
+        assert!(result.css.contains("border-collapse: collapse"));
+        assert!(result.css.contains(".border-separate"));
+        assert!(result.css.contains("border-collapse: separate"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains(".md\\:border-separate"));
         assert!(result.css.contains(".sr-only"));
         assert!(result.css.contains("position: absolute"));
         assert!(result.css.contains("clip: rect(0,0,0,0)"));
