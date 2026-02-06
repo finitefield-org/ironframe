@@ -7,10 +7,11 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::channel;
+use std::sync::{mpsc::channel, OnceLock};
 use std::time::{Duration, Instant};
 
 const PREFLIGHT_CSS: &str = include_str!("preflight.css");
+const DEFAULT_THEME_CSS: &str = include_str!("default_theme.css");
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -351,7 +352,7 @@ fn run_build(
         let template = inline_css_imports(&raw_template, &style_dir)?;
         source_directives = parse_source_directives(&template);
         stylesheet_dir = Some(style_dir);
-        parsed_theme = Some(parse_theme(&template));
+        parsed_theme = Some(parse_theme_with_defaults(&template));
         let stripped = strip_tailwind_custom_directives(&template);
         let variant_overrides = parsed_theme
             .as_ref()
@@ -450,11 +451,9 @@ fn run_build(
     };
 
     let config = match config_path {
-        Some(path) => {
-            crate::config::load(std::path::Path::new(&path)).map_err(|err| CliError {
-                message: err.message,
-            })?
-        }
+        Some(path) => crate::config::load(std::path::Path::new(&path)).map_err(|err| CliError {
+            message: err.message,
+        })?,
         None => crate::config::Config::default(),
     };
     let _theme = crate::config::resolve_theme(&config);
@@ -997,11 +996,8 @@ fn expand_apply_directives(
                     message: format!("@apply does not support variant classes: {}", class),
                 });
             }
-            let utility_css = crate::generator::generate_with_overrides(
-                &[class.to_string()],
-                config,
-                overrides,
-            );
+            let utility_css =
+                crate::generator::generate_with_overrides(&[class.to_string()], config, overrides);
             if utility_css.class_count == 0 {
                 return Err(CliError {
                     message: format!("unknown utility in @apply: {}", class),
@@ -1304,6 +1300,210 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
         keyframes,
         inline_variables,
     }
+}
+
+fn parse_theme_with_defaults(template_css: &str) -> ParsedTheme {
+    let mut parsed = parse_theme(template_css);
+    let defaults = default_theme();
+    parsed.root_variables = merge_default_theme_variables(
+        &defaults.root_variables,
+        &parsed.root_variables,
+        &parsed.variant_overrides,
+    );
+    parsed.keyframes = merge_default_theme_keyframes(
+        &defaults.keyframes,
+        &parsed.keyframes,
+        &parsed.variant_overrides,
+    );
+
+    let mut theme_variable_values = std::collections::BTreeMap::<String, String>::new();
+    for variable in &parsed.root_variables {
+        theme_variable_values.insert(variable.name.clone(), variable.value.clone());
+    }
+    for (name, value) in &parsed.inline_variables {
+        theme_variable_values.insert(name.clone(), value.clone());
+    }
+    parsed.variant_overrides.theme_variable_values = theme_variable_values.into_iter().collect();
+
+    parsed
+}
+
+fn default_theme() -> &'static ParsedTheme {
+    static DEFAULT_THEME: OnceLock<ParsedTheme> = OnceLock::new();
+    DEFAULT_THEME.get_or_init(|| {
+        let mut parsed = parse_theme(DEFAULT_THEME_CSS);
+        normalize_default_theme_variable_values(&mut parsed.root_variables);
+        parsed.inline_variables.clear();
+        parsed
+    })
+}
+
+fn normalize_default_theme_variable_values(root_variables: &mut [ThemeVariable]) {
+    let declared = root_variables
+        .iter()
+        .map(|variable| variable.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+
+    for variable in root_variables {
+        variable.value = normalize_theme_lookup_value(&variable.value, &declared);
+    }
+}
+
+fn normalize_theme_lookup_value(
+    value: &str,
+    declared_variables: &std::collections::BTreeSet<String>,
+) -> String {
+    let trimmed = value.trim();
+    let Some(inner) = trimmed
+        .strip_prefix("--theme(")
+        .and_then(|raw| raw.strip_suffix(')'))
+    else {
+        return trimmed.to_string();
+    };
+    let args = split_top_level_commas(inner);
+    if args.is_empty() {
+        return trimmed.to_string();
+    }
+    let target = args[0].trim();
+    let fallback = args
+        .get(1)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("initial");
+
+    if target.starts_with("--") && declared_variables.contains(target) {
+        format!("var({})", target)
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn merge_default_theme_variables(
+    defaults: &[ThemeVariable],
+    user_defined: &[ThemeVariable],
+    overrides: &crate::generator::VariantOverrides,
+) -> Vec<ThemeVariable> {
+    let mut merged = if overrides.global_theme_reset {
+        Vec::new()
+    } else {
+        defaults
+            .iter()
+            .filter(|variable| !default_theme_variable_is_disabled(&variable.name, overrides))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mut index_by_name = merged
+        .iter()
+        .enumerate()
+        .map(|(idx, variable)| (variable.name.clone(), idx))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    for variable in user_defined {
+        if let Some(idx) = index_by_name.get(&variable.name).copied() {
+            merged[idx] = variable.clone();
+        } else {
+            index_by_name.insert(variable.name.clone(), merged.len());
+            merged.push(variable.clone());
+        }
+    }
+
+    merged
+}
+
+fn merge_default_theme_keyframes(
+    defaults: &[ThemeKeyframes],
+    user_defined: &[ThemeKeyframes],
+    overrides: &crate::generator::VariantOverrides,
+) -> Vec<ThemeKeyframes> {
+    let mut merged = if overrides.global_theme_reset
+        || overrides
+            .disabled_namespaces
+            .iter()
+            .any(|namespace| namespace == "animate")
+    {
+        Vec::new()
+    } else {
+        defaults.to_vec()
+    };
+    let mut index_by_name = merged
+        .iter()
+        .enumerate()
+        .map(|(idx, keyframes)| (keyframes.name.clone(), idx))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    for keyframes in user_defined {
+        if let Some(idx) = index_by_name.get(&keyframes.name).copied() {
+            merged[idx] = keyframes.clone();
+        } else {
+            index_by_name.insert(keyframes.name.clone(), merged.len());
+            merged.push(keyframes.clone());
+        }
+    }
+
+    merged
+}
+
+fn default_theme_variable_is_disabled(
+    variable_name: &str,
+    overrides: &crate::generator::VariantOverrides,
+) -> bool {
+    let Some(namespace) = theme_variable_namespace(variable_name) else {
+        return false;
+    };
+    if overrides
+        .disabled_namespaces
+        .iter()
+        .any(|disabled| disabled == namespace)
+    {
+        return true;
+    }
+    if namespace != "color" {
+        return false;
+    }
+    let Some(family) = theme_color_family(variable_name) else {
+        return false;
+    };
+    overrides
+        .disabled_color_families
+        .iter()
+        .any(|disabled| disabled == family)
+}
+
+fn theme_variable_namespace(variable_name: &str) -> Option<&'static str> {
+    if variable_name == "--spacing" {
+        return Some("spacing");
+    }
+    for namespace in [
+        "color",
+        "font",
+        "text",
+        "font-weight",
+        "tracking",
+        "leading",
+        "breakpoint",
+        "container",
+        "radius",
+        "shadow",
+        "inset-shadow",
+        "drop-shadow",
+        "text-shadow",
+        "blur",
+        "perspective",
+        "aspect",
+        "ease",
+        "animate",
+    ] {
+        let prefix = format!("--{}-", namespace);
+        if variable_name.starts_with(&prefix) {
+            return Some(namespace);
+        }
+    }
+    None
+}
+
+fn theme_color_family(variable_name: &str) -> Option<&str> {
+    let token = variable_name.strip_prefix("--color-")?;
+    token.rsplit_once('-').map(|(family, _)| family)
 }
 
 fn parse_custom_variant_selectors(css: &str) -> Vec<(String, String)> {
@@ -1900,10 +2100,7 @@ fn strip_tailwind_custom_directives(template_css: &str) -> String {
     rendered
 }
 
-fn expand_variant_directives(
-    css: &str,
-    overrides: &crate::generator::VariantOverrides,
-) -> String {
+fn expand_variant_directives(css: &str, overrides: &crate::generator::VariantOverrides) -> String {
     expand_variant_directives_in_block(css, overrides)
 }
 
@@ -3135,6 +3332,60 @@ mod tests {
             false,
         );
         assert!(emitted.contains("--color-brand: #123456;"));
+    }
+
+    #[test]
+    fn parse_theme_with_defaults_emits_core_variables_without_user_theme_block() {
+        let parsed = super::parse_theme_with_defaults(r#"@import "tailwindcss";"#);
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            ".text-red-500 { color: var(--color-red-500); }\n.p-4 { padding: calc(var(--spacing) * 4); }",
+            false,
+        );
+        assert!(emitted.contains("--color-red-500: oklch("));
+        assert!(emitted.contains("--spacing: 0.25rem;"));
+    }
+
+    #[test]
+    fn parse_theme_with_defaults_respects_global_reset() {
+        let parsed = super::parse_theme_with_defaults(
+            r#"
+@import "tailwindcss";
+@theme {
+  --*: initial;
+  --color-brand: #123456;
+}
+"#,
+        );
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            ".text-red-500 { color: var(--color-red-500); }\n.bg-brand { background-color: var(--color-brand); }",
+            false,
+        );
+        assert!(!emitted.contains("--color-red-500:"));
+        assert!(emitted.contains("--color-brand: #123456;"));
+    }
+
+    #[test]
+    fn parse_theme_with_defaults_emits_from_generated_utility_css() {
+        let parsed = super::parse_theme_with_defaults(r#"@import "tailwindcss";"#);
+        let config = crate::generator::GeneratorConfig {
+            minify: false,
+            colors: std::collections::BTreeMap::new(),
+        };
+        let generation = crate::generator::generate_with_overrides(
+            &["text-red-500".to_string(), "p-4".to_string()],
+            &config,
+            Some(&parsed.variant_overrides),
+        );
+        let utility_css = crate::generator::emit_css(&generation);
+        let emitted = emit_parsed_theme_css(
+            &parsed,
+            &format!("{}\n{}", utility_css, r#"@import "tailwindcss";"#),
+            false,
+        );
+        assert!(emitted.contains("--color-red-500: oklch("));
+        assert!(emitted.contains("--spacing: 0.25rem;"));
     }
 
     #[test]

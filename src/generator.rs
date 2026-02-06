@@ -658,12 +658,8 @@ fn resolve_custom_utility_body(
         if declaration.is_empty() {
             continue;
         }
-        let replaced = replace_declaration_functions(
-            declaration,
-            value_token,
-            modifier_token,
-            variant_tables,
-        );
+        let replaced =
+            replace_declaration_functions(declaration, value_token, modifier_token, variant_tables);
         let Some(replaced) = replaced else {
             continue;
         };
@@ -681,12 +677,8 @@ fn replace_declaration_functions(
     modifier_token: Option<&str>,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let replaced_value = replace_named_function(
-        declaration,
-        "--value(",
-        value_token,
-        variant_tables,
-    )?;
+    let replaced_value =
+        replace_named_function(declaration, "--value(", value_token, variant_tables)?;
     replace_named_function(
         &replaced_value,
         "--modifier(",
@@ -2537,6 +2529,7 @@ fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig)
     }
 
     if token.starts_with("linear-")
+        || token.starts_with("gradient-to-")
         || token == "none"
         || token == "radial"
         || token.starts_with("radial-")
@@ -2789,6 +2782,28 @@ fn generate_background_image_rule(class: &str, config: &GeneratorConfig) -> Opti
         .and_then(|v| v.strip_suffix(')'))
     {
         return rule(&selector, &format!("background-image:var({})", raw), config);
+    }
+
+    if let Some(dir) = class.strip_prefix("bg-gradient-to-") {
+        let to = match dir {
+            "t" => "to top",
+            "tr" => "to top right",
+            "r" => "to right",
+            "br" => "to bottom right",
+            "b" => "to bottom",
+            "bl" => "to bottom left",
+            "l" => "to left",
+            "tl" => "to top left",
+            _ => return None,
+        };
+        return rule(
+            &selector,
+            &format!(
+                "--tw-gradient-position:{} in oklab;background-image:linear-gradient(var(--tw-gradient-stops))",
+                to
+            ),
+            config,
+        );
     }
 
     if let Some(rest) = class.strip_prefix("bg-linear-to-") {
@@ -3685,8 +3700,7 @@ fn theme_color_value_from_token(token: &str, allow_plain_tokens: bool) -> Option
 fn is_text_size_token(token: &str) -> bool {
     matches!(
         token,
-        "xs"
-            | "sm"
+        "xs" | "sm"
             | "base"
             | "lg"
             | "xl"
@@ -3858,11 +3872,19 @@ fn generate_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if value.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("--tw-ring-color:var({})", value), config);
+        return rule(
+            &selector,
+            &format!("--tw-ring-color:var({})", value),
+            config,
+        );
     }
 
     let color_value = parse_palette_color_value(raw)?;
-    rule(&selector, &format!("--tw-ring-color:{}", color_value), config)
+    rule(
+        &selector,
+        &format!("--tw-ring-color:{}", color_value),
+        config,
+    )
 }
 
 fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -7629,7 +7651,10 @@ fn parse_outline_color_value(raw: &str) -> Option<String> {
         return None;
     }
     if token.chars().all(|ch| ch.is_ascii_digit())
-        || matches!(token, "solid" | "dashed" | "dotted" | "double" | "none" | "hidden")
+        || matches!(
+            token,
+            "solid" | "dashed" | "dotted" | "double" | "none" | "hidden"
+        )
     {
         return None;
     }
@@ -8775,7 +8800,9 @@ fn parse_slot_variant_node(raw: &str) -> Option<SlotVariantExpansion> {
         if query.is_empty() {
             return None;
         }
-        inner.wrappers.insert(0, RuleWrapper::Media(query.to_string()));
+        inner
+            .wrappers
+            .insert(0, RuleWrapper::Media(query.to_string()));
         return Some(inner);
     }
 
@@ -9209,7 +9236,9 @@ mod tests {
         assert!(result.css.contains(".text-sm"));
         assert!(result.css.contains("font-size: var(--text-sm)"));
         assert!(result.css.contains(".bg-red-500"));
-        assert!(result.css.contains("background-color: var(--color-red-500)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-red-500)"));
     }
 
     #[test]
@@ -11623,9 +11652,13 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".bg-gray-100"));
-        assert!(result.css.contains("background-color: var(--color-gray-100)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-gray-100)"));
         assert!(result.css.contains(".bg-gray-700"));
-        assert!(result.css.contains("background-color: var(--color-gray-700)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-gray-700)"));
     }
 
     #[test]
@@ -11639,9 +11672,13 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".bg-blue-100"));
-        assert!(result.css.contains("background-color: var(--color-blue-100)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-100)"));
         assert!(result.css.contains(".bg-blue-600"));
-        assert!(result.css.contains("background-color: var(--color-blue-600)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-600)"));
     }
 
     #[test]
@@ -11909,6 +11946,7 @@ mod tests {
                 "bg-[url(/img/mountains.jpg)]".to_string(),
                 "bg-[url('/what_a_rush.png')]".to_string(),
                 "bg-(image:--my-image)".to_string(),
+                "bg-gradient-to-r".to_string(),
                 "bg-linear-to-r".to_string(),
                 "bg-linear-to-r/srgb".to_string(),
                 "bg-linear-65".to_string(),
@@ -11951,6 +11989,12 @@ mod tests {
             .contains("background-image: url('/what_a_rush.png')"));
         assert!(result.css.contains(".bg-\\(image\\:--my-image\\)"));
         assert!(result.css.contains("background-image: var(--my-image)"));
+        assert!(result.css.contains(".bg-gradient-to-r"));
+        assert!(result.css.contains("--tw-gradient-position"));
+        assert!(result.css.contains("to right in oklab"));
+        assert!(result
+            .css
+            .contains("background-image: linear-gradient(var(--tw-gradient-stops))"));
         assert!(result.css.contains(".bg-linear-to-r"));
         assert!(result
             .css
@@ -12073,9 +12117,7 @@ mod tests {
         assert!(result.css.contains("color: var(--color-white)"));
         assert!(result.css.contains(".text-\\(--my-color\\)"));
         assert!(result.css.contains("color: var(--my-color)"));
-        assert!(result
-            .css
-            .contains(".text-\\(color\\:--my-color-hinted\\)"));
+        assert!(result.css.contains(".text-\\(color\\:--my-color-hinted\\)"));
         assert!(result.css.contains("color: var(--my-color-hinted)"));
         assert!(result.css.contains(".text-\\[#50d71e\\]"));
         assert!(result.css.contains("color: #50d71e"));
@@ -12531,7 +12573,9 @@ mod tests {
             &config,
         );
 
-        assert!(result.css.contains("background-color: var(--color-midnight)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-midnight)"));
         assert!(result.css.contains("color: var(--color-tahiti)"));
         assert!(result.css.contains("fill: var(--color-bermuda)"));
         assert!(result.css.contains("stroke: var(--color-bermuda)"));
@@ -12542,8 +12586,12 @@ mod tests {
         assert!(result.css.contains("caret-color: var(--color-midnight)"));
         assert!(result.css.contains("border-color: var(--color-midnight)"));
         assert!(result.css.contains("outline-color: var(--color-midnight)"));
-        assert!(result.css.contains("--tw-shadow-color: var(--color-midnight)"));
-        assert!(result.css.contains("--tw-ring-color: var(--color-midnight)"));
+        assert!(result
+            .css
+            .contains("--tw-shadow-color: var(--color-midnight)"));
+        assert!(result
+            .css
+            .contains("--tw-ring-color: var(--color-midnight)"));
         assert!(result
             .css
             .contains("--tw-inset-shadow-color: var(--color-midnight)"));
@@ -13059,13 +13107,17 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".shadow-red-500"));
-        assert!(result.css.contains("--tw-shadow-color: var(--color-red-500)"));
+        assert!(result
+            .css
+            .contains("--tw-shadow-color: var(--color-red-500)"));
         assert!(result.css.contains(".shadow-cyan-500\\/\\[37\\%\\]"));
         assert!(result.css.contains(
             "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 37%,transparent)"
         ));
         assert!(result.css.contains(".shadow-\\(--my-shadow-color\\)"));
-        assert!(result.css.contains("--tw-shadow-color: var(--my-shadow-color)"));
+        assert!(result
+            .css
+            .contains("--tw-shadow-color: var(--my-shadow-color)"));
         assert!(result.css.contains(".shadow-\\[#243c5a\\]"));
         assert!(result.css.contains("--tw-shadow-color: #243c5a"));
     }
@@ -13089,9 +13141,7 @@ mod tests {
         assert!(result
             .css
             .contains("--tw-inset-shadow-color: var(--color-red-500)"));
-        assert!(result
-            .css
-            .contains(".inset-shadow-cyan-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(".inset-shadow-cyan-500\\/\\[37\\%\\]"));
         assert!(result.css.contains(
             "--tw-inset-shadow-color: color-mix(in oklab,var(--color-cyan-500) 37%,transparent)"
         ));
@@ -13155,11 +13205,13 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".ring-blue-500"));
-        assert!(result.css.contains("--tw-ring-color: var(--color-blue-500)"));
-        assert!(result.css.contains(".ring-rose-500\\/30"));
         assert!(result
             .css
-            .contains("--tw-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"));
+            .contains("--tw-ring-color: var(--color-blue-500)"));
+        assert!(result.css.contains(".ring-rose-500\\/30"));
+        assert!(result.css.contains(
+            "--tw-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"
+        ));
         assert!(result.css.contains(".ring-\\(--my-ring-color\\)"));
         assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
         assert!(result.css.contains(".ring-\\[#243c5a\\]"));
@@ -13226,9 +13278,13 @@ mod tests {
             &config,
         );
         assert!(result.css.contains(".hover\\:bg-blue-500:hover"));
-        assert!(result.css.contains("background-color: var(--color-blue-500)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-500)"));
         assert!(result.css.contains(".active\\:bg-blue-600:active"));
-        assert!(result.css.contains("background-color: var(--color-blue-600)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-600)"));
     }
 
     #[test]
@@ -13249,7 +13305,9 @@ mod tests {
             .css
             .contains("box-shadow: 0 0 0 1px var(--tw-ring-color,rgba(59,130,246,0.5))"));
         assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
-        assert!(result.css.contains("background-color: var(--color-gray-200)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-gray-200)"));
     }
 
     #[test]
@@ -13261,7 +13319,9 @@ mod tests {
         let result = generate(&["dark:bg-gray-900".to_string()], &config);
         assert!(result.css.contains(".dark\\:bg-gray-900"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(result.css.contains("background-color: var(--color-gray-900)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-gray-900)"));
     }
 
     #[test]
@@ -13379,8 +13439,16 @@ mod tests {
             &config,
             Some(&overrides),
         );
-        assert!(result.css.contains("@supports (display: grid)"), "{}", result.css);
-        assert!(result.css.contains("@media (any-hover: hover)"), "{}", result.css);
+        assert!(
+            result.css.contains("@supports (display: grid)"),
+            "{}",
+            result.css
+        );
+        assert!(
+            result.css.contains("@media (any-hover: hover)"),
+            "{}",
+            result.css
+        );
         assert!(result.css.contains(".fancy-hover\\:text-black:hover"));
         assert!(result.css.contains("color: var(--color-black)"));
     }
@@ -13406,11 +13474,8 @@ mod tests {
             disabled_color_families: vec![],
             declared_theme_vars: vec![],
         };
-        let result = generate_with_overrides(
-            &["in-card:bg-black".to_string()],
-            &config,
-            Some(&overrides),
-        );
+        let result =
+            generate_with_overrides(&["in-card:bg-black".to_string()], &config, Some(&overrides));
         assert!(result.css.contains("@container sidebar (width >= 30rem)"));
         assert!(result.css.contains(".in-card\\:bg-black:hover"));
         assert!(result.css.contains("background-color: var(--color-black)"));
@@ -13476,14 +13541,21 @@ mod tests {
             declared_theme_vars: vec![],
         };
         let result = generate_with_overrides(
-            &["scrollbar-hidden".to_string(), "hover:scrollbar-hidden".to_string()],
+            &[
+                "scrollbar-hidden".to_string(),
+                "hover:scrollbar-hidden".to_string(),
+            ],
             &config,
             Some(&overrides),
         );
-        assert!(result.css.contains(".scrollbar-hidden { &::-webkit-scrollbar { display: none; } }"));
+        assert!(result
+            .css
+            .contains(".scrollbar-hidden { &::-webkit-scrollbar { display: none; } }"));
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains(".hover\\:scrollbar-hidden:hover"));
-        assert!(result.css.contains("&::-webkit-scrollbar { display: none; }"));
+        assert!(result
+            .css
+            .contains("&::-webkit-scrollbar { display: none; }"));
     }
 
     #[test]
@@ -13827,7 +13899,9 @@ mod tests {
         assert!(result
             .css
             .contains(".disabled\\:hover\\:bg-blue-500:disabled:hover"));
-        assert!(result.css.contains("background-color: var(--color-blue-500)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-500)"));
     }
 
     #[test]
@@ -13842,7 +13916,9 @@ mod tests {
             .contains(".dark\\:lg\\:hover\\:bg-gray-900:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
-        assert!(result.css.contains("background-color: var(--color-gray-900)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-gray-900)"));
     }
 
     #[test]
@@ -13876,7 +13952,9 @@ mod tests {
         assert!(result
             .css
             .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]"));
-        assert!(result.css.contains("background-color: var(--color-blue-500)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-blue-500)"));
     }
 
     #[test]
@@ -14340,12 +14418,14 @@ mod tests {
 
         assert!(result.css.contains(".\\[mask-type\\:luminance\\]"));
         assert!(result.css.contains("mask-type: luminance"));
-        assert!(result.css.contains(".hover\\:\\[mask-type\\:alpha\\]:hover"));
-        assert!(result.css.contains("mask-type: alpha"));
-
         assert!(result
             .css
-            .contains(".lg\\:\\[\\&\\:nth-child\\(-n\\+3\\)\\]\\:hover\\:underline:nth-child(-n+3):hover"));
+            .contains(".hover\\:\\[mask-type\\:alpha\\]:hover"));
+        assert!(result.css.contains("mask-type: alpha"));
+
+        assert!(result.css.contains(
+            ".lg\\:\\[\\&\\:nth-child\\(-n\\+3\\)\\]\\:hover\\:underline:nth-child(-n+3):hover"
+        ));
         assert!(result.css.contains("text-decoration-line: underline"));
 
         assert!(result.css.contains(".text-\\(length\\:--my-var\\)"));
