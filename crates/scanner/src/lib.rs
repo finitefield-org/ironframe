@@ -806,7 +806,7 @@ fn is_allowed_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || matches!(
             ch,
-            '-' | '_' | '/' | ':' | '.' | '%' | '#' | '[' | ']' | '(' | ')' | '!'
+            '-' | '_' | '/' | ':' | '.' | '%' | '#' | '[' | ']' | '(' | ')' | '!' | '&' | '>' | '+'
         )
 }
 
@@ -872,13 +872,34 @@ mod tests {
     fn scans_glob_patterns() {
         let base = temp_dir("scanner_glob");
         let _ = fs::create_dir_all(&base);
-        let file_path = base.join("example.html");
+        let nested = base.join("nested");
+        let _ = fs::create_dir_all(&nested);
+        let file_path = nested.join("example.html");
         let _ = fs::write(&file_path, r#"<div class="p-2"></div>"#);
 
-        let pattern = format!("{}/**/*.html", base.display());
-        let result = scan_globs(&[pattern]).expect("scan_globs should succeed");
+        let result =
+            scan_globs(&["**/*.html".to_string()]).expect("scan_globs should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn keeps_complex_variants_and_important_tokens_intact() {
+        let classes = extract_classes(
+            r#"<button class="dark:lg:data-current:hover:bg-indigo-600 [&>[data-active]+span]:text-blue-600 !text-sm"></button>"#,
+        );
+        assert!(classes.contains(&"dark:lg:data-current:hover:bg-indigo-600".to_string()));
+        assert!(classes.contains(&"[&>[data-active]+span]:text-blue-600".to_string()));
+        assert!(classes.contains(&"!text-sm".to_string()));
+    }
+
+    #[test]
+    fn keeps_arbitrary_property_classes_intact() {
+        let classes =
+            extract_classes(r#"<div class="[--gutter-width:1rem] lg:[--gutter-width:2rem]"></div>"#);
+        assert!(classes.contains(&"[--gutter-width:1rem]".to_string()));
+        assert!(classes.contains(&"lg:[--gutter-width:2rem]".to_string()));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
@@ -886,6 +907,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        std::env::temp_dir().join(format!("{}_{}", prefix, nanos))
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("{}_{}", prefix, nanos))
     }
 }

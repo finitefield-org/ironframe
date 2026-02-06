@@ -40,7 +40,8 @@ pub fn emit_css(result: &GenerationResult) -> String {
 }
 
 fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let (variants, base) = parse_variants(class);
+    let (variants, base_with_modifier) = parse_variants(class);
+    let (base, important_modifier) = strip_important_modifier(base_with_modifier);
     let rule = generate_color_rule(base, config).or_else(|| match base {
         "font-thin" => rule(".font-thin", "font-weight:100", config),
         "font-extralight" => rule(".font-extralight", "font-weight:200", config),
@@ -309,6 +310,7 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_sepia_rule(base, config))
             .or_else(|| generate_backdrop_filter_rule(base, config))
             .or_else(|| generate_filter_rule(base, config))
+            .or_else(|| generate_arbitrary_property_rule(base, config))
             .or_else(|| generate_text_arbitrary_color_rule(base, config))
             .or_else(|| generate_text_palette_color_rule(base, config))
             .or_else(|| generate_background_arbitrary_color_rule(base, config))
@@ -419,7 +421,11 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_layout_rule(base, config)),
     });
 
-    apply_variants(&variants, class, base, rule, config.minify)
+    let generated = apply_variants(&variants, class, base, rule, config.minify)?;
+    if important_modifier {
+        return add_important_to_rule(&generated, config.minify);
+    }
+    Some(generated)
 }
 
 fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -463,6 +469,36 @@ fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String>
     }
 
     None
+}
+
+fn generate_arbitrary_property_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let raw = class.strip_prefix('[')?.strip_suffix(']')?;
+    let (property, value) = raw.split_once(':')?;
+    let property = property.trim();
+    let value = value.trim();
+    if property.is_empty() || value.is_empty() {
+        return None;
+    }
+    let selector = format!(".{}", escape_selector(class));
+    rule(&selector, &format!("{}:{}", property, value), config)
+}
+
+fn composed_filter_property() -> &'static str {
+    "filter:var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,) var(--tw-hue-rotate,) var(--tw-invert,) var(--tw-saturate,) var(--tw-sepia,) var(--tw-drop-shadow,)"
+}
+
+fn composed_filter_rule(
+    selector: &str,
+    variable_decl: &str,
+    legacy_filter_decl: Option<String>,
+    config: &GeneratorConfig,
+) -> Option<String> {
+    let declarations = if let Some(legacy) = legacy_filter_decl {
+        format!("{};{};{}", variable_decl, legacy, composed_filter_property())
+    } else {
+        format!("{};{}", variable_decl, composed_filter_property())
+    };
+    rule(selector, &declarations, config)
 }
 
 fn generate_transition_property_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -739,35 +775,60 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if class == "blur-none" {
-        return rule(&selector, "filter:blur(0)", config);
+        return composed_filter_rule(
+            &selector,
+            "--tw-blur:blur(0)",
+            Some("filter:blur(0)".to_string()),
+            config,
+        );
     }
 
     if let Some(raw) = class.strip_prefix("blur-[").and_then(|v| v.strip_suffix(']')) {
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:blur({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-blur:blur({})", raw),
+            Some(format!("filter:blur({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class.strip_prefix("blur-(").and_then(|v| v.strip_suffix(')')) {
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:blur(var({}))", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-blur:blur(var({}))", raw),
+            Some(format!("filter:blur(var({}))", raw)),
+            config,
+        );
     }
 
     let scale = class.strip_prefix("blur-")?;
     if scale.is_empty() {
         return None;
     }
-    rule(&selector, &format!("filter:blur(var(--blur-{}))", scale), config)
+    composed_filter_rule(
+        &selector,
+        &format!("--tw-blur:blur(var(--blur-{}))", scale),
+        Some(format!("filter:blur(var(--blur-{}))", scale)),
+        config,
+    )
 }
 
 fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if class == "drop-shadow-none" {
-        return rule(&selector, "filter:drop-shadow(0 0 #0000)", config);
+        return composed_filter_rule(
+            &selector,
+            "--tw-drop-shadow:drop-shadow(0 0 #0000)",
+            Some("filter:drop-shadow(0 0 #0000)".to_string()),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -791,7 +852,12 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:drop-shadow({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-drop-shadow:drop-shadow({})", raw),
+            Some(format!("filter:drop-shadow({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -801,9 +867,10 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         if raw.is_empty() || raw.starts_with("color:") {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:drop-shadow(var({}))", raw),
+            &format!("--tw-drop-shadow:drop-shadow(var({}))", raw),
+            Some(format!("filter:drop-shadow(var({}))", raw)),
             config,
         );
     }
@@ -851,16 +918,20 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
         return rule(
             &selector,
             &format!(
-                "filter:drop-shadow(var(--drop-shadow-{}));--tw-drop-shadow-color:color-mix(in oklab,currentColor {},transparent)",
-                token, opacity_value
+                "--tw-drop-shadow:drop-shadow(var(--drop-shadow-{}));filter:drop-shadow(var(--drop-shadow-{}));--tw-drop-shadow-color:color-mix(in oklab,currentColor {},transparent);{}",
+                token,
+                token,
+                opacity_value,
+                composed_filter_property()
             ),
             config,
         );
     }
 
-    rule(
+    composed_filter_rule(
         &selector,
-        &format!("filter:drop-shadow(var(--drop-shadow-{}))", token),
+        &format!("--tw-drop-shadow:drop-shadow(var(--drop-shadow-{}))", token),
+        Some(format!("filter:drop-shadow(var(--drop-shadow-{}))", token)),
         config,
     )
 }
@@ -1279,7 +1350,12 @@ fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:brightness({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-brightness:brightness({})", raw),
+            Some(format!("filter:brightness({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1289,9 +1365,10 @@ fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:brightness(var({}))", raw),
+            &format!("--tw-brightness:brightness(var({}))", raw),
+            Some(format!("filter:brightness(var({}))", raw)),
             config,
         );
     }
@@ -1300,9 +1377,10 @@ fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<Str
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(
+    composed_filter_rule(
         &selector,
-        &format!("filter:brightness({}%)", number),
+        &format!("--tw-brightness:brightness({}%)", number),
+        Some(format!("filter:brightness({}%)", number)),
         config,
     )
 }
@@ -1317,7 +1395,12 @@ fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:contrast({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-contrast:contrast({})", raw),
+            Some(format!("filter:contrast({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1327,9 +1410,10 @@ fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:contrast(var({}))", raw),
+            &format!("--tw-contrast:contrast(var({}))", raw),
+            Some(format!("filter:contrast(var({}))", raw)),
             config,
         );
     }
@@ -1338,9 +1422,10 @@ fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(
+    composed_filter_rule(
         &selector,
-        &format!("filter:contrast({}%)", number),
+        &format!("--tw-contrast:contrast({}%)", number),
+        Some(format!("filter:contrast({}%)", number)),
         config,
     )
 }
@@ -1349,7 +1434,12 @@ fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     let selector = format!(".{}", escape_selector(class));
 
     if class == "grayscale" {
-        return rule(&selector, "filter:grayscale(100%)", config);
+        return composed_filter_rule(
+            &selector,
+            "--tw-grayscale:grayscale(100%)",
+            Some("filter:grayscale(100%)".to_string()),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1359,7 +1449,12 @@ fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:grayscale({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-grayscale:grayscale({})", raw),
+            Some(format!("filter:grayscale({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1369,9 +1464,10 @@ fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:grayscale(var({}))", raw),
+            &format!("--tw-grayscale:grayscale(var({}))", raw),
+            Some(format!("filter:grayscale(var({}))", raw)),
             config,
         );
     }
@@ -1380,9 +1476,10 @@ fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(
+    composed_filter_rule(
         &selector,
-        &format!("filter:grayscale({}%)", number),
+        &format!("--tw-grayscale:grayscale({}%)", number),
+        Some(format!("filter:grayscale({}%)", number)),
         config,
     )
 }
@@ -1397,7 +1494,12 @@ fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:hue-rotate({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-hue-rotate:hue-rotate({})", raw),
+            Some(format!("filter:hue-rotate({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1407,9 +1509,10 @@ fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:hue-rotate(var({}))", raw),
+            &format!("--tw-hue-rotate:hue-rotate(var({}))", raw),
+            Some(format!("filter:hue-rotate(var({}))", raw)),
             config,
         );
     }
@@ -1418,9 +1521,10 @@ fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:hue-rotate({}deg)", number),
+            &format!("--tw-hue-rotate:hue-rotate({}deg)", number),
+            Some(format!("filter:hue-rotate({}deg)", number)),
             config,
         );
     }
@@ -1429,9 +1533,10 @@ fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<Str
         if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:hue-rotate(calc({}deg * -1))", number),
+            &format!("--tw-hue-rotate:hue-rotate(calc({}deg * -1))", number),
+            Some(format!("filter:hue-rotate(calc({}deg * -1))", number)),
             config,
         );
     }
@@ -1443,7 +1548,12 @@ fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String>
     let selector = format!(".{}", escape_selector(class));
 
     if class == "invert" {
-        return rule(&selector, "filter:invert(100%)", config);
+        return composed_filter_rule(
+            &selector,
+            "--tw-invert:invert(100%)",
+            Some("filter:invert(100%)".to_string()),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1453,7 +1563,12 @@ fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String>
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:invert({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-invert:invert({})", raw),
+            Some(format!("filter:invert({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1463,9 +1578,10 @@ fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String>
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:invert(var({}))", raw),
+            &format!("--tw-invert:invert(var({}))", raw),
+            Some(format!("filter:invert(var({}))", raw)),
             config,
         );
     }
@@ -1474,7 +1590,12 @@ fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String>
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(&selector, &format!("filter:invert({}%)", number), config)
+    composed_filter_rule(
+        &selector,
+        &format!("--tw-invert:invert({}%)", number),
+        Some(format!("filter:invert({}%)", number)),
+        config,
+    )
 }
 
 fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -1487,7 +1608,12 @@ fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:saturate({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-saturate:saturate({})", raw),
+            Some(format!("filter:saturate({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class
@@ -1497,9 +1623,10 @@ fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
         if raw.is_empty() {
             return None;
         }
-        return rule(
+        return composed_filter_rule(
             &selector,
-            &format!("filter:saturate(var({}))", raw),
+            &format!("--tw-saturate:saturate(var({}))", raw),
+            Some(format!("filter:saturate(var({}))", raw)),
             config,
         );
     }
@@ -1508,9 +1635,10 @@ fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(
+    composed_filter_rule(
         &selector,
-        &format!("filter:saturate({}%)", number),
+        &format!("--tw-saturate:saturate({}%)", number),
+        Some(format!("filter:saturate({}%)", number)),
         config,
     )
 }
@@ -1519,28 +1647,48 @@ fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
     let selector = format!(".{}", escape_selector(class));
 
     if class == "sepia" {
-        return rule(&selector, "filter:sepia(100%)", config);
+        return composed_filter_rule(
+            &selector,
+            "--tw-sepia:sepia(100%)",
+            Some("filter:sepia(100%)".to_string()),
+            config,
+        );
     }
 
     if let Some(raw) = class.strip_prefix("sepia-[").and_then(|v| v.strip_suffix(']')) {
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:sepia({})", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-sepia:sepia({})", raw),
+            Some(format!("filter:sepia({})", raw)),
+            config,
+        );
     }
 
     if let Some(raw) = class.strip_prefix("sepia-(").and_then(|v| v.strip_suffix(')')) {
         if raw.is_empty() {
             return None;
         }
-        return rule(&selector, &format!("filter:sepia(var({}))", raw), config);
+        return composed_filter_rule(
+            &selector,
+            &format!("--tw-sepia:sepia(var({}))", raw),
+            Some(format!("filter:sepia(var({}))", raw)),
+            config,
+        );
     }
 
     let number = class.strip_prefix("sepia-")?;
     if number.is_empty() || !number.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    rule(&selector, &format!("filter:sepia({}%)", number), config)
+    composed_filter_rule(
+        &selector,
+        &format!("--tw-sepia:sepia({}%)", number),
+        Some(format!("filter:sepia({}%)", number)),
+        config,
+    )
 }
 
 fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -6842,6 +6990,21 @@ fn apply_variants(
         return None;
     };
     if variants.is_empty() {
+        if full_class != base_class {
+            if let Some(start) = rule.find('{') {
+                let header = rule[..start].trim_end();
+                let declarations = &rule[start..];
+                let first_selector = header.split_whitespace().next()?;
+                let expected_base_selector = format!(".{}", escape_selector(base_class));
+                if first_selector != expected_base_selector {
+                    return None;
+                }
+                let full_selector = format!(".{}", escape_selector(full_class));
+                let replaced_header = header.replacen(first_selector, &full_selector, 1);
+                return Some(format!("{}{}", replaced_header, declarations));
+            }
+            return None;
+        }
         return Some(rule);
     }
 
@@ -6850,7 +7013,11 @@ fn apply_variants(
     let mut media_queries = Vec::new();
     for variant in variants {
         match *variant {
-            "dark" => selector = format!(".dark {}", selector),
+            "dark" => media_queries.push("(prefers-color-scheme: dark)"),
+            "group-hover" => {
+                selector = format!(".group:hover {}", selector);
+                media_queries.push("(hover: hover)");
+            }
             "focus" => selector = format!("{}:focus", selector),
             "focus-within" => selector = format!("{}:focus-within", selector),
             "disabled" => selector = format!("{}:disabled", selector),
@@ -6865,7 +7032,17 @@ fn apply_variants(
             "lg" => media_queries.push("(min-width: 1024px)"),
             "xl" => media_queries.push("(min-width: 1280px)"),
             "2xl" => media_queries.push("(min-width: 1536px)"),
-            _ => return None,
+            _ => {
+                if let Some(data_key) = variant.strip_prefix("data-") {
+                    selector = apply_data_variant(selector, data_key)?;
+                    continue;
+                }
+                if variant.starts_with('[') && variant.ends_with(']') {
+                    selector = apply_arbitrary_variant_selector(selector, variant)?;
+                    continue;
+                }
+                return None;
+            }
         }
     }
 
@@ -6897,9 +7074,40 @@ fn escape_selector(class: &str) -> String {
         .replace(']', "\\]")
         .replace('(', "\\(")
         .replace(')', "\\)")
+        .replace('&', "\\&")
+        .replace('>', "\\>")
         .replace('+', "\\+")
         .replace(',', "\\,")
         .replace('%', "\\%")
+        .replace('=', "\\=")
+        .replace('!', "\\!")
+}
+
+fn apply_data_variant(selector: String, data_key: &str) -> Option<String> {
+    if data_key.is_empty() {
+        return None;
+    }
+
+    if let Some(raw) = data_key.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if raw.is_empty() {
+            return None;
+        }
+        return Some(format!("{}[data-{}]", selector, raw));
+    }
+
+    Some(format!("{}[data-{}]", selector, data_key))
+}
+
+fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<String> {
+    let raw = variant.strip_prefix('[')?.strip_suffix(']')?;
+    if raw.is_empty() {
+        return None;
+    }
+    let normalized = raw.replace('_', " ");
+    if normalized.contains('&') {
+        return Some(normalized.replace('&', &selector));
+    }
+    Some(format!("{} {}", normalized, selector))
 }
 
 fn wrap_media(query: &str, rule: &str, minify: bool) -> String {
@@ -6907,6 +7115,78 @@ fn wrap_media(query: &str, rule: &str, minify: bool) -> String {
         format!("@media {}{{{}}}", query, rule)
     } else {
         format!("@media {} {{ {} }}", query, rule)
+    }
+}
+
+fn strip_important_modifier(class: &str) -> (&str, bool) {
+    if class.len() > 1 {
+        if let Some(stripped) = class.strip_suffix('!') {
+            return (stripped, true);
+        }
+    }
+    (class, false)
+}
+
+fn add_important_to_rule(rule: &str, minify: bool) -> Option<String> {
+    let first_open = rule.find('{')?;
+    let first_close = rule.rfind('}')?;
+    if first_close <= first_open {
+        return None;
+    }
+
+    let header = rule[..first_open].trim_end();
+    let body = &rule[first_open + 1..first_close];
+
+    if header.starts_with("@media ") {
+        let nested = add_important_to_rule(body.trim(), minify)?;
+        if minify {
+            return Some(format!("{}{{{}}}", header, nested));
+        }
+        return Some(format!("{} {{ {} }}", header, nested));
+    }
+
+    let declarations = add_important_to_declarations(body, minify)?;
+    if minify {
+        Some(format!("{}{{{}}}", header, declarations))
+    } else {
+        Some(format!("{} {{ {}; }}", header, declarations))
+    }
+}
+
+fn add_important_to_declarations(declarations: &str, minify: bool) -> Option<String> {
+    let mut parts = Vec::new();
+
+    for decl in declarations.split(';') {
+        let decl = decl.trim();
+        if decl.is_empty() {
+            continue;
+        }
+        let mut iter = decl.splitn(2, ':');
+        let name = iter.next()?.trim();
+        let value = iter.next()?.trim();
+        let important_value = if value.contains("!important") {
+            value.to_string()
+        } else if minify {
+            format!("{}!important", value)
+        } else {
+            format!("{} !important", value)
+        };
+
+        if minify {
+            parts.push(format!("{}:{}", name, important_value));
+        } else {
+            parts.push(format!("{}: {}", name, important_value));
+        }
+    }
+
+    if parts.is_empty() {
+        return None;
+    }
+
+    if minify {
+        Some(parts.join(";"))
+    } else {
+        Some(parts.join("; "))
     }
 }
 
@@ -8311,6 +8591,20 @@ mod tests {
         assert!(result.css.contains("filter: blur(var(--my-blur))"));
         assert!(result.css.contains(".md\\:blur-lg"));
         assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn composes_filter_utilities_with_css_variables() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["blur-sm".to_string(), "grayscale".to_string()], &config);
+        assert!(result.css.contains("--tw-blur: blur(var(--blur-sm))"));
+        assert!(result.css.contains("--tw-grayscale: grayscale(100%)"));
+        assert!(result.css.contains(
+            "filter: var(--tw-blur,) var(--tw-brightness,) var(--tw-contrast,) var(--tw-grayscale,)"
+        ));
     }
 
     #[test]
@@ -10619,7 +10913,8 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["dark:bg-gray-900".to_string()], &config);
-        assert!(result.css.contains(".dark .dark\\:bg-gray-900"));
+        assert!(result.css.contains(".dark\\:bg-gray-900"));
+        assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("background-color: #111827"));
     }
 
@@ -10649,6 +10944,197 @@ mod tests {
         assert!(result.css.contains(".xl\\:bg-gray-100"));
         assert!(result.css.contains("@media (min-width: 1536px)"));
         assert!(result.css.contains(".2xl\\:text-blue-600"));
+    }
+
+    #[test]
+    fn generates_stacked_state_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["disabled:hover:bg-blue-500".to_string()], &config);
+        assert!(result
+            .css
+            .contains(".disabled\\:hover\\:bg-blue-500:disabled:hover"));
+        assert!(result.css.contains("background-color: #3b82f6"));
+    }
+
+    #[test]
+    fn generates_dark_responsive_hover_stacked_variant() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["dark:lg:hover:bg-gray-900".to_string()], &config);
+        assert!(result
+            .css
+            .contains(".dark\\:lg\\:hover\\:bg-gray-900:hover"));
+        assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
+        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("background-color: #111827"));
+    }
+
+    #[test]
+    fn generates_group_hover_variant() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["group-hover:underline".to_string()], &config);
+        assert!(result
+            .css
+            .contains(".group:hover .group-hover\\:underline"));
+        assert!(result.css.contains("@media (hover: hover)"));
+        assert!(result.css.contains("text-decoration-line: underline"));
+    }
+
+    #[test]
+    fn generates_data_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "data-current:bg-blue-500".to_string(),
+                "data-[state=open]:bg-blue-500".to_string(),
+            ],
+            &config,
+        );
+        assert!(result
+            .css
+            .contains(".data-current\\:bg-blue-500[data-current]"));
+        assert!(result
+            .css
+            .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]"));
+        assert!(result.css.contains("background-color: #3b82f6"));
+    }
+
+    #[test]
+    fn generates_arbitrary_variant_selector() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &["[&>[data-active]+span]:text-blue-600".to_string()],
+            &config,
+        );
+        assert!(result.css.contains(
+            ".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"
+        ));
+        assert!(result.css.contains("color: #2563eb"));
+    }
+
+    #[test]
+    fn generates_complex_stacked_variant_with_data_and_dark() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["dark:lg:data-current:hover:bg-indigo-600".to_string()], &config);
+        assert!(result
+            .css
+            .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600[data-current]:hover"));
+        assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
+        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("background-color: var(--color-indigo-600)"));
+    }
+
+    #[test]
+    fn generates_important_modifier() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["bg-red-500!".to_string()], &config);
+        assert!(result.css.contains(".bg-red-500\\!"));
+        assert!(result.css.contains("background-color: #ef4444 !important"));
+    }
+
+    #[test]
+    fn generates_important_modifier_with_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(&["hover:bg-red-500!".to_string()], &config);
+        assert!(result.css.contains(".hover\\:bg-red-500\\!:hover"));
+        assert!(result.css.contains("background-color: #ef4444 !important"));
+    }
+
+    #[test]
+    fn generates_important_modifier_with_complex_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &["dark:lg:data-current:hover:bg-indigo-600!".to_string()],
+            &config,
+        );
+        assert!(result.css.contains(
+            ".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\![data-current]:hover"
+        ));
+        assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
+        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result
+            .css
+            .contains("background-color: var(--color-indigo-600) !important"));
+    }
+
+    #[test]
+    fn generates_arbitrary_values_from_core_concepts_examples() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-[#316ff6]".to_string(),
+                "grid-cols-[24rem_2.5rem_minmax(0,1fr)]".to_string(),
+                "max-h-[calc(100dvh-(--spacing(6)))]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-\\[#316ff6\\]"));
+        assert!(result.css.contains("background-color: #316ff6"));
+        assert!(result
+            .css
+            .contains(".grid-cols-\\[24rem_2.5rem_minmax\\(0\\,1fr\\)\\]"));
+        assert!(result
+            .css
+            .contains("grid-template-columns: 24rem_2.5rem_minmax(0,1fr)"));
+        assert!(result
+            .css
+            .contains(".max-h-\\[calc\\(100dvh-\\(--spacing\\(6\\)\\)\\)\\]"));
+        assert!(result
+            .css
+            .contains("max-height: calc(100dvh-(--spacing(6)))"));
+    }
+
+    #[test]
+    fn generates_arbitrary_property_utility_classes() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "[--gutter-width:1rem]".to_string(),
+                "lg:[--gutter-width:2rem]".to_string(),
+            ],
+            &config,
+        );
+        assert!(result
+            .css
+            .contains(".\\[--gutter-width\\:1rem\\]"));
+        assert!(result.css.contains("--gutter-width: 1rem"));
+        assert!(result
+            .css
+            .contains(".lg\\:\\[--gutter-width\\:2rem\\]"));
+        assert!(result.css.contains("--gutter-width: 2rem"));
+        assert!(result.css.contains("@media (min-width: 1024px)"));
     }
 
     #[test]
@@ -11491,7 +11977,8 @@ mod tests {
         assert!(result.css.contains("color-scheme: only dark"));
         assert!(result.css.contains(".scheme-only-light"));
         assert!(result.css.contains("color-scheme: only light"));
-        assert!(result.css.contains(".dark .dark\\:scheme-dark"));
+        assert!(result.css.contains(".dark\\:scheme-dark"));
+        assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
     }
 
     #[test]
