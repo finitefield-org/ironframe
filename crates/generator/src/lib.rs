@@ -13,11 +13,26 @@ pub struct GenerationResult {
 }
 
 pub fn generate(_classes: &[String], _config: &GeneratorConfig) -> GenerationResult {
+    generate_with_overrides(_classes, _config, None)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantOverrides {
+    pub responsive_breakpoints: Vec<(String, String)>,
+    pub container_breakpoints: Vec<(String, String)>,
+}
+
+pub fn generate_with_overrides(
+    _classes: &[String],
+    _config: &GeneratorConfig,
+    overrides: Option<&VariantOverrides>,
+) -> GenerationResult {
     let mut rules = Vec::new();
     let mut count = 0;
+    let variant_tables = build_variant_tables(overrides);
 
     for class in _classes {
-        if let Some(rule) = generate_rule(class, _config) {
+        if let Some(rule) = generate_rule(class, _config, &variant_tables) {
             rules.push(rule);
             count += 1;
         }
@@ -35,11 +50,112 @@ pub fn generate(_classes: &[String], _config: &GeneratorConfig) -> GenerationRes
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VariantTables {
+    responsive_breakpoints: Vec<(String, String)>,
+    container_breakpoints: Vec<(String, String)>,
+}
+
+impl VariantTables {
+    fn responsive_width(&self, key: &str) -> Option<&str> {
+        self.responsive_breakpoints
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+    }
+
+    fn container_width(&self, key: &str) -> Option<&str> {
+        self.container_breakpoints
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+fn build_variant_tables(overrides: Option<&VariantOverrides>) -> VariantTables {
+    let mut responsive_breakpoints = default_responsive_breakpoints();
+    let mut container_breakpoints = default_container_breakpoints();
+
+    if let Some(overrides) = overrides {
+        if !overrides.responsive_breakpoints.is_empty() {
+            responsive_breakpoints = overrides.responsive_breakpoints.clone();
+        }
+        if !overrides.container_breakpoints.is_empty() {
+            container_breakpoints = overrides.container_breakpoints.clone();
+        }
+    }
+
+    VariantTables {
+        responsive_breakpoints,
+        container_breakpoints,
+    }
+}
+
+fn default_responsive_breakpoints() -> Vec<(String, String)> {
+    vec![
+        ("sm".to_string(), "40rem".to_string()),
+        ("md".to_string(), "48rem".to_string()),
+        ("lg".to_string(), "64rem".to_string()),
+        ("xl".to_string(), "80rem".to_string()),
+        ("2xl".to_string(), "96rem".to_string()),
+    ]
+}
+
+fn default_container_breakpoints() -> Vec<(String, String)> {
+    vec![
+        ("3xs".to_string(), "16rem".to_string()),
+        ("2xs".to_string(), "18rem".to_string()),
+        ("xs".to_string(), "20rem".to_string()),
+        ("sm".to_string(), "24rem".to_string()),
+        ("md".to_string(), "28rem".to_string()),
+        ("lg".to_string(), "32rem".to_string()),
+        ("xl".to_string(), "36rem".to_string()),
+        ("2xl".to_string(), "42rem".to_string()),
+        ("3xl".to_string(), "48rem".to_string()),
+        ("4xl".to_string(), "56rem".to_string()),
+        ("5xl".to_string(), "64rem".to_string()),
+        ("6xl".to_string(), "72rem".to_string()),
+        ("7xl".to_string(), "80rem".to_string()),
+    ]
+}
+
+fn sort_breakpoints_by_length(breakpoints: &mut [(String, String)]) {
+    breakpoints.sort_by(|a, b| {
+        if let (Some((a_num, a_unit)), Some((b_num, b_unit))) =
+            (parse_length_value(&a.1), parse_length_value(&b.1))
+        {
+            if a_unit == b_unit {
+                return a_num
+                    .partial_cmp(&b_num)
+                    .unwrap_or(std::cmp::Ordering::Equal);
+            }
+        }
+        a.1.cmp(&b.1)
+    });
+}
+
+fn parse_length_value(raw: &str) -> Option<(f64, String)> {
+    let value = raw.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let split_idx = value
+        .char_indices()
+        .find(|(_, ch)| !ch.is_ascii_digit() && *ch != '.')
+        .map(|(idx, _)| idx)?;
+    let number = value[..split_idx].parse::<f64>().ok()?;
+    let unit = value[split_idx..].trim().to_string();
+    if unit.is_empty() {
+        return None;
+    }
+    Some((number, unit))
+}
+
 pub fn emit_css(result: &GenerationResult) -> String {
     result.css.clone()
 }
 
-fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_rule(class: &str, config: &GeneratorConfig, variant_tables: &VariantTables) -> Option<String> {
     let (variants, base_with_modifier) = parse_variants(class);
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
     let rule = generate_color_rule(base, config).or_else(|| match base {
@@ -418,10 +534,17 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_grid_auto_rows_rule(base, config))
             .or_else(|| generate_grid_column_rule(base, config))
             .or_else(|| generate_grid_row_rule(base, config))
-            .or_else(|| generate_layout_rule(base, config)),
+            .or_else(|| generate_layout_rule(base, config, variant_tables)),
     });
 
-    let generated = apply_variants(&variants, class, base, rule, config.minify)?;
+    let generated = apply_variants(
+        &variants,
+        class,
+        base,
+        rule,
+        config.minify,
+        variant_tables,
+    )?;
     if important_modifier {
         return add_important_to_rule(&generated, config.minify);
     }
@@ -3459,8 +3582,28 @@ fn generate_scroll_padding_rule(class: &str, config: &GeneratorConfig) -> Option
     None
 }
 
-fn generate_layout_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_layout_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
+
+    if class == "@container" {
+        return rule(&selector, "container-type:inline-size", config);
+    }
+
+    if let Some(name) = class.strip_prefix("@container/") {
+        if name.is_empty() {
+            return None;
+        }
+        return rule(
+            &selector,
+            &format!("container-type:inline-size;container-name:{}", name),
+            config,
+        );
+    }
+
     match class {
         "block" => rule(&selector, "display:block", config),
         "inline-block" => rule(&selector, "display:inline-block", config),
@@ -3606,20 +3749,41 @@ fn generate_layout_rule(class: &str, config: &GeneratorConfig) -> Option<String>
         "overflow-y-visible" => rule(&selector, "overflow-y:visible", config),
         "overflow-x-scroll" => rule(&selector, "overflow-x:scroll", config),
         "overflow-y-scroll" => rule(&selector, "overflow-y:scroll", config),
-        _ => generate_sizing_rule(class, config)
+        _ => generate_sizing_rule(class, config, variant_tables)
             .or_else(|| generate_gap_rule(class, config))
             .or_else(|| generate_space_rule(class, config)),
     }
 }
 
-fn generate_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+fn generate_sizing_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
 
     if class == "container" {
+        let mut breakpoints = variant_tables.responsive_breakpoints.clone();
+        sort_breakpoints_by_length(&mut breakpoints);
         if config.minify {
-            return Some(".container{width:100%}@media (min-width: 40rem){.container{max-width:40rem}}@media (min-width: 48rem){.container{max-width:48rem}}@media (min-width: 64rem){.container{max-width:64rem}}@media (min-width: 80rem){.container{max-width:80rem}}@media (min-width: 96rem){.container{max-width:96rem}}".to_string());
+            let mut out = ".container{width:100%}".to_string();
+            for (_, width) in breakpoints {
+                out.push_str(&format!(
+                    "@media (width >= {}){{.container{{max-width:{}}}}}",
+                    width, width
+                ));
+            }
+            return Some(out);
         }
-        return Some(".container { width: 100%; }\n@media (min-width: 40rem) { .container { max-width: 40rem; } }\n@media (min-width: 48rem) { .container { max-width: 48rem; } }\n@media (min-width: 64rem) { .container { max-width: 64rem; } }\n@media (min-width: 80rem) { .container { max-width: 80rem; } }\n@media (min-width: 96rem) { .container { max-width: 96rem; } }".to_string());
+        let mut out = ".container { width: 100%; }".to_string();
+        for (_, width) in breakpoints {
+            out.push('\n');
+            out.push_str(&format!(
+                "@media (width >= {}) {{ .container {{ max-width: {}; }} }}",
+                width, width
+            ));
+        }
+        return Some(out);
     }
 
     if let Some(raw) = class.strip_prefix("max-w-") {
@@ -6985,6 +7149,7 @@ fn apply_variants(
     base_class: &str,
     rule: Option<String>,
     minify: bool,
+    variant_tables: &VariantTables,
 ) -> Option<String> {
     let Some(rule) = rule else {
         return None;
@@ -7019,6 +7184,7 @@ fn apply_variants(
             variant,
             &mut wrappers,
             &mut needs_generated_content,
+            variant_tables,
         ) {
             selector = updated;
             continue;
@@ -7116,7 +7282,10 @@ fn apply_aria_variant(selector: String, aria_key: &str) -> Option<String> {
 enum RuleWrapper {
     Media(String),
     Supports(String),
-    Container(String),
+    Container {
+        name: Option<String>,
+        query: String,
+    },
     StartingStyle,
 }
 
@@ -7125,6 +7294,7 @@ fn apply_selector_variant(
     variant: &str,
     wrappers: &mut Vec<RuleWrapper>,
     needs_generated_content: &mut bool,
+    variant_tables: &VariantTables,
 ) -> Option<String> {
     match variant {
         "dark" => {
@@ -7203,46 +7373,6 @@ fn apply_selector_variant(
             wrappers.push(RuleWrapper::Media("print".to_string()));
             return Some(selector);
         }
-        "sm" => {
-            wrappers.push(RuleWrapper::Media("(min-width: 640px)".to_string()));
-            return Some(selector);
-        }
-        "md" => {
-            wrappers.push(RuleWrapper::Media("(min-width: 768px)".to_string()));
-            return Some(selector);
-        }
-        "lg" => {
-            wrappers.push(RuleWrapper::Media("(min-width: 1024px)".to_string()));
-            return Some(selector);
-        }
-        "xl" => {
-            wrappers.push(RuleWrapper::Media("(min-width: 1280px)".to_string()));
-            return Some(selector);
-        }
-        "2xl" => {
-            wrappers.push(RuleWrapper::Media("(min-width: 1536px)".to_string()));
-            return Some(selector);
-        }
-        "max-sm" => {
-            wrappers.push(RuleWrapper::Media("(max-width: 639px)".to_string()));
-            return Some(selector);
-        }
-        "max-md" => {
-            wrappers.push(RuleWrapper::Media("(max-width: 767px)".to_string()));
-            return Some(selector);
-        }
-        "max-lg" => {
-            wrappers.push(RuleWrapper::Media("(max-width: 1023px)".to_string()));
-            return Some(selector);
-        }
-        "max-xl" => {
-            wrappers.push(RuleWrapper::Media("(max-width: 1279px)".to_string()));
-            return Some(selector);
-        }
-        "max-2xl" => {
-            wrappers.push(RuleWrapper::Media("(max-width: 1535px)".to_string()));
-            return Some(selector);
-        }
         "starting" => {
             wrappers.push(RuleWrapper::StartingStyle);
             return Some(selector);
@@ -7250,21 +7380,33 @@ fn apply_selector_variant(
         _ => {}
     }
 
+    if let Some(width) = variant_tables.responsive_width(variant) {
+        wrappers.push(RuleWrapper::Media(format!("(width >= {})", width)));
+        return Some(selector);
+    }
+
+    if let Some(key) = variant.strip_prefix("max-") {
+        if let Some(width) = variant_tables.responsive_width(key) {
+            wrappers.push(RuleWrapper::Media(format!("(width < {})", width)));
+            return Some(selector);
+        }
+    }
+
     if variant.starts_with("min-[") && variant.ends_with(']') {
         let value = variant.strip_prefix("min-[")?.strip_suffix(']')?;
-        wrappers.push(RuleWrapper::Media(format!("(min-width: {})", value)));
+        wrappers.push(RuleWrapper::Media(format!("(width >= {})", value)));
         return Some(selector);
     }
 
     if variant.starts_with("max-[") && variant.ends_with(']') {
         let value = variant.strip_prefix("max-[")?.strip_suffix(']')?;
-        wrappers.push(RuleWrapper::Media(format!("(max-width: {})", value)));
+        wrappers.push(RuleWrapper::Media(format!("(width < {})", value)));
         return Some(selector);
     }
 
     if variant.starts_with('@') {
-        let query = container_query_for_variant(variant)?;
-        wrappers.push(RuleWrapper::Container(query));
+        let (name, query) = container_query_for_variant(variant, variant_tables)?;
+        wrappers.push(RuleWrapper::Container { name, query });
         return Some(selector);
     }
 
@@ -7598,51 +7740,35 @@ fn supports_query_for_variant(variant: &str) -> Option<String> {
     None
 }
 
-fn container_query_for_variant(variant: &str) -> Option<String> {
-    if let Some(inner) = variant
-        .strip_prefix("@min-[")
-        .and_then(|v| v.strip_suffix(']'))
-    {
-        return Some(format!("(min-width: {})", inner));
+fn container_query_for_variant(
+    variant: &str,
+    variant_tables: &VariantTables,
+) -> Option<(Option<String>, String)> {
+    let raw = variant.strip_prefix('@')?;
+    let (core, name) = split_named_variant(raw);
+    let name = name.and_then(|value| {
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
+        }
+    });
+
+    if let Some(inner) = core.strip_prefix("min-[").and_then(|v| v.strip_suffix(']')) {
+        return Some((name, format!("(width >= {})", inner)));
     }
 
-    if let Some(inner) = variant
-        .strip_prefix("@max-[")
-        .and_then(|v| v.strip_suffix(']'))
-    {
-        return Some(format!("(max-width: {})", inner));
+    if let Some(inner) = core.strip_prefix("max-[").and_then(|v| v.strip_suffix(']')) {
+        return Some((name, format!("(width < {})", inner)));
     }
 
-    if let Some(size) = variant.strip_prefix("@max-") {
-        let width = container_breakpoint(size)?;
-        return Some(format!("(max-width: {})", width));
+    if let Some(size) = core.strip_prefix("max-") {
+        let width = variant_tables.container_width(size)?;
+        return Some((name, format!("(width < {})", width)));
     }
 
-    if let Some(size) = variant.strip_prefix('@') {
-        let width = container_breakpoint(size)?;
-        return Some(format!("(min-width: {})", width));
-    }
-
-    None
-}
-
-fn container_breakpoint(key: &str) -> Option<&'static str> {
-    match key {
-        "3xs" => Some("16rem"),
-        "2xs" => Some("18rem"),
-        "xs" => Some("20rem"),
-        "sm" => Some("24rem"),
-        "md" => Some("28rem"),
-        "lg" => Some("32rem"),
-        "xl" => Some("36rem"),
-        "2xl" => Some("42rem"),
-        "3xl" => Some("48rem"),
-        "4xl" => Some("56rem"),
-        "5xl" => Some("64rem"),
-        "6xl" => Some("72rem"),
-        "7xl" => Some("80rem"),
-        _ => None,
-    }
+    let width = variant_tables.container_width(core)?;
+    Some((name, format!("(width >= {})", width)))
 }
 
 fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
@@ -7661,9 +7787,15 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
                 format!("@supports ({}) {{ {} }}", query, rule)
             }
         }
-        RuleWrapper::Container(query) => {
+        RuleWrapper::Container { name, query } => {
             if minify {
-                format!("@container {}{{{}}}", query, rule)
+                if let Some(name) = name {
+                    format!("@container {} {}{{{}}}", name, query, rule)
+                } else {
+                    format!("@container {}{{{}}}", query, rule)
+                }
+            } else if let Some(name) = name {
+                format!("@container {} {} {{ {} }}", name, query, rule)
             } else {
                 format!("@container {} {{ {} }}", query, rule)
             }
@@ -7825,7 +7957,7 @@ fn format_declarations(declarations: &str, minify: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{generate, GeneratorConfig};
+    use super::{generate, generate_with_overrides, GeneratorConfig, VariantOverrides};
     use std::collections::BTreeMap;
 
     #[test]
@@ -7914,7 +8046,7 @@ mod tests {
         assert!(result.css.contains("transition-property: var(--my-properties)"));
         assert!(result.css.contains(".transition-\\[height\\]"));
         assert!(result.css.contains("transition-property: height"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:transition-all"));
     }
 
@@ -7937,7 +8069,7 @@ mod tests {
         assert!(result.css.contains("transition-behavior: normal"));
         assert!(result.css.contains(".transition-discrete"));
         assert!(result.css.contains("transition-behavior: allow-discrete"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:transition-normal"));
     }
 
@@ -7977,7 +8109,7 @@ mod tests {
             .css
             .contains("@media (prefers-reduced-motion: reduce)"));
         assert!(result.css.contains(".motion-reduce\\:duration-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:duration-150"));
     }
 
@@ -8014,7 +8146,7 @@ mod tests {
             .css
             .contains("@media (prefers-reduced-motion: reduce)"));
         assert!(result.css.contains(".motion-reduce\\:delay-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:delay-300"));
     }
 
@@ -8061,7 +8193,7 @@ mod tests {
         assert!(result
             .css
             .contains("transition-timing-function: var(--ease-in-expo)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:ease-in"));
     }
 
@@ -8111,7 +8243,7 @@ mod tests {
             .css
             .contains("@media (prefers-reduced-motion: no-preference)"));
         assert!(result.css.contains(".motion-safe\\:animate-spin"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:animate-spin"));
     }
 
@@ -8202,7 +8334,7 @@ mod tests {
         assert!(result.css.contains("padding-inline-start: calc(var(--spacing) * 8)"));
         assert!(result.css.contains(".pe-1"));
         assert!(result.css.contains("padding-inline-end: calc(var(--spacing) * 1)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:py-8"));
     }
 
@@ -8276,7 +8408,7 @@ mod tests {
         assert!(result.css.contains("margin-inline-start: calc(var(--spacing) * 4)"));
         assert!(result.css.contains(".-me-2"));
         assert!(result.css.contains("margin-inline-end: calc(var(--spacing) * -2)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:mt-8"));
     }
 
@@ -8333,7 +8465,7 @@ mod tests {
         assert!(result.css.contains(".-scroll-ml-\\[5px\\]"));
         assert!(result.css.contains("scroll-margin-left: calc(5px * -1)"));
         assert!(result.css.contains(".md\\:scroll-m-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -8389,7 +8521,7 @@ mod tests {
         assert!(result.css.contains(".-scroll-pl-\\[5px\\]"));
         assert!(result.css.contains("scroll-padding-left: calc(5px * -1)"));
         assert!(result.css.contains(".md\\:scroll-p-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -8463,7 +8595,7 @@ mod tests {
         assert!(result.css.contains("line-height: var(--my-line-height)"));
         assert!(result.css.contains(".text-lg\\/\\[1.75\\]"));
         assert!(result.css.contains("line-height: 1.75"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:text-base"));
     }
 
@@ -8500,7 +8632,7 @@ mod tests {
         assert!(result.css.contains("font-family: Open_Sans"));
         assert!(result.css.contains(".font-bold"));
         assert!(result.css.contains("font-weight: 700"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-serif"));
     }
 
@@ -8550,7 +8682,7 @@ mod tests {
         assert!(result.css.contains("font-weight: var(--my-font-weight)"));
         assert!(result.css.contains(".font-extrablack"));
         assert!(result.css.contains("font-weight: var(--font-weight-extrablack)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-bold"));
         assert!(result.css.contains(".leading-none"));
         assert!(result.css.contains("line-height: 1"));
@@ -8587,7 +8719,7 @@ mod tests {
         assert!(result.css.contains(".subpixel-antialiased"));
         assert!(result.css.contains("-webkit-font-smoothing: auto"));
         assert!(result.css.contains("-moz-osx-font-smoothing: auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:subpixel-antialiased"));
     }
 
@@ -8639,7 +8771,7 @@ mod tests {
         assert!(result.css.contains("font-stretch: 66.66%"));
         assert!(result.css.contains(".font-stretch-\\(--my-font-width\\)"));
         assert!(result.css.contains("font-stretch: var(--my-font-width)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:font-stretch-expanded"));
     }
 
@@ -8682,7 +8814,7 @@ mod tests {
         assert!(result.css.contains("font-variant-numeric: diagonal-fractions"));
         assert!(result.css.contains(".stacked-fractions"));
         assert!(result.css.contains("font-variant-numeric: stacked-fractions"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:normal-nums"));
     }
 
@@ -8725,7 +8857,7 @@ mod tests {
         assert!(result.css.contains("letter-spacing: .25em"));
         assert!(result.css.contains(".-tracking-2"));
         assert!(result.css.contains("letter-spacing: calc(var(--tracking-2) * -1)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:tracking-wide"));
     }
 
@@ -8761,7 +8893,7 @@ mod tests {
             .contains("-webkit-line-clamp: calc(var(--characters)/100)"));
         assert!(result.css.contains(".line-clamp-\\(--my-line-count\\)"));
         assert!(result.css.contains("-webkit-line-clamp: var(--my-line-count)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:line-clamp-4"));
     }
 
@@ -8786,7 +8918,7 @@ mod tests {
         assert!(result.css.contains("list-style-image: url(/img/checkmark.png)"));
         assert!(result.css.contains(".list-image-\\(--my-list-image\\)"));
         assert!(result.css.contains("list-style-image: var(--my-list-image)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result
             .css
             .contains(".md\\:list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]"));
@@ -8810,7 +8942,7 @@ mod tests {
         assert!(result.css.contains("list-style-position: inside"));
         assert!(result.css.contains(".list-outside"));
         assert!(result.css.contains("list-style-position: outside"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:list-inside"));
     }
 
@@ -8841,7 +8973,7 @@ mod tests {
         assert!(result.css.contains("list-style-type: upper-roman"));
         assert!(result.css.contains(".list-\\(--my-marker\\)"));
         assert!(result.css.contains("list-style-type: var(--my-marker)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:list-disc"));
     }
 
@@ -8907,7 +9039,7 @@ mod tests {
         assert!(result.css.contains(".normal-case"));
         assert!(result.css.contains("text-transform: none"));
         assert!(result.css.contains(".md\\:uppercase"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -8933,7 +9065,7 @@ mod tests {
         assert!(result.css.contains(".text-clip"));
         assert!(result.css.contains("text-overflow: clip"));
         assert!(result.css.contains(".md\\:text-clip"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -8961,7 +9093,7 @@ mod tests {
         assert!(result.css.contains(".text-pretty"));
         assert!(result.css.contains("text-wrap: pretty"));
         assert!(result.css.contains(".md\\:text-balance"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -8995,7 +9127,7 @@ mod tests {
         assert!(result.css.contains(".whitespace-break-spaces"));
         assert!(result.css.contains("white-space: break-spaces"));
         assert!(result.css.contains(".md\\:whitespace-normal"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9020,7 +9152,7 @@ mod tests {
         assert!(result.css.contains(".break-keep"));
         assert!(result.css.contains("word-break: keep-all"));
         assert!(result.css.contains(".md\\:break-all"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9045,7 +9177,7 @@ mod tests {
         assert!(result.css.contains(".wrap-normal"));
         assert!(result.css.contains("overflow-wrap: normal"));
         assert!(result.css.contains(".md\\:wrap-break-word"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9070,7 +9202,7 @@ mod tests {
         assert!(result.css.contains(".hyphens-auto"));
         assert!(result.css.contains("hyphens: auto"));
         assert!(result.css.contains(".md\\:hyphens-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9103,7 +9235,7 @@ mod tests {
         assert!(result.css.contains("content: var(--my-content)"));
         assert!(result.css.contains(".before\\:content-\\['x'\\]:before"));
         assert!(result.css.contains(".md\\:before\\:content-\\['Desktop'\\]:before"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9132,7 +9264,7 @@ mod tests {
         assert!(result.css.contains("filter: var(--my-filter)"));
         assert!(result.css.contains(".hover\\:filter-none:hover"));
         assert!(result.css.contains(".md\\:filter-none"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9172,7 +9304,7 @@ mod tests {
         assert!(result.css.contains(".blur-\\(--my-blur\\)"));
         assert!(result.css.contains("filter: blur(var(--my-blur))"));
         assert!(result.css.contains(".md\\:blur-lg"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9220,7 +9352,7 @@ mod tests {
         assert!(result.css.contains(".brightness-\\(--my-brightness\\)"));
         assert!(result.css.contains("filter: brightness(var(--my-brightness))"));
         assert!(result.css.contains(".md\\:brightness-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9254,7 +9386,7 @@ mod tests {
         assert!(result.css.contains(".contrast-\\(--my-contrast\\)"));
         assert!(result.css.contains("filter: contrast(var(--my-contrast))"));
         assert!(result.css.contains(".md\\:contrast-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9314,7 +9446,7 @@ mod tests {
             "--tw-drop-shadow-color: color-mix(in oklab,currentColor 25%,transparent)"
         ));
         assert!(result.css.contains(".md\\:drop-shadow-xl"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9348,7 +9480,7 @@ mod tests {
         assert!(result.css.contains(".grayscale-\\(--my-grayscale\\)"));
         assert!(result.css.contains("filter: grayscale(var(--my-grayscale))"));
         assert!(result.css.contains(".md\\:grayscale-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9391,7 +9523,7 @@ mod tests {
         assert!(result.css.contains(".hue-rotate-\\(--my-hue-rotate\\)"));
         assert!(result.css.contains("filter: hue-rotate(var(--my-hue-rotate))"));
         assert!(result.css.contains(".md\\:hue-rotate-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9422,7 +9554,7 @@ mod tests {
         assert!(result.css.contains(".invert-\\(--my-inversion\\)"));
         assert!(result.css.contains("filter: invert(var(--my-inversion))"));
         assert!(result.css.contains(".md\\:invert-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9456,7 +9588,7 @@ mod tests {
         assert!(result.css.contains(".saturate-\\(--my-saturation\\)"));
         assert!(result.css.contains("filter: saturate(var(--my-saturation))"));
         assert!(result.css.contains(".md\\:saturate-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9487,7 +9619,7 @@ mod tests {
         assert!(result.css.contains(".sepia-\\(--my-sepia\\)"));
         assert!(result.css.contains("filter: sepia(var(--my-sepia))"));
         assert!(result.css.contains(".md\\:sepia-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9522,7 +9654,7 @@ mod tests {
             .css
             .contains(".hover\\:backdrop-filter-none:hover"));
         assert!(result.css.contains(".md\\:backdrop-filter-none"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9561,7 +9693,7 @@ mod tests {
             .css
             .contains("backdrop-filter: blur(var(--my-backdrop-blur))"));
         assert!(result.css.contains(".md\\:backdrop-blur-lg"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9596,7 +9728,7 @@ mod tests {
             .css
             .contains("backdrop-filter: brightness(var(--my-backdrop-brightness))"));
         assert!(result.css.contains(".md\\:backdrop-brightness-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9631,7 +9763,7 @@ mod tests {
             .css
             .contains("backdrop-filter: contrast(var(--my-backdrop-contrast))"));
         assert!(result.css.contains(".md\\:backdrop-contrast-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9669,7 +9801,7 @@ mod tests {
             .css
             .contains("backdrop-filter: grayscale(var(--my-backdrop-grayscale))"));
         assert!(result.css.contains(".md\\:backdrop-grayscale-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9719,7 +9851,7 @@ mod tests {
             .css
             .contains("backdrop-filter: hue-rotate(var(--my-backdrop-hue-rotation))"));
         assert!(result.css.contains(".md\\:backdrop-hue-rotate-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9754,7 +9886,7 @@ mod tests {
             .css
             .contains("backdrop-filter: invert(var(--my-backdrop-inversion))"));
         assert!(result.css.contains(".md\\:backdrop-invert"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9792,7 +9924,7 @@ mod tests {
             .css
             .contains("backdrop-filter: opacity(var(--my-backdrop-filter-opacity))"));
         assert!(result.css.contains(".md\\:backdrop-opacity-60"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9827,7 +9959,7 @@ mod tests {
             .css
             .contains("backdrop-filter: saturate(var(--my-backdrop-saturation))"));
         assert!(result.css.contains(".md\\:backdrop-saturate-150"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9862,7 +9994,7 @@ mod tests {
             .css
             .contains("backdrop-filter: sepia(var(--my-backdrop-sepia))"));
         assert!(result.css.contains(".md\\:backdrop-sepia-0"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9896,7 +10028,7 @@ mod tests {
         assert!(result.css.contains(".indent-\\[50\\%\\]"));
         assert!(result.css.contains("text-indent: 50%"));
         assert!(result.css.contains(".md\\:indent-8"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9942,7 +10074,7 @@ mod tests {
         assert!(result.css.contains(".align-\\[4px\\]"));
         assert!(result.css.contains("vertical-align: 4px"));
         assert!(result.css.contains(".md\\:align-top"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -9972,7 +10104,7 @@ mod tests {
         assert!(result.css.contains("text-decoration-line: none"));
         assert!(result.css.contains(".hover\\:underline:hover"));
         assert!(result.css.contains(".md\\:no-underline"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10003,7 +10135,7 @@ mod tests {
         assert!(result.css.contains(".decoration-wavy"));
         assert!(result.css.contains("text-decoration-style: wavy"));
         assert!(result.css.contains(".md\\:decoration-dashed"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10044,7 +10176,7 @@ mod tests {
             .css
             .contains("text-decoration-thickness: var(--my-decoration-thickness)"));
         assert!(result.css.contains(".md\\:decoration-4"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10090,7 +10222,7 @@ mod tests {
         assert!(result.css.contains(".underline-offset-\\[3px\\]"));
         assert!(result.css.contains("text-underline-offset: 3px"));
         assert!(result.css.contains(".md\\:underline-offset-4"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10144,7 +10276,7 @@ mod tests {
         assert!(result.css.contains("left: 0px; right: 0px"));
         assert!(result.css.contains(".inset-y-0"));
         assert!(result.css.contains("top: 0px; bottom: 0px"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:z-50"));
     }
 
@@ -10196,7 +10328,7 @@ mod tests {
         assert!(result.css.contains(".bg-scroll"));
         assert!(result.css.contains("background-attachment: scroll"));
         assert!(result.css.contains(".md\\:bg-fixed"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10224,7 +10356,7 @@ mod tests {
         assert!(result.css.contains(".bg-clip-text"));
         assert!(result.css.contains("background-clip: text"));
         assert!(result.css.contains(".md\\:bg-clip-padding"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10249,7 +10381,7 @@ mod tests {
         assert!(result.css.contains(".bg-origin-content"));
         assert!(result.css.contains("background-origin: content-box"));
         assert!(result.css.contains(".md\\:bg-origin-padding"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10298,7 +10430,7 @@ mod tests {
         assert!(result.css.contains(".bg-position-\\[center_top_1rem\\]"));
         assert!(result.css.contains("background-position: center_top_1rem"));
         assert!(result.css.contains(".md\\:bg-top"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10332,7 +10464,7 @@ mod tests {
         assert!(result.css.contains(".bg-no-repeat"));
         assert!(result.css.contains("background-repeat: no-repeat"));
         assert!(result.css.contains(".md\\:bg-repeat-x"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10363,7 +10495,7 @@ mod tests {
         assert!(result.css.contains(".bg-size-\\(--my-image-size\\)"));
         assert!(result.css.contains("background-size: var(--my-image-size)"));
         assert!(result.css.contains(".md\\:bg-contain"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10420,7 +10552,7 @@ mod tests {
         assert!(result.css.contains("background-color: var(--my-color)"));
         assert!(result.css.contains(".hover\\:bg-fuchsia-500:hover"));
         assert!(result.css.contains(".md\\:bg-green-500"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10533,7 +10665,7 @@ mod tests {
         assert!(result.css.contains(".to-90\\%"));
         assert!(result.css.contains("--tw-gradient-to-position: 90%"));
         assert!(result.css.contains(".md\\:from-yellow-500"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".hover\\:bg-none:hover"));
     }
 
@@ -10652,7 +10784,7 @@ mod tests {
         assert!(result.css.contains("fill: var(--my-fill-color)"));
         assert!(result.css.contains(".hover\\:fill-lime-600:hover"));
         assert!(result.css.contains(".md\\:fill-sky-500"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10712,7 +10844,7 @@ mod tests {
         assert!(result.css.contains("stroke: var(--my-stroke-color)"));
         assert!(result.css.contains(".hover\\:stroke-lime-600:hover"));
         assert!(result.css.contains(".md\\:stroke-sky-500"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10740,7 +10872,7 @@ mod tests {
         assert!(result.css.contains(".stroke-\\(length\\:--my-stroke-width\\)"));
         assert!(result.css.contains("stroke-width: var(--my-stroke-width)"));
         assert!(result.css.contains(".md\\:stroke-2"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10807,7 +10939,7 @@ mod tests {
         assert!(result.css.contains(".text-shadow-xl"));
         assert!(result.css.contains("text-shadow: var(--text-shadow-xl)"));
         assert!(result.css.contains(".md\\:text-shadow-lg"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10864,7 +10996,7 @@ mod tests {
         assert!(result.css.contains("text-decoration-color: var(--my-color)"));
         assert!(result.css.contains(".hover\\:decoration-pink-500:hover"));
         assert!(result.css.contains(".md\\:decoration-blue-400"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10921,7 +11053,7 @@ mod tests {
         assert!(result.css.contains("accent-color: var(--my-accent-color)"));
         assert!(result.css.contains(".hover\\:accent-pink-500:hover"));
         assert!(result.css.contains(".md\\:accent-lime-600"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -10976,7 +11108,7 @@ mod tests {
         assert!(result.css.contains(".caret-\\(--my-caret-color\\)"));
         assert!(result.css.contains("caret-color: var(--my-caret-color)"));
         assert!(result.css.contains(".md\\:caret-lime-600"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11117,7 +11249,7 @@ mod tests {
         assert!(result.css.contains(".border-spacing-y-\\[13px\\]"));
         assert!(result.css.contains("border-spacing: var(--tw-border-spacing-x) 13px"));
         assert!(result.css.contains(".md\\:border-spacing-6"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11155,7 +11287,7 @@ mod tests {
         assert!(result.css.contains(".divide-dashed > :not(:last-child)"));
         assert!(result.css.contains(".divide-none > :not(:last-child)"));
         assert!(result.css.contains(".md\\:border-dotted"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11188,7 +11320,7 @@ mod tests {
         assert!(result.css.contains("outline-width: 2vw"));
         assert!(result.css.contains(".focus\\:outline-2:focus"));
         assert!(result.css.contains(".md\\:outline"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11245,7 +11377,7 @@ mod tests {
         assert!(result.css.contains("outline-color: var(--my-color)"));
         assert!(result.css.contains(".focus\\:outline-sky-500:focus"));
         assert!(result.css.contains(".md\\:outline-blue-400"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11282,7 +11414,7 @@ mod tests {
         assert!(result.css.contains("outline-offset: 2px"));
         assert!(result.css.contains(".focus\\:outline-hidden:focus"));
         assert!(result.css.contains(".md\\:outline-dashed"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11318,7 +11450,7 @@ mod tests {
         assert!(result.css.contains(".outline-offset-\\[2vw\\]"));
         assert!(result.css.contains("outline-offset: 2vw"));
         assert!(result.css.contains(".md\\:outline-offset-2"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -11516,16 +11648,69 @@ mod tests {
             ],
             &config,
         );
-        assert!(result.css.contains("@media (min-width: 640px)"));
+        assert!(result.css.contains("@media (width >= 40rem)"));
         assert!(result.css.contains(".sm\\:bg-blue-500"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:text-gray-700"));
-        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result.css.contains(".lg\\:ring-2"));
-        assert!(result.css.contains("@media (min-width: 1280px)"));
+        assert!(result.css.contains("@media (width >= 80rem)"));
         assert!(result.css.contains(".xl\\:bg-gray-100"));
-        assert!(result.css.contains("@media (min-width: 1536px)"));
+        assert!(result.css.contains("@media (width >= 96rem)"));
         assert!(result.css.contains(".2xl\\:text-blue-600"));
+    }
+
+    #[test]
+    fn supports_custom_and_removed_breakpoints_from_overrides() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![
+                ("xs".to_string(), "30rem".to_string()),
+                ("sm".to_string(), "40rem".to_string()),
+            ],
+            container_breakpoints: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "xs:flex".to_string(),
+                "max-xs:hidden".to_string(),
+                "md:flex".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains("@media (width >= 30rem)"));
+        assert!(result.css.contains(".xs\\:flex"));
+        assert!(result.css.contains("@media (width < 30rem)"));
+        assert!(result.css.contains(".max-xs\\:hidden"));
+        assert!(!result.css.contains(".md\\:flex"));
+    }
+
+    #[test]
+    fn supports_custom_container_query_sizes_from_overrides() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![
+                ("sm".to_string(), "24rem".to_string()),
+                ("8xl".to_string(), "96rem".to_string()),
+            ],
+        };
+        let result = generate_with_overrides(
+            &["@8xl:flex".to_string(), "@max-sm:hidden".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains("@container (width >= 96rem)"));
+        assert!(result.css.contains(".\\@8xl\\:flex"));
+        assert!(result.css.contains("@container (width < 24rem)"));
+        assert!(result.css.contains(".\\@max-sm\\:hidden"));
     }
 
     #[test]
@@ -11552,7 +11737,7 @@ mod tests {
             .css
             .contains(".dark\\:lg\\:hover\\:bg-gray-900:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result.css.contains("background-color: #111827"));
     }
 
@@ -11761,8 +11946,12 @@ mod tests {
                 "starting:open:bg-gray-100".to_string(),
                 "@md:flex".to_string(),
                 "@max-lg:hidden".to_string(),
+                "@sm/main:flex".to_string(),
+                "@max-md/sidebar:hidden".to_string(),
                 "min-[900px]:grid".to_string(),
                 "max-[1200px]:hidden".to_string(),
+                "@min-[475px]/card:flex-row".to_string(),
+                "@max-[960px]/card:flex-col".to_string(),
                 "contrast-more:text-gray-900".to_string(),
                 "contrast-less:text-gray-500".to_string(),
                 "forced-colors:appearance-auto".to_string(),
@@ -11803,10 +11992,14 @@ mod tests {
         assert!(result.css.contains("@supports (not (display:grid))"));
         assert!(result.css.contains("@supports (backdrop-filter: var(--tw))"));
         assert!(result.css.contains("@starting-style"));
-        assert!(result.css.contains("@container (min-width: 28rem)"));
-        assert!(result.css.contains("@container (max-width: 32rem)"));
-        assert!(result.css.contains("@media (min-width: 900px)"));
-        assert!(result.css.contains("@media (max-width: 1200px)"));
+        assert!(result.css.contains("@container (width >= 28rem)"));
+        assert!(result.css.contains("@container (width < 32rem)"));
+        assert!(result.css.contains("@container main (width >= 24rem)"));
+        assert!(result.css.contains("@container sidebar (width < 28rem)"));
+        assert!(result.css.contains("@container card (width >= 475px)"));
+        assert!(result.css.contains("@container card (width < 960px)"));
+        assert!(result.css.contains("@media (width >= 900px)"));
+        assert!(result.css.contains("@media (width < 1200px)"));
         assert!(result.css.contains("@media (prefers-contrast: more)"));
         assert!(result.css.contains("@media (prefers-contrast: less)"));
         assert!(result.css.contains("@media (forced-colors: active)"));
@@ -11819,6 +12012,23 @@ mod tests {
         assert!(result.css.contains("@media (orientation: landscape)"));
         assert!(result.css.contains("@media (scripting: none)"));
         assert!(result.css.contains("@media print"));
+    }
+
+    #[test]
+    fn generates_container_utility_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &["@container".to_string(), "@container/main".to_string()],
+            &config,
+        );
+
+        assert!(result.css.contains(".\\@container"));
+        assert!(result.css.contains("container-type: inline-size"));
+        assert!(result.css.contains(".\\@container\\/main"));
+        assert!(result.css.contains("container-name: main"));
     }
 
     #[test]
@@ -11848,7 +12058,7 @@ mod tests {
             .css
             .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600[data-current]:hover"));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result.css.contains("background-color: var(--color-indigo-600)"));
     }
 
@@ -11888,7 +12098,7 @@ mod tests {
             ".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\![data-current]:hover"
         ));
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result
             .css
             .contains("background-color: var(--color-indigo-600) !important"));
@@ -11945,7 +12155,7 @@ mod tests {
             .css
             .contains(".lg\\:\\[--gutter-width\\:2rem\\]"));
         assert!(result.css.contains("--gutter-width: 2rem"));
-        assert!(result.css.contains("@media (min-width: 1024px)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
     }
 
     #[test]
@@ -12096,7 +12306,7 @@ mod tests {
         assert!(result.css.contains("border-collapse: collapse"));
         assert!(result.css.contains(".border-separate"));
         assert!(result.css.contains("border-collapse: separate"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:border-separate"));
         assert!(result.css.contains(".sr-only"));
         assert!(result.css.contains("position: absolute"));
@@ -12417,7 +12627,7 @@ mod tests {
         assert!(result.css.contains("overflow: hidden"));
         assert!(result.css.contains(".gap-4"));
         assert!(result.css.contains("gap: 1rem"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:flex-row"));
         assert!(result.css.contains(".md\\:flex-wrap-reverse"));
         assert!(result.css.contains(".md\\:justify-between"));
@@ -12492,7 +12702,7 @@ mod tests {
         assert!(result.css.contains("columns: 30vw"));
         assert!(result.css.contains(".columns-\\(--my-columns\\)"));
         assert!(result.css.contains("columns: var(--my-columns)"));
-        assert!(result.css.contains("@media (min-width: 640px)"));
+        assert!(result.css.contains("@media (width >= 40rem)"));
         assert!(result.css.contains(".sm\\:columns-4"));
         assert!(result.css.contains("columns: 4"));
     }
@@ -12533,7 +12743,7 @@ mod tests {
         assert!(result.css.contains("break-after: right"));
         assert!(result.css.contains(".break-after-column"));
         assert!(result.css.contains("break-after: column"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:break-after-auto"));
     }
 
@@ -12573,7 +12783,7 @@ mod tests {
         assert!(result.css.contains("break-before: right"));
         assert!(result.css.contains(".break-before-column"));
         assert!(result.css.contains("break-before: column"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:break-before-auto"));
     }
 
@@ -12601,7 +12811,7 @@ mod tests {
         assert!(result.css.contains("break-inside: avoid-page"));
         assert!(result.css.contains(".break-inside-avoid-column"));
         assert!(result.css.contains("break-inside: avoid-column"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:break-inside-auto"));
     }
 
@@ -12623,7 +12833,7 @@ mod tests {
         assert!(result.css.contains("box-decoration-break: clone"));
         assert!(result.css.contains(".box-decoration-slice"));
         assert!(result.css.contains("box-decoration-break: slice"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:box-decoration-slice"));
     }
 
@@ -12645,7 +12855,7 @@ mod tests {
         assert!(result.css.contains("box-sizing: border-box"));
         assert!(result.css.contains(".box-content"));
         assert!(result.css.contains("box-sizing: content-box"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:box-border"));
     }
 
@@ -12676,7 +12886,7 @@ mod tests {
         assert!(result.css.contains("float: inline-end"));
         assert!(result.css.contains(".float-none"));
         assert!(result.css.contains("float: none"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:float-left"));
     }
 
@@ -12710,7 +12920,7 @@ mod tests {
         assert!(result.css.contains("clear: inline-end"));
         assert!(result.css.contains(".clear-none"));
         assert!(result.css.contains("clear: none"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:clear-none"));
     }
 
@@ -12732,7 +12942,7 @@ mod tests {
         assert!(result.css.contains("isolation: isolate"));
         assert!(result.css.contains(".isolation-auto"));
         assert!(result.css.contains("isolation: auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:isolation-auto"));
     }
 
@@ -12754,7 +12964,7 @@ mod tests {
         assert!(result.css.contains("appearance: none"));
         assert!(result.css.contains(".appearance-auto"));
         assert!(result.css.contains("appearance: auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:appearance-none"));
     }
 
@@ -12811,7 +13021,7 @@ mod tests {
         assert!(result.css.contains(".forced-color-adjust-none"));
         assert!(result.css.contains("forced-color-adjust: none"));
         assert!(result.css.contains(".md\\:forced-color-adjust-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -12941,7 +13151,7 @@ mod tests {
         assert!(result.css.contains(".cursor-\\(--my-cursor\\)"));
         assert!(result.css.contains("cursor: var(--my-cursor)"));
         assert!(result.css.contains(".md\\:cursor-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -12963,7 +13173,7 @@ mod tests {
         assert!(result.css.contains(".field-sizing-content"));
         assert!(result.css.contains("field-sizing: content"));
         assert!(result.css.contains(".md\\:field-sizing-fixed"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -12985,7 +13195,7 @@ mod tests {
         assert!(result.css.contains(".pointer-events-none"));
         assert!(result.css.contains("pointer-events: none"));
         assert!(result.css.contains(".md\\:pointer-events-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13013,7 +13223,7 @@ mod tests {
         assert!(result.css.contains(".resize-x"));
         assert!(result.css.contains("resize: horizontal"));
         assert!(result.css.contains(".md\\:resize"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13035,7 +13245,7 @@ mod tests {
         assert!(result.css.contains(".scroll-smooth"));
         assert!(result.css.contains("scroll-behavior: smooth"));
         assert!(result.css.contains(".md\\:scroll-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13063,7 +13273,7 @@ mod tests {
         assert!(result.css.contains(".snap-align-none"));
         assert!(result.css.contains("scroll-snap-align: none"));
         assert!(result.css.contains(".md\\:snap-start"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13107,7 +13317,7 @@ mod tests {
             .css
             .contains("--tw-scroll-snap-strictness: proximity"));
         assert!(result.css.contains(".md\\:snap-x"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13129,7 +13339,7 @@ mod tests {
         assert!(result.css.contains(".snap-always"));
         assert!(result.css.contains("scroll-snap-stop: always"));
         assert!(result.css.contains(".md\\:snap-normal"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13175,7 +13385,7 @@ mod tests {
         assert!(result.css.contains(".touch-manipulation"));
         assert!(result.css.contains("touch-action: manipulation"));
         assert!(result.css.contains(".md\\:touch-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13203,7 +13413,7 @@ mod tests {
         assert!(result.css.contains(".select-auto"));
         assert!(result.css.contains("user-select: auto"));
         assert!(result.css.contains(".md\\:select-all"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13237,7 +13447,7 @@ mod tests {
         assert!(result.css.contains(".will-change-\\[top\\,left\\]"));
         assert!(result.css.contains("will-change: top,left"));
         assert!(result.css.contains(".md\\:will-change-auto"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13307,7 +13517,7 @@ mod tests {
         assert!(result.css.contains(".mix-blend-plus-lighter"));
         assert!(result.css.contains("mix-blend-mode: plus-lighter"));
         assert!(result.css.contains(".md\\:mix-blend-overlay"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13371,7 +13581,7 @@ mod tests {
         assert!(result.css.contains(".bg-blend-luminosity"));
         assert!(result.css.contains("background-blend-mode: luminosity"));
         assert!(result.css.contains(".md\\:bg-blend-darken"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13494,7 +13704,7 @@ mod tests {
             .css
             .contains("var(--color-regal-blue) var(--tw-mask-conic-to)"));
         assert!(result.css.contains(".md\\:mask-radial-from-50\\%"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13519,7 +13729,7 @@ mod tests {
         assert!(result.css.contains(".mask-match"));
         assert!(result.css.contains("mask-mode: match-source"));
         assert!(result.css.contains(".md\\:mask-luminance"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13541,7 +13751,7 @@ mod tests {
         assert!(result.css.contains(".mask-type-luminance"));
         assert!(result.css.contains("mask-type: luminance"));
         assert!(result.css.contains(".md\\:mask-type-luminance"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13575,7 +13785,7 @@ mod tests {
         assert!(result.css.contains(".mask-origin-view"));
         assert!(result.css.contains("mask-origin: view-box"));
         assert!(result.css.contains(".md\\:mask-origin-padding"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13624,7 +13834,7 @@ mod tests {
         assert!(result.css.contains(".mask-position-\\[center_top_1rem\\]"));
         assert!(result.css.contains("mask-position: center_top_1rem"));
         assert!(result.css.contains(".md\\:mask-top"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13658,7 +13868,7 @@ mod tests {
         assert!(result.css.contains(".mask-repeat-round"));
         assert!(result.css.contains("mask-repeat: round"));
         assert!(result.css.contains(".md\\:mask-repeat-x"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13689,7 +13899,7 @@ mod tests {
         assert!(result.css.contains(".mask-size-\\[auto_100px\\]"));
         assert!(result.css.contains("mask-size: auto_100px"));
         assert!(result.css.contains(".md\\:mask-contain"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13726,7 +13936,7 @@ mod tests {
         assert!(result.css.contains(".mask-no-clip"));
         assert!(result.css.contains("mask-clip: no-clip"));
         assert!(result.css.contains(".md\\:mask-clip-padding"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13754,7 +13964,7 @@ mod tests {
         assert!(result.css.contains(".mask-exclude"));
         assert!(result.css.contains("mask-composite: exclude"));
         assert!(result.css.contains(".md\\:mask-subtract"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
     }
 
     #[test]
@@ -13784,7 +13994,7 @@ mod tests {
         assert!(result.css.contains("object-fit: none"));
         assert!(result.css.contains(".object-scale-down"));
         assert!(result.css.contains("object-fit: scale-down"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:object-cover"));
     }
 
@@ -13833,7 +14043,7 @@ mod tests {
         assert!(result.css.contains("object-position: var(--my-object)"));
         assert!(result.css.contains(".object-\\[25\\%_75\\%\\]"));
         assert!(result.css.contains("object-position: 25%_75%"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:object-top"));
     }
 
@@ -13876,7 +14086,7 @@ mod tests {
         assert!(result.css.contains("overscroll-behavior-y: contain"));
         assert!(result.css.contains(".overscroll-y-none"));
         assert!(result.css.contains("overscroll-behavior-y: none"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:overscroll-contain"));
     }
 
@@ -13907,7 +14117,7 @@ mod tests {
         assert!(result.css.contains("position: relative"));
         assert!(result.css.contains(".sticky"));
         assert!(result.css.contains("position: sticky"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:absolute"));
     }
 
@@ -13971,7 +14181,7 @@ mod tests {
         assert!(result.css.contains("inset: 3px"));
         assert!(result.css.contains(".-top-\\[3px\\]"));
         assert!(result.css.contains("top: calc(3px * -1)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:top-6"));
     }
 
@@ -13996,7 +14206,7 @@ mod tests {
         assert!(result.css.contains("visibility: hidden"));
         assert!(result.css.contains(".collapse"));
         assert!(result.css.contains("visibility: collapse"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:invisible"));
     }
 
@@ -14018,7 +14228,7 @@ mod tests {
         assert!(result.css.contains("backface-visibility: hidden"));
         assert!(result.css.contains(".backface-visible"));
         assert!(result.css.contains("backface-visibility: visible"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:backface-hidden"));
     }
 
@@ -14061,7 +14271,7 @@ mod tests {
         assert!(result.css.contains("perspective: 750px"));
         assert!(result.css.contains(".perspective-remote"));
         assert!(result.css.contains("perspective: var(--perspective-remote)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:perspective-dramatic"));
     }
 
@@ -14112,7 +14322,7 @@ mod tests {
         assert!(result.css.contains("perspective-origin: var(--my-perspective-origin)"));
         assert!(result.css.contains(".perspective-origin-\\[200\\%_150\\%\\]"));
         assert!(result.css.contains("perspective-origin: 200%_150%"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:perspective-origin-bottom-left"));
     }
 
@@ -14197,7 +14407,7 @@ mod tests {
             .css
             .contains("transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(1.25rad)"));
 
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:rotate-60"));
         assert!(result.css.contains("rotate: 60deg"));
     }
@@ -14281,7 +14491,7 @@ mod tests {
 
         assert!(result.css.contains(".hover\\:scale-120:hover"));
         assert!(result.css.contains("scale: 120% 120%"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:scale-150"));
         assert!(result.css.contains("scale: 150% 150%"));
     }
@@ -14341,7 +14551,7 @@ mod tests {
         assert!(result.css.contains(".skew-y-\\[0.25turn\\]"));
         assert!(result.css.contains("transform: skewY(0.25turn)"));
 
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:skew-12"));
         assert!(result.css.contains("transform: skewX(12deg) skewY(12deg)"));
     }
@@ -14379,7 +14589,7 @@ mod tests {
             .css
             .contains(".transform-\\[matrix\\(1\\,2\\,3\\,4\\,5\\,6\\)\\]"));
         assert!(result.css.contains("transform: matrix(1,2,3,4,5,6)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:transform-none"));
     }
 
@@ -14401,7 +14611,7 @@ mod tests {
         assert!(result.css.contains("transform-style: preserve-3d"));
         assert!(result.css.contains(".transform-flat"));
         assert!(result.css.contains("transform-style: flat"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:transform-flat"));
     }
 
@@ -14450,7 +14660,7 @@ mod tests {
         assert!(result.css.contains("transform-origin: var(--my-transform-origin)"));
         assert!(result.css.contains(".origin-\\[33\\%_75\\%\\]"));
         assert!(result.css.contains("transform-origin: 33%_75%"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:origin-top"));
     }
 
@@ -14594,7 +14804,7 @@ mod tests {
             .css
             .contains("translate: var(--tw-translate-x) var(--tw-translate-y) 2rem"));
 
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:translate-6"));
         assert!(result.css.contains("translate: calc(var(--spacing) * 6) calc(var(--spacing) * 6)"));
     }
@@ -14671,7 +14881,7 @@ mod tests {
         assert!(result.css.contains("flex-basis: 30vw"));
         assert!(result.css.contains(".basis-\\(--my-basis\\)"));
         assert!(result.css.contains("flex-basis: var(--my-basis)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:basis-1\\/2"));
         assert!(result.css.contains("flex-basis: calc(1/2 * 100%)"));
     }
@@ -14712,7 +14922,7 @@ mod tests {
         assert!(result.css.contains("flex: 3_1_auto"));
         assert!(result.css.contains(".flex-\\(--my-flex\\)"));
         assert!(result.css.contains("flex: var(--my-flex)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:flex-1"));
     }
 
@@ -14746,7 +14956,7 @@ mod tests {
         assert!(result.css.contains("flex-grow: 25vw"));
         assert!(result.css.contains(".grow-\\(--my-grow\\)"));
         assert!(result.css.contains("flex-grow: var(--my-grow)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:grow-0"));
     }
 
@@ -14777,7 +14987,7 @@ mod tests {
         assert!(result.css.contains("flex-shrink: calc(100vw-var(--sidebar))"));
         assert!(result.css.contains(".shrink-\\(--my-shrink\\)"));
         assert!(result.css.contains("flex-shrink: var(--my-shrink)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:shrink-0"));
     }
 
@@ -14815,7 +15025,7 @@ mod tests {
         assert!(result.css.contains("grid-template-columns: 200px_minmax(900px,_1fr)_100px"));
         assert!(result.css.contains(".grid-cols-\\(--my-grid-cols\\)"));
         assert!(result.css.contains("grid-template-columns: var(--my-grid-cols)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:grid-cols-6"));
     }
 
@@ -14846,7 +15056,7 @@ mod tests {
         assert!(result.css.contains("grid-auto-flow: row dense"));
         assert!(result.css.contains(".grid-flow-col-dense"));
         assert!(result.css.contains("grid-auto-flow: column dense"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:grid-flow-row"));
     }
 
@@ -14880,7 +15090,7 @@ mod tests {
         assert!(result.css.contains("grid-auto-columns: minmax(0,2fr)"));
         assert!(result.css.contains(".auto-cols-\\(--my-auto-cols\\)"));
         assert!(result.css.contains("grid-auto-columns: var(--my-auto-cols)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:auto-cols-min"));
     }
 
@@ -14914,7 +15124,7 @@ mod tests {
         assert!(result.css.contains("grid-auto-rows: minmax(0,2fr)"));
         assert!(result.css.contains(".auto-rows-\\(--my-auto-rows\\)"));
         assert!(result.css.contains("grid-auto-rows: var(--my-auto-rows)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:auto-rows-min"));
     }
 
@@ -14957,7 +15167,7 @@ mod tests {
         assert!(result.css.contains("row-gap: 3vh"));
         assert!(result.css.contains(".gap-y-\\(--my-gap-y\\)"));
         assert!(result.css.contains("row-gap: var(--my-gap-y)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:gap-6"));
     }
 
@@ -15040,7 +15250,7 @@ mod tests {
         assert!(result.css.contains("--tw-space-x-reverse: 1"));
         assert!(result.css.contains(".space-y-reverse > :not(:last-child)"));
         assert!(result.css.contains("--tw-space-y-reverse: 1"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:space-x-8 > :not(:last-child)"));
     }
 
@@ -15162,7 +15372,7 @@ mod tests {
         assert!(result.css.contains(".size-\\[10rem\\]"));
         assert!(result.css.contains("width: 10rem; height: 10rem"));
 
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:w-auto"));
         assert!(result.css.contains(".md\\:size-4"));
     }
@@ -15237,7 +15447,7 @@ mod tests {
         assert!(result.css.contains("min-width: var(--my-min-width)"));
         assert!(result.css.contains(".min-w-\\[220px\\]"));
         assert!(result.css.contains("min-width: 220px"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:min-w-0"));
     }
 
@@ -15311,17 +15521,17 @@ mod tests {
         assert!(result.css.contains("max-width: 220px"));
         assert!(result.css.contains(".container"));
         assert!(result.css.contains("width: 100%"));
-        assert!(result.css.contains("@media (min-width: 40rem)"));
+        assert!(result.css.contains("@media (width >= 40rem)"));
         assert!(result.css.contains("max-width: 40rem"));
-        assert!(result.css.contains("@media (min-width: 48rem)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains("max-width: 48rem"));
-        assert!(result.css.contains("@media (min-width: 64rem)"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(result.css.contains("max-width: 64rem"));
-        assert!(result.css.contains("@media (min-width: 80rem)"));
+        assert!(result.css.contains("@media (width >= 80rem)"));
         assert!(result.css.contains("max-width: 80rem"));
-        assert!(result.css.contains("@media (min-width: 96rem)"));
+        assert!(result.css.contains("@media (width >= 96rem)"));
         assert!(result.css.contains("max-width: 96rem"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:max-w-lg"));
     }
 
@@ -15392,7 +15602,7 @@ mod tests {
         assert!(result.css.contains("height: var(--my-height)"));
         assert!(result.css.contains(".h-\\[32rem\\]"));
         assert!(result.css.contains("height: 32rem"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:h-full"));
     }
 
@@ -15466,7 +15676,7 @@ mod tests {
         assert!(result.css.contains("min-height: var(--my-min-height)"));
         assert!(result.css.contains(".min-h-\\[220px\\]"));
         assert!(result.css.contains("min-height: 220px"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:min-h-0"));
     }
 
@@ -15540,7 +15750,7 @@ mod tests {
         assert!(result.css.contains("max-height: var(--my-max-height)"));
         assert!(result.css.contains(".max-h-\\[220px\\]"));
         assert!(result.css.contains("max-height: 220px"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:max-h-screen"));
     }
 
@@ -15613,7 +15823,7 @@ mod tests {
         assert!(result.css.contains("grid-column: 16_/_span_16"));
         assert!(result.css.contains(".col-\\(--my-columns\\)"));
         assert!(result.css.contains("grid-column: var(--my-columns)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:col-span-6"));
     }
 
@@ -15686,7 +15896,7 @@ mod tests {
         assert!(result.css.contains("grid-row: span_16_/_span_16"));
         assert!(result.css.contains(".row-\\(--my-rows\\)"));
         assert!(result.css.contains("grid-row: var(--my-rows)"));
-        assert!(result.css.contains("@media (min-width: 768px)"));
+        assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:row-span-4"));
     }
 }

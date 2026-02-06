@@ -329,6 +329,16 @@ fn run_build(
     config_path: Option<String>,
     ignore: Vec<String>,
 ) -> Result<(), CliError> {
+    let mut template_css = None;
+    let mut variant_overrides = None;
+    if let Some(path) = input_css_path.as_ref() {
+        let template = fs::read_to_string(path).map_err(|err| CliError {
+            message: format!("failed to read input css {}: {}", path, err),
+        })?;
+        variant_overrides = Some(parse_variant_overrides_from_theme(&template));
+        template_css = Some(template);
+    }
+
     let mut scan_result =
         ironframe_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
             message: err.message,
@@ -350,7 +360,11 @@ fn run_build(
         minify,
         colors: config.theme.colors.clone(),
     };
-    let generation = ironframe_generator::generate(&scan_result.classes, &generator_config);
+    let generation = ironframe_generator::generate_with_overrides(
+        &scan_result.classes,
+        &generator_config,
+        variant_overrides.as_ref(),
+    );
     let mut css = ironframe_generator::emit_css(&generation);
     let header = build_header(
         scan_result.files_scanned,
@@ -364,9 +378,7 @@ fn run_build(
     }
 
     if let Some(path) = input_css_path {
-        let template = fs::read_to_string(&path).map_err(|err| CliError {
-            message: format!("failed to read input css {}: {}", path, err),
-        })?;
+        let template = template_css.unwrap_or_default();
         css = apply_framework_import_alias(&template, &css).ok_or_else(|| CliError {
             message: format!(
                 "input css {} must include @import \"tailwindcss\" or @import \"ironframe\"",
@@ -612,6 +624,105 @@ fn apply_framework_import_alias(template_css: &str, generated_css: &str) -> Opti
         rendered.push('\n');
     }
     Some(rendered)
+}
+
+fn parse_variant_overrides_from_theme(template_css: &str) -> ironframe_generator::VariantOverrides {
+    let mut breakpoint_updates = Vec::<(String, String)>::new();
+    let mut container_updates = Vec::<(String, String)>::new();
+
+    for block in extract_theme_blocks(template_css) {
+        for declaration in block.split(';') {
+            let Some((name, value)) = declaration.split_once(':') else {
+                continue;
+            };
+            let name = name.trim();
+            let value = value.trim();
+            if name.is_empty() || value.is_empty() {
+                continue;
+            }
+            if let Some(raw) = name.strip_prefix("--breakpoint-") {
+                breakpoint_updates.push((raw.to_string(), value.to_string()));
+            } else if let Some(raw) = name.strip_prefix("--container-") {
+                container_updates.push((raw.to_string(), value.to_string()));
+            }
+        }
+    }
+
+    ironframe_generator::VariantOverrides {
+        responsive_breakpoints: resolve_named_sizes(
+            &[
+                ("sm", "40rem"),
+                ("md", "48rem"),
+                ("lg", "64rem"),
+                ("xl", "80rem"),
+                ("2xl", "96rem"),
+            ],
+            &breakpoint_updates,
+        ),
+        container_breakpoints: resolve_named_sizes(
+            &[
+                ("3xs", "16rem"),
+                ("2xs", "18rem"),
+                ("xs", "20rem"),
+                ("sm", "24rem"),
+                ("md", "28rem"),
+                ("lg", "32rem"),
+                ("xl", "36rem"),
+                ("2xl", "42rem"),
+                ("3xl", "48rem"),
+                ("4xl", "56rem"),
+                ("5xl", "64rem"),
+                ("6xl", "72rem"),
+                ("7xl", "80rem"),
+            ],
+            &container_updates,
+        ),
+    }
+}
+
+fn resolve_named_sizes(
+    defaults: &[(&str, &str)],
+    updates: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut resolved = std::collections::BTreeMap::<String, String>::new();
+    for (name, value) in defaults {
+        resolved.insert((*name).to_string(), (*value).to_string());
+    }
+
+    for (name, value) in updates {
+        let value = value.trim();
+        if name == "*" && value == "initial" {
+            resolved.clear();
+            continue;
+        }
+        if value == "initial" {
+            resolved.remove(name);
+        } else {
+            resolved.insert(name.clone(), value.to_string());
+        }
+    }
+
+    resolved.into_iter().collect()
+}
+
+fn extract_theme_blocks(css: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = css[cursor..].find("@theme") {
+        let theme_idx = cursor + rel_start;
+        let Some(open_rel) = css[theme_idx..].find('{') else {
+            break;
+        };
+        let open_idx = theme_idx + open_rel;
+        let Some(close_idx) = find_matching_brace(css, open_idx) else {
+            break;
+        };
+        blocks.push(&css[open_idx + 1..close_idx]);
+        cursor = close_idx + 1;
+    }
+
+    blocks
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -918,7 +1029,7 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        parse_args, parse_framework_import_directives, Command,
+        parse_args, parse_framework_import_directives, parse_variant_overrides_from_theme, Command,
     };
 
     #[test]
@@ -1085,5 +1196,31 @@ mod tests {
     #[test]
     fn returns_none_when_framework_import_is_missing() {
         assert!(apply_framework_import_alias("body { color: black; }", ".p-2{}").is_none());
+    }
+
+    #[test]
+    fn parses_theme_breakpoint_and_container_overrides() {
+        let css = r#"
+@import "tailwindcss";
+@theme {
+  --breakpoint-xs: 30rem;
+  --breakpoint-2xl: initial;
+  --container-8xl: 96rem;
+  --container-*: initial;
+  --container-sm: 24rem;
+}
+"#;
+        let overrides = parse_variant_overrides_from_theme(css);
+        assert!(overrides
+            .responsive_breakpoints
+            .contains(&("xs".to_string(), "30rem".to_string())));
+        assert!(!overrides
+            .responsive_breakpoints
+            .iter()
+            .any(|(name, _)| name == "2xl"));
+        assert_eq!(
+            overrides.container_breakpoints,
+            vec![("sm".to_string(), "24rem".to_string())]
+        );
     }
 }
