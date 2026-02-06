@@ -22,6 +22,9 @@ pub struct VariantOverrides {
     pub responsive_breakpoints: Vec<(String, String)>,
     pub container_breakpoints: Vec<(String, String)>,
     pub dark_variant_selector: Option<String>,
+    pub custom_variant_selectors: Vec<(String, String)>,
+    pub custom_utilities: Vec<(String, String)>,
+    pub theme_variable_values: Vec<(String, String)>,
     pub global_theme_reset: bool,
     pub disabled_namespaces: Vec<String>,
     pub disabled_color_families: Vec<String>,
@@ -61,6 +64,9 @@ struct VariantTables {
     responsive_breakpoints: Vec<(String, String)>,
     container_breakpoints: Vec<(String, String)>,
     dark_variant_selector: Option<String>,
+    custom_variant_selectors: BTreeMap<String, String>,
+    custom_utilities: BTreeMap<String, String>,
+    theme_variable_values: BTreeMap<String, String>,
     global_theme_reset: bool,
     disabled_namespaces: BTreeSet<String>,
     disabled_color_families: BTreeSet<String>,
@@ -100,6 +106,15 @@ fn build_variant_tables(overrides: Option<&VariantOverrides>) -> VariantTables {
         responsive_breakpoints,
         container_breakpoints,
         dark_variant_selector: overrides.and_then(|v| v.dark_variant_selector.clone()),
+        custom_variant_selectors: overrides
+            .map(|v| v.custom_variant_selectors.iter().cloned().collect())
+            .unwrap_or_default(),
+        custom_utilities: overrides
+            .map(|v| v.custom_utilities.iter().cloned().collect())
+            .unwrap_or_default(),
+        theme_variable_values: overrides
+            .map(|v| v.theme_variable_values.iter().cloned().collect())
+            .unwrap_or_default(),
         global_theme_reset: overrides.map(|v| v.global_theme_reset).unwrap_or(false),
         disabled_namespaces: overrides
             .map(|v| v.disabled_namespaces.iter().cloned().collect())
@@ -551,6 +566,7 @@ fn generate_rule(
             .or_else(|| generate_grid_auto_rows_rule(base, config))
             .or_else(|| generate_grid_column_rule(base, config))
             .or_else(|| generate_grid_row_rule(base, config))
+            .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
             .or_else(|| generate_layout_rule(base, config, variant_tables)),
     });
 
@@ -566,6 +582,299 @@ fn generate_rule(
         return None;
     }
     Some(generated)
+}
+
+fn generate_custom_utility_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    for (pattern, body) in &variant_tables.custom_utilities {
+        let Some(token) = match_custom_utility_pattern(pattern, class) else {
+            continue;
+        };
+        let (value_token, modifier_token) = parse_functional_utility_tokens(token.as_deref());
+        let resolved_body =
+            resolve_custom_utility_body(body, value_token, modifier_token, variant_tables)?;
+        let selector = format!(".{}", escape_selector(class));
+        if config.minify {
+            return Some(format!("{}{{{}}}", selector, resolved_body.trim()));
+        } else {
+            return Some(format!("{} {{ {} }}", selector, resolved_body.trim()));
+        }
+    }
+    None
+}
+
+fn match_custom_utility_pattern(pattern: &str, class: &str) -> Option<Option<String>> {
+    if let Some((prefix, suffix)) = pattern.split_once('*') {
+        if pattern.matches('*').count() != 1 {
+            return None;
+        }
+        if !class.starts_with(prefix) || !class.ends_with(suffix) {
+            return None;
+        }
+        let start = prefix.len();
+        let end = class.len().saturating_sub(suffix.len());
+        if end < start {
+            return None;
+        }
+        let token = class[start..end].to_string();
+        if token.is_empty() {
+            return None;
+        }
+        return Some(Some(token));
+    }
+    if pattern == class {
+        return Some(None);
+    }
+    None
+}
+
+fn resolve_custom_utility_body(
+    body: &str,
+    value_token: Option<&str>,
+    modifier_token: Option<&str>,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !trimmed.contains("--value(") && !trimmed.contains("--modifier(") {
+        return Some(trimmed.to_string());
+    }
+
+    if value_token.is_none() && modifier_token.is_none() {
+        return None;
+    }
+    if trimmed.contains('{') || trimmed.contains('}') {
+        return None;
+    }
+
+    let mut resolved = Vec::new();
+    for declaration in trimmed.split(';') {
+        let declaration = declaration.trim();
+        if declaration.is_empty() {
+            continue;
+        }
+        let replaced = replace_declaration_functions(
+            declaration,
+            value_token,
+            modifier_token,
+            variant_tables,
+        );
+        let Some(replaced) = replaced else {
+            continue;
+        };
+        resolved.push(replaced);
+    }
+    if resolved.is_empty() {
+        return None;
+    }
+    Some(resolved.join(";"))
+}
+
+fn replace_declaration_functions(
+    declaration: &str,
+    value_token: Option<&str>,
+    modifier_token: Option<&str>,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    let replaced_value = replace_named_function(
+        declaration,
+        "--value(",
+        value_token,
+        variant_tables,
+    )?;
+    replace_named_function(
+        &replaced_value,
+        "--modifier(",
+        modifier_token,
+        variant_tables,
+    )
+}
+
+fn replace_named_function(
+    input: &str,
+    fn_prefix: &str,
+    token: Option<&str>,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    let mut out = String::with_capacity(input.len());
+    let mut cursor = 0usize;
+    while let Some(rel) = input[cursor..].find(fn_prefix) {
+        let token = token?;
+        let start = cursor + rel;
+        out.push_str(&input[cursor..start]);
+        let args_start = start + fn_prefix.len();
+        let mut depth = 1usize;
+        let mut idx = args_start;
+        while idx < input.len() {
+            let Some(ch) = input[idx..].chars().next() else {
+                break;
+            };
+            let size = ch.len_utf8();
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            idx += size;
+        }
+        if idx >= input.len() {
+            return None;
+        }
+        let args = input[args_start..idx].trim();
+        let replacement = resolve_value_function(args, token, variant_tables)?;
+        out.push_str(&replacement);
+        cursor = idx + 1;
+    }
+    out.push_str(&input[cursor..]);
+    Some(out)
+}
+
+fn resolve_value_function(
+    args: &str,
+    token: &str,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    for arg in split_value_function_args(args) {
+        let arg = arg.trim();
+        if arg.is_empty() {
+            continue;
+        }
+        if let Some(value) = resolve_value_function_arg(arg, token, variant_tables) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn split_value_function_args(raw: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in raw.chars() {
+        if let Some(q) = quote {
+            current.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        match ch {
+            '\'' | '"' => {
+                quote = Some(ch);
+                current.push(ch);
+            }
+            '(' => {
+                paren_depth += 1;
+                current.push(ch);
+            }
+            ')' => {
+                paren_depth = paren_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            '[' => {
+                bracket_depth += 1;
+                current.push(ch);
+            }
+            ']' => {
+                bracket_depth = bracket_depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if paren_depth == 0 && bracket_depth == 0 => {
+                args.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        args.push(current.trim().to_string());
+    }
+    args
+}
+
+fn resolve_value_function_arg(
+    arg: &str,
+    token: &str,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    if let Some(literal) = arg
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .or_else(|| arg.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+    {
+        return (token == literal).then(|| literal.to_string());
+    }
+
+    if let Some(theme_pattern) = arg.strip_prefix("--").filter(|value| value.ends_with('*')) {
+        let name = format!("--{}{}", &theme_pattern[..theme_pattern.len() - 1], token);
+        return variant_tables.theme_variable_values.get(&name).cloned();
+    }
+
+    if let Some(type_name) = arg.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        let raw = token.strip_prefix('[')?.strip_suffix(']')?;
+        return validate_value_for_type(raw, type_name.trim()).then(|| raw.to_string());
+    }
+
+    validate_value_for_type(token, arg).then(|| token.to_string())
+}
+
+fn validate_value_for_type(value: &str, type_name: &str) -> bool {
+    match type_name {
+        "integer" => !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()),
+        "number" => value.parse::<f64>().is_ok(),
+        "percentage" => value
+            .strip_suffix('%')
+            .is_some_and(|n| !n.is_empty() && n.parse::<f64>().is_ok()),
+        "*" => !value.is_empty(),
+        "ratio" => is_fraction(value),
+        _ => false,
+    }
+}
+
+fn parse_functional_utility_tokens(token: Option<&str>) -> (Option<&str>, Option<&str>) {
+    let Some(token) = token else {
+        return (None, None);
+    };
+    let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
+    for (idx, ch) in token.char_indices() {
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '(' => paren_depth += 1,
+            ')' => paren_depth = paren_depth.saturating_sub(1),
+            '/' if bracket_depth == 0 && paren_depth == 0 => {
+                let value = &token[..idx];
+                let modifier = &token[idx + 1..];
+                let value = if value.is_empty() { None } else { Some(value) };
+                let modifier = if modifier.is_empty() {
+                    None
+                } else {
+                    Some(modifier)
+                };
+                return (value, modifier);
+            }
+            _ => {}
+        }
+    }
+    (Some(token), None)
 }
 
 fn rule_allowed_by_theme(base_class: &str, rule: &str, tables: &VariantTables) -> bool {
@@ -800,7 +1109,15 @@ fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
         if raw.starts_with("length:") {
             return None;
         }
-        return rule(&selector, &format!("color:var({})", raw), config);
+        let value = if let Some(hinted) = raw.strip_prefix("color:") {
+            if hinted.is_empty() || !hinted.starts_with("--") {
+                return None;
+            }
+            hinted
+        } else {
+            raw
+        };
+        return rule(&selector, &format!("color:var({})", value), config);
     }
 
     if let Some(raw) = class
@@ -849,7 +1166,7 @@ fn generate_arbitrary_property_rule(class: &str, config: &GeneratorConfig) -> Op
     let raw = class.strip_prefix('[')?.strip_suffix(']')?;
     let (property, value) = raw.split_once(':')?;
     let property = property.trim();
-    let value = value.trim();
+    let value = normalize_arbitrary_value(value.trim());
     if property.is_empty() || value.is_empty() {
         return None;
     }
@@ -2464,7 +2781,8 @@ fn generate_background_image_rule(class: &str, config: &GeneratorConfig) -> Opti
         return rule(&selector, "background-image:none", config);
     }
     if let Some(raw) = class.strip_prefix("bg-[").and_then(|v| v.strip_suffix(']')) {
-        return rule(&selector, &format!("background-image:{}", raw), config);
+        let value = normalize_arbitrary_value(raw);
+        return rule(&selector, &format!("background-image:{}", value), config);
     }
     if let Some(raw) = class
         .strip_prefix("bg-(image:")
@@ -2712,6 +3030,77 @@ fn normalize_content_value(raw: &str) -> String {
         }
     }
     out
+}
+
+fn normalize_arbitrary_value(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut idx = 0usize;
+    let mut quote: Option<char> = None;
+    let mut paren_depth = 0usize;
+    let mut url_depth: Option<usize> = None;
+
+    while idx < raw.len() {
+        if quote.is_none() && starts_with_url_function(raw, idx) {
+            out.push_str("url(");
+            idx += "url(".len();
+            paren_depth += 1;
+            url_depth = Some(paren_depth);
+            continue;
+        }
+
+        let Some(ch) = raw[idx..].chars().next() else {
+            break;
+        };
+        let size = ch.len_utf8();
+
+        if ch == '\\' {
+            let next_idx = idx + size;
+            if let Some(next) = raw[next_idx..].chars().next() {
+                if next == '_' {
+                    out.push('_');
+                } else {
+                    out.push('\\');
+                    out.push(next);
+                }
+                idx = next_idx + next.len_utf8();
+                continue;
+            }
+            out.push('\\');
+            idx += size;
+            continue;
+        }
+
+        if quote.is_none() {
+            match ch {
+                '\'' | '"' => quote = Some(ch),
+                '(' => paren_depth += 1,
+                ')' => {
+                    if url_depth == Some(paren_depth) {
+                        url_depth = None;
+                    }
+                    paren_depth = paren_depth.saturating_sub(1);
+                }
+                _ => {}
+            }
+        } else if quote == Some(ch) {
+            quote = None;
+        }
+
+        if ch == '_' && url_depth.is_none() {
+            out.push(' ');
+        } else {
+            out.push(ch);
+        }
+        idx += size;
+    }
+
+    out
+}
+
+fn starts_with_url_function(raw: &str, idx: usize) -> bool {
+    raw[idx..]
+        .get(..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("url("))
 }
 
 fn is_color_like_value(raw: &str) -> bool {
@@ -6820,9 +7209,10 @@ fn generate_grid_template_columns_rule(class: &str, config: &GeneratorConfig) ->
             );
         }
         if let Some(custom) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            let value = normalize_arbitrary_value(custom);
             return rule(
                 &selector,
-                &format!("grid-template-columns:{}", custom),
+                &format!("grid-template-columns:{}", value),
                 config,
             );
         }
@@ -7857,12 +8247,13 @@ fn apply_aria_variant(selector: String, aria_key: &str) -> Option<String> {
     Some(format!("{}[aria-{}=\"{}\"]", selector, key, value))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum RuleWrapper {
     Media(String),
     Supports(String),
     Container { name: Option<String>, query: String },
     StartingStyle,
+    Template(String),
 }
 
 fn apply_selector_variant(
@@ -7875,7 +8266,7 @@ fn apply_selector_variant(
     match variant {
         "dark" => {
             if let Some(custom_selector) = variant_tables.dark_variant_selector.as_ref() {
-                return apply_custom_variant_selector(selector, custom_selector);
+                return apply_custom_variant(selector, custom_selector, wrappers);
             }
             wrappers.push(RuleWrapper::Media(
                 "(prefers-color-scheme: dark)".to_string(),
@@ -7963,6 +8354,10 @@ fn apply_selector_variant(
             return Some(selector);
         }
         _ => {}
+    }
+
+    if let Some(custom_selector) = variant_tables.custom_variant_selectors.get(variant) {
+        return apply_custom_variant(selector, custom_selector, wrappers);
     }
 
     if let Some(width) = variant_tables.responsive_width(variant) {
@@ -8300,7 +8695,7 @@ fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<S
     if raw.is_empty() {
         return None;
     }
-    let normalized = raw.replace('_', " ");
+    let normalized = normalize_arbitrary_variant_content(raw);
     if normalized.contains('&') {
         return Some(normalized.replace('&', &selector));
     }
@@ -8308,7 +8703,7 @@ fn apply_arbitrary_variant_selector(selector: String, variant: &str) -> Option<S
 }
 
 fn apply_custom_variant_selector(selector: String, template: &str) -> Option<String> {
-    let normalized = template.trim().replace('_', " ");
+    let normalized = normalize_arbitrary_variant_content(template.trim());
     if normalized.is_empty() {
         return None;
     }
@@ -8316,6 +8711,164 @@ fn apply_custom_variant_selector(selector: String, template: &str) -> Option<Str
         return Some(normalized.replace('&', &selector));
     }
     Some(format!("{} {}", normalized, selector))
+}
+
+fn apply_custom_variant(
+    selector: String,
+    template: &str,
+    wrappers: &mut Vec<RuleWrapper>,
+) -> Option<String> {
+    let normalized = normalize_arbitrary_variant_content(template.trim());
+    if normalized.is_empty() {
+        return None;
+    }
+    if normalized.contains("@slot") {
+        if let Some(expansion) = parse_slot_variant_template(&normalized) {
+            for wrapper in expansion.wrappers {
+                wrappers.push(wrapper);
+            }
+            if expansion.selector_expr.contains('&') {
+                return Some(expansion.selector_expr.replace('&', &selector));
+            }
+            return Some(format!("{} {}", expansion.selector_expr, selector));
+        }
+        wrappers.push(RuleWrapper::Template(normalized));
+        return Some(selector);
+    }
+    apply_custom_variant_selector(selector, &normalized)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SlotVariantExpansion {
+    wrappers: Vec<RuleWrapper>,
+    selector_expr: String,
+}
+
+fn parse_slot_variant_template(template: &str) -> Option<SlotVariantExpansion> {
+    parse_slot_variant_node(template.trim())
+}
+
+fn parse_slot_variant_node(raw: &str) -> Option<SlotVariantExpansion> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with("@slot") {
+        return Some(SlotVariantExpansion {
+            wrappers: Vec::new(),
+            selector_expr: "&".to_string(),
+        });
+    }
+
+    let open_idx = trimmed.find('{')?;
+    let close_idx = find_matching_brace_in_text(trimmed, open_idx)?;
+    let head = trimmed[..open_idx].trim();
+    let body = trimmed[open_idx + 1..close_idx].trim();
+    if body.is_empty() || head.is_empty() {
+        return None;
+    }
+
+    let mut inner = parse_slot_variant_node(body)?;
+
+    if let Some(query) = head.strip_prefix("@media") {
+        let query = query.trim();
+        if query.is_empty() {
+            return None;
+        }
+        inner.wrappers.insert(0, RuleWrapper::Media(query.to_string()));
+        return Some(inner);
+    }
+
+    if let Some(query) = head.strip_prefix("@supports") {
+        let query = query.trim();
+        if query.is_empty() {
+            return None;
+        }
+        inner
+            .wrappers
+            .insert(0, RuleWrapper::Supports(query.to_string()));
+        return Some(inner);
+    }
+
+    if let Some(rest) = head.strip_prefix("@container") {
+        let (name, query) = parse_container_wrapper(rest.trim())?;
+        inner
+            .wrappers
+            .insert(0, RuleWrapper::Container { name, query });
+        return Some(inner);
+    }
+
+    inner.selector_expr = compose_nested_selector(head, &inner.selector_expr);
+    Some(inner)
+}
+
+fn parse_container_wrapper(raw: &str) -> Option<(Option<String>, String)> {
+    if raw.is_empty() {
+        return None;
+    }
+
+    if raw.starts_with('(') {
+        return Some((None, raw.to_string()));
+    }
+
+    let (name, query) = raw.split_once(char::is_whitespace)?;
+    let name = name.trim();
+    let query = query.trim();
+    if name.is_empty() || query.is_empty() || !query.starts_with('(') {
+        return None;
+    }
+    Some((Some(name.to_string()), query.to_string()))
+}
+
+fn compose_nested_selector(outer: &str, inner: &str) -> String {
+    if inner.contains('&') {
+        return inner.replace('&', outer);
+    }
+    if outer.contains('&') {
+        return outer.replace('&', inner);
+    }
+    format!("{} {}", outer, inner)
+}
+
+fn find_matching_brace_in_text(text: &str, open_idx: usize) -> Option<usize> {
+    if !text[open_idx..].starts_with('{') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    for (rel_idx, ch) in text[open_idx..].char_indices() {
+        let idx = open_idx + rel_idx;
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+        if ch == '\'' || ch == '"' {
+            in_string = Some(ch);
+            continue;
+        }
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn supports_query_for_variant(variant: &str) -> Option<String> {
@@ -8392,10 +8945,11 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
             }
         }
         RuleWrapper::Supports(query) => {
+            let query = normalize_supports_query(query);
             if minify {
-                format!("@supports ({}){{{}}}", query, rule)
+                format!("@supports {}{{{}}}", query, rule)
             } else {
-                format!("@supports ({}) {{ {} }}", query, rule)
+                format!("@supports {} {{ {} }}", query, rule)
             }
         }
         RuleWrapper::Container { name, query } => {
@@ -8418,11 +8972,64 @@ fn wrap_rule(wrapper: &RuleWrapper, rule: &str, minify: bool) -> String {
                 format!("@starting-style {{ {} }}", rule)
             }
         }
+        RuleWrapper::Template(template) => {
+            if template.contains("@slot") {
+                template.replace("@slot", rule)
+            } else if minify {
+                format!("{}{{{}}}", template.trim(), rule)
+            } else {
+                format!("{} {{ {} }}", template.trim(), rule)
+            }
+        }
     }
 }
 
+fn normalize_supports_query(query: &str) -> String {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return "()".to_string();
+    }
+    if (trimmed.starts_with('(') && trimmed.ends_with(')')) || trimmed.starts_with("not ") {
+        return trimmed.to_string();
+    }
+    format!("({})", trimmed)
+}
+
 fn normalize_arbitrary_variant_content(raw: &str) -> String {
-    raw.replace('_', " ")
+    let mut out = String::with_capacity(raw.len());
+    let mut pending_backslashes = 0usize;
+
+    for ch in raw.chars() {
+        if ch == '\\' {
+            pending_backslashes += 1;
+            continue;
+        }
+
+        if ch == '_' {
+            for _ in 0..(pending_backslashes / 2) {
+                out.push('\\');
+            }
+            if pending_backslashes % 2 == 1 {
+                out.push('_');
+            } else {
+                out.push(' ');
+            }
+            pending_backslashes = 0;
+            continue;
+        }
+
+        for _ in 0..pending_backslashes {
+            out.push('\\');
+        }
+        pending_backslashes = 0;
+        out.push(ch);
+    }
+
+    for _ in 0..pending_backslashes {
+        out.push('\\');
+    }
+
+    out
 }
 
 fn ensure_generated_content(declarations_block: &str) -> Option<String> {
@@ -11300,6 +11907,7 @@ mod tests {
             &[
                 "bg-none".to_string(),
                 "bg-[url(/img/mountains.jpg)]".to_string(),
+                "bg-[url('/what_a_rush.png')]".to_string(),
                 "bg-(image:--my-image)".to_string(),
                 "bg-linear-to-r".to_string(),
                 "bg-linear-to-r/srgb".to_string(),
@@ -11335,6 +11943,12 @@ mod tests {
         assert!(result
             .css
             .contains("background-image: url(/img/mountains.jpg)"));
+        assert!(result
+            .css
+            .contains(".bg-\\[url\\('\\/what_a_rush.png'\\)\\]"));
+        assert!(result
+            .css
+            .contains("background-image: url('/what_a_rush.png')"));
         assert!(result.css.contains(".bg-\\(image\\:--my-image\\)"));
         assert!(result.css.contains("background-image: var(--my-image)"));
         assert!(result.css.contains(".bg-linear-to-r"));
@@ -11434,6 +12048,7 @@ mod tests {
                 "text-black".to_string(),
                 "text-white".to_string(),
                 "text-(--my-color)".to_string(),
+                "text-(color:--my-color-hinted)".to_string(),
                 "text-[#50d71e]".to_string(),
                 "text-red-500".to_string(),
                 "text-red-500/75".to_string(),
@@ -11458,6 +12073,10 @@ mod tests {
         assert!(result.css.contains("color: var(--color-white)"));
         assert!(result.css.contains(".text-\\(--my-color\\)"));
         assert!(result.css.contains("color: var(--my-color)"));
+        assert!(result
+            .css
+            .contains(".text-\\(color\\:--my-color-hinted\\)"));
+        assert!(result.css.contains("color: var(--my-color-hinted)"));
         assert!(result.css.contains(".text-\\[#50d71e\\]"));
         assert!(result.css.contains("color: #50d71e"));
         assert!(result.css.contains(".text-red-500"));
@@ -12655,6 +13274,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: Some("&:where(.dark, .dark *)".to_string()),
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: false,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -12666,6 +13288,291 @@ mod tests {
             .css
             .contains(".dark\\:bg-black:where(.dark, .dark *)"));
         assert!(!result.css.contains("prefers-color-scheme: dark"));
+    }
+
+    #[test]
+    fn supports_custom_variant_selector_override() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![(
+                "theme-midnight".to_string(),
+                "&:where([data-theme=\"midnight\"] *)".to_string(),
+            )],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["theme-midnight:bg-black".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result
+            .css
+            .contains(".theme-midnight\\:bg-black:where([data-theme=\"midnight\"] *)"));
+    }
+
+    #[test]
+    fn supports_custom_variant_block_with_slot() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![(
+                "any-hover".to_string(),
+                "@media (any-hover: hover) { &:hover { @slot; } }".to_string(),
+            )],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["any-hover:bg-black".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains("@media (any-hover: hover)"));
+        assert!(result.css.contains(".any-hover\\:bg-black:hover"));
+        assert!(result.css.contains("background-color: var(--color-black)"));
+    }
+
+    #[test]
+    fn supports_custom_variant_block_with_supports_and_media_slot() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![(
+                "fancy-hover".to_string(),
+                "@supports (display: grid) { @media (any-hover: hover) { &:hover { @slot; } } }"
+                    .to_string(),
+            )],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["fancy-hover:text-black".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains("@supports (display: grid)"), "{}", result.css);
+        assert!(result.css.contains("@media (any-hover: hover)"), "{}", result.css);
+        assert!(result.css.contains(".fancy-hover\\:text-black:hover"));
+        assert!(result.css.contains("color: var(--color-black)"));
+    }
+
+    #[test]
+    fn supports_custom_variant_block_with_container_slot() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![(
+                "in-card".to_string(),
+                "@container sidebar (width >= 30rem) { &:hover { @slot; } }".to_string(),
+            )],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["in-card:bg-black".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains("@container sidebar (width >= 30rem)"));
+        assert!(result.css.contains(".in-card\\:bg-black:hover"));
+        assert!(result.css.contains("background-color: var(--color-black)"));
+    }
+
+    #[test]
+    fn supports_custom_utility_with_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![(
+                "content-auto".to_string(),
+                "content-visibility: auto;".to_string(),
+            )],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "content-auto".to_string(),
+                "hover:content-auto".to_string(),
+                "lg:content-auto".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".content-auto"));
+        assert!(result.css.contains("content-visibility: auto"));
+        assert!(result.css.contains(".hover\\:content-auto:hover"));
+        assert!(result.css.contains("@media (hover: hover)"));
+        assert!(result.css.contains(".lg\\:content-auto"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
+    }
+
+    #[test]
+    fn supports_complex_custom_utility_with_variants() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![(
+                "scrollbar-hidden".to_string(),
+                "&::-webkit-scrollbar { display: none; }".to_string(),
+            )],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &["scrollbar-hidden".to_string(), "hover:scrollbar-hidden".to_string()],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".scrollbar-hidden { &::-webkit-scrollbar { display: none; } }"));
+        assert!(result.css.contains("@media (hover: hover)"));
+        assert!(result.css.contains(".hover\\:scrollbar-hidden:hover"));
+        assert!(result.css.contains("&::-webkit-scrollbar { display: none; }"));
+    }
+
+    #[test]
+    fn supports_functional_custom_utility_with_value_function() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![
+                (
+                    "tab-*".to_string(),
+                    "tab-size: --value(--tab-size-*, integer, [integer]);".to_string(),
+                ),
+                (
+                    "opacity-*".to_string(),
+                    "opacity: calc(--value(integer) * 1%);".to_string(),
+                ),
+            ],
+            theme_variable_values: vec![("--tab-size-github".to_string(), "8".to_string())],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "tab-github".to_string(),
+                "tab-4".to_string(),
+                "tab-[76]".to_string(),
+                "opacity-15".to_string(),
+                "hover:tab-4".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".tab-github"));
+        assert!(result.css.contains("tab-size: 8"));
+        assert!(result.css.contains(".tab-4"));
+        assert!(result.css.contains("tab-size: 4"));
+        assert!(result.css.contains(".tab-\\[76\\]"));
+        assert!(result.css.contains("tab-size: 76"));
+        assert!(result.css.contains(".opacity-15"));
+        assert!(result.css.contains("opacity: calc(15 * 1%)"));
+        assert!(result.css.contains(".hover\\:tab-4:hover"));
+    }
+
+    #[test]
+    fn supports_functional_custom_utility_with_modifier_function() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![(
+                "demo-*".to_string(),
+                "font-size: --value(integer); line-height: --modifier(integer); letter-spacing: --modifier([*]);".to_string(),
+            )],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "demo-12/6".to_string(),
+                "demo-10/[0.02em]".to_string(),
+                "demo-9".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".demo-12\\/6"));
+        assert!(result.css.contains("font-size: 12"));
+        assert!(result.css.contains("line-height: 6"));
+        assert!(result.css.contains(".demo-10\\/\\[0.02em\\]"));
+        assert!(result.css.contains("letter-spacing: 0.02em"));
+        assert!(result.css.contains(".demo-9"));
+        assert!(result.css.contains("font-size: 9"));
+        assert!(!result.css.contains(".demo-9 { line-height:"));
     }
 
     #[test]
@@ -12709,6 +13616,9 @@ mod tests {
             ],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: false,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -12743,6 +13653,9 @@ mod tests {
                 ("8xl".to_string(), "96rem".to_string()),
             ],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: false,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -12769,6 +13682,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: true,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -12798,6 +13714,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: false,
             disabled_namespaces: vec!["color".to_string()],
             disabled_color_families: vec![],
@@ -12827,6 +13746,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: false,
             disabled_namespaces: vec![],
             disabled_color_families: vec!["lime".to_string()],
@@ -12866,6 +13788,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: true,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -12879,6 +13804,9 @@ mod tests {
             responsive_breakpoints: vec![],
             container_breakpoints: vec![],
             dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
             global_theme_reset: true,
             disabled_namespaces: vec![],
             disabled_color_families: vec![],
@@ -13191,7 +14119,7 @@ mod tests {
             .contains(".open\\:bg-gray-100:is([open], :popover-open, :open)"));
         assert!(result.css.contains(".inert\\:bg-gray-100:is([inert]"));
         assert!(result.css.contains("@supports (display:grid)"));
-        assert!(result.css.contains("@supports (not (display:grid))"));
+        assert!(result.css.contains("@supports not (display:grid)"));
         assert!(result
             .css
             .contains("@supports (backdrop-filter: var(--tw))"));
@@ -13242,13 +14170,20 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(
-            &["[&>[data-active]+span]:text-blue-600".to_string()],
+            &[
+                "[&>[data-active]+span]:text-blue-600".to_string(),
+                "[&[data-label='hello\\_world']]:underline".to_string(),
+            ],
             &config,
         );
         assert!(result
             .css
             .contains(".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"));
         assert!(result.css.contains("color: var(--color-blue-600)"));
+        assert!(result.css.contains("hello\\\\_world"));
+        assert!(result.css.contains(":underline"));
+        assert!(result.css.contains("[data-label='hello_world']"));
+        assert!(result.css.contains("text-decoration-line: underline"));
     }
 
     #[test]
@@ -13338,7 +14273,7 @@ mod tests {
             .contains(".grid-cols-\\[24rem_2.5rem_minmax\\(0\\,1fr\\)\\]"));
         assert!(result
             .css
-            .contains("grid-template-columns: 24rem_2.5rem_minmax(0,1fr)"));
+            .contains("grid-template-columns: 24rem 2.5rem minmax(0,1fr)"));
         assert!(result
             .css
             .contains(".max-h-\\[calc\\(100dvh-\\(--spacing\\(6\\)\\)\\)\\]"));
@@ -13365,6 +14300,61 @@ mod tests {
         assert!(result.css.contains(".lg\\:\\[--gutter-width\\:2rem\\]"));
         assert!(result.css.contains("--gutter-width: 2rem"));
         assert!(result.css.contains("@media (width >= 64rem)"));
+    }
+
+    #[test]
+    fn supports_core_concepts_custom_styles_examples() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "top-[117px]".to_string(),
+                "lg:top-[344px]".to_string(),
+                "grid-cols-[1fr_500px_2fr]".to_string(),
+                "bg-[url('/what_a_rush.png')]".to_string(),
+                "before:content-['hello\\_world']".to_string(),
+                "[mask-type:luminance]".to_string(),
+                "hover:[mask-type:alpha]".to_string(),
+                "lg:[&:nth-child(-n+3)]:hover:underline".to_string(),
+                "text-(length:--my-var)".to_string(),
+                "text-(color:--my-var)".to_string(),
+                "fill-(--my-brand-color)".to_string(),
+            ],
+            &config,
+        );
+
+        assert!(result.css.contains(".top-\\[117px\\]"));
+        assert!(result.css.contains("top: 117px"));
+        assert!(result.css.contains(".lg\\:top-\\[344px\\]"));
+        assert!(result.css.contains("@media (width >= 64rem)"));
+        assert!(result.css.contains("top: 344px"));
+
+        assert!(result.css.contains(".grid-cols-\\[1fr_500px_2fr\\]"));
+        assert!(result.css.contains("grid-template-columns: 1fr 500px 2fr"));
+        assert!(result
+            .css
+            .contains("background-image: url('/what_a_rush.png')"));
+        assert!(result.css.contains("hello_world"));
+
+        assert!(result.css.contains(".\\[mask-type\\:luminance\\]"));
+        assert!(result.css.contains("mask-type: luminance"));
+        assert!(result.css.contains(".hover\\:\\[mask-type\\:alpha\\]:hover"));
+        assert!(result.css.contains("mask-type: alpha"));
+
+        assert!(result
+            .css
+            .contains(".lg\\:\\[\\&\\:nth-child\\(-n\\+3\\)\\]\\:hover\\:underline:nth-child(-n+3):hover"));
+        assert!(result.css.contains("text-decoration-line: underline"));
+
+        assert!(result.css.contains(".text-\\(length\\:--my-var\\)"));
+        assert!(result.css.contains("font-size: var(--my-var)"));
+        assert!(result.css.contains(".text-\\(color\\:--my-var\\)"));
+        assert!(result.css.contains("color: var(--my-var)"));
+
+        assert!(result.css.contains(".fill-\\(--my-brand-color\\)"));
+        assert!(result.css.contains("fill: var(--my-brand-color)"));
     }
 
     #[test]
@@ -16352,7 +17342,7 @@ mod tests {
             .contains(".grid-cols-\\[200px_minmax\\(900px\\,_1fr\\)_100px\\]"));
         assert!(result
             .css
-            .contains("grid-template-columns: 200px_minmax(900px,_1fr)_100px"));
+            .contains("grid-template-columns: 200px minmax(900px, 1fr) 100px"));
         assert!(result.css.contains(".grid-cols-\\(--my-grid-cols\\)"));
         assert!(result
             .css

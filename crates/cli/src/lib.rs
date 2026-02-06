@@ -339,7 +339,12 @@ fn run_build(
             message: format!("failed to read input css {}: {}", path, err),
         })?;
         parsed_theme = Some(parse_theme(&template));
-        stripped_template_css = Some(strip_tailwind_custom_directives(&template));
+        let stripped = strip_tailwind_custom_directives(&template);
+        let variant_overrides = parsed_theme
+            .as_ref()
+            .map(|theme| &theme.variant_overrides)
+            .unwrap();
+        stripped_template_css = Some(expand_variant_directives(&stripped, variant_overrides));
         template_css = Some(template);
     }
 
@@ -734,6 +739,20 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
         }
     }
 
+    let custom_variant_selectors = parse_custom_variant_selectors(template_css);
+    let custom_utilities = parse_custom_utilities(template_css);
+    let mut theme_variable_values = std::collections::BTreeMap::<String, String>::new();
+    for variable in &root_variables {
+        theme_variable_values.insert(variable.name.clone(), variable.value.clone());
+    }
+    for (name, value) in &inline_variables {
+        theme_variable_values.insert(name.clone(), value.clone());
+    }
+    let dark_variant_selector = custom_variant_selectors
+        .iter()
+        .find(|(name, _)| name == "dark")
+        .map(|(_, selector)| selector.clone());
+
     ParsedTheme {
         variant_overrides: ironframe_generator::VariantOverrides {
             responsive_breakpoints: resolve_named_sizes(
@@ -764,7 +783,10 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
                 ],
                 &container_updates,
             ),
-            dark_variant_selector: parse_custom_dark_variant(template_css),
+            dark_variant_selector,
+            custom_variant_selectors,
+            custom_utilities,
+            theme_variable_values: theme_variable_values.into_iter().collect(),
             global_theme_reset,
             disabled_namespaces: disabled_namespaces.into_iter().collect(),
             disabled_color_families: disabled_color_families.into_iter().collect(),
@@ -776,32 +798,210 @@ fn parse_theme(template_css: &str) -> ParsedTheme {
     }
 }
 
-fn parse_custom_dark_variant(css: &str) -> Option<String> {
-    for line in css.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("@custom-variant") || !trimmed.contains("dark") {
+fn parse_custom_variant_selectors(css: &str) -> Vec<(String, String)> {
+    let mut variants = std::collections::BTreeMap::<String, String>::new();
+    for def in extract_custom_variant_definitions(css) {
+        if !def.template.is_empty() {
+            variants.insert(def.name.to_string(), def.template.to_string());
+        }
+    }
+
+    variants.into_iter().collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CustomVariantDefinition<'a> {
+    start: usize,
+    end: usize,
+    name: &'a str,
+    template: &'a str,
+}
+
+fn extract_custom_variant_definitions(css: &str) -> Vec<CustomVariantDefinition<'_>> {
+    let mut definitions = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = css[cursor..].find("@custom-variant") {
+        let directive_idx = cursor + rel_start;
+        if !is_top_level_position(css, directive_idx) {
+            cursor = directive_idx + "@custom-variant".len();
             continue;
         }
-        let Some(dark_idx) = trimmed.find("dark") else {
-            continue;
-        };
-        let rest = &trimmed[dark_idx + "dark".len()..];
-        let Some(open_idx_rel) = rest.find('(') else {
-            continue;
-        };
-        let open_idx = dark_idx + "dark".len() + open_idx_rel;
-        let Some(close_idx) = trimmed.rfind(')') else {
-            continue;
-        };
-        if close_idx <= open_idx {
+
+        let mut pos = directive_idx + "@custom-variant".len();
+        while let Some(ch) = css[pos..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        let name_start = pos;
+        while let Some(ch) = css[pos..].chars().next() {
+            if ch.is_whitespace() || ch == '(' || ch == '{' || ch == ';' {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        let name = css[name_start..pos].trim();
+        if name.is_empty() {
+            cursor = directive_idx + "@custom-variant".len();
             continue;
         }
-        let content = trimmed[open_idx + 1..close_idx].trim();
-        if !content.is_empty() {
-            return Some(content.to_string());
+
+        while let Some(ch) = css[pos..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+
+        if css[pos..].starts_with('(') {
+            let open_idx = pos;
+            let Some(close_idx) = find_matching_paren(css, open_idx) else {
+                cursor = directive_idx + "@custom-variant".len();
+                continue;
+            };
+            let template = css[open_idx + 1..close_idx].trim();
+            let mut end = close_idx + 1;
+            while let Some(ch) = css[end..].chars().next() {
+                if ch.is_whitespace() {
+                    end += ch.len_utf8();
+                    continue;
+                }
+                if ch == ';' {
+                    end += ch.len_utf8();
+                }
+                break;
+            }
+            definitions.push(CustomVariantDefinition {
+                start: directive_idx,
+                end,
+                name,
+                template,
+            });
+            cursor = end;
+            continue;
+        }
+
+        if css[pos..].starts_with('{') {
+            let open_idx = pos;
+            let Some(close_idx) = find_matching_brace(css, open_idx) else {
+                cursor = directive_idx + "@custom-variant".len();
+                continue;
+            };
+            definitions.push(CustomVariantDefinition {
+                start: directive_idx,
+                end: close_idx + 1,
+                name,
+                template: css[open_idx + 1..close_idx].trim(),
+            });
+            cursor = close_idx + 1;
+            continue;
+        }
+
+        cursor = directive_idx + "@custom-variant".len();
+    }
+
+    definitions
+}
+
+fn find_matching_paren(css: &str, open_idx: usize) -> Option<usize> {
+    if !css[open_idx..].starts_with('(') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+    let mut chars = css[open_idx..].char_indices();
+    while let Some((rel_idx, ch)) = chars.next() {
+        let idx = open_idx + rel_idx;
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+
+        if ch == '\'' || ch == '"' {
+            in_string = Some(ch);
+            continue;
+        }
+
+        match ch {
+            '(' => depth += 1,
+            ')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(idx);
+                }
+            }
+            _ => {}
         }
     }
     None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UtilityBlock<'a> {
+    start: usize,
+    end: usize,
+    name: &'a str,
+    body: &'a str,
+}
+
+fn extract_utility_blocks(css: &str) -> Vec<UtilityBlock<'_>> {
+    let mut blocks = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = css[cursor..].find("@utility") {
+        let utility_idx = cursor + rel_start;
+        if !is_top_level_position(css, utility_idx) {
+            cursor = utility_idx + "@utility".len();
+            continue;
+        }
+        let Some(open_rel) = css[utility_idx..].find('{') else {
+            break;
+        };
+        let open_idx = utility_idx + open_rel;
+        let Some(close_idx) = find_matching_brace(css, open_idx) else {
+            break;
+        };
+
+        let header = css[utility_idx + "@utility".len()..open_idx].trim();
+        let name = header.split_whitespace().next().unwrap_or("").trim();
+        if !name.is_empty() {
+            blocks.push(UtilityBlock {
+                start: utility_idx,
+                end: close_idx + 1,
+                name,
+                body: &css[open_idx + 1..close_idx],
+            });
+        }
+
+        cursor = close_idx + 1;
+    }
+
+    blocks
+}
+
+fn parse_custom_utilities(css: &str) -> Vec<(String, String)> {
+    let mut utilities = std::collections::BTreeMap::<String, String>::new();
+    for block in extract_utility_blocks(css) {
+        let body = block.body.trim();
+        if !body.is_empty() {
+            utilities.insert(block.name.to_string(), body.to_string());
+        }
+    }
+    utilities.into_iter().collect()
 }
 
 fn resolve_named_sizes(
@@ -1159,30 +1359,147 @@ fn apply_inline_theme_variables(css: &str, inline_variables: &[(String, String)]
 
 fn strip_tailwind_custom_directives(template_css: &str) -> String {
     let theme_blocks = extract_theme_blocks(template_css);
+    let utility_blocks = extract_utility_blocks(template_css);
+    let custom_variant_defs = extract_custom_variant_definitions(template_css);
+    let mut ranges = theme_blocks
+        .iter()
+        .map(|block| (block.start, block.end))
+        .collect::<Vec<_>>();
+    ranges.extend(utility_blocks.iter().map(|block| (block.start, block.end)));
+    ranges.extend(custom_variant_defs.iter().map(|def| (def.start, def.end)));
+    ranges.sort_by_key(|(start, _)| *start);
+
     let mut out = String::new();
     let mut cursor = 0usize;
-    for block in theme_blocks {
-        if cursor < block.start {
-            out.push_str(&template_css[cursor..block.start]);
+    for (start, end) in ranges {
+        if cursor < start {
+            out.push_str(&template_css[cursor..start]);
         }
-        cursor = block.end;
+        cursor = end;
     }
     if cursor < template_css.len() {
         out.push_str(&template_css[cursor..]);
     }
 
-    let mut lines = Vec::new();
-    for line in out.lines() {
-        if line.trim_start().starts_with("@custom-variant") {
-            continue;
-        }
-        lines.push(line);
-    }
-    let mut rendered = lines.join("\n");
+    let mut rendered = out;
     if template_css.ends_with('\n') {
         rendered.push('\n');
     }
     rendered
+}
+
+fn expand_variant_directives(css: &str, overrides: &ironframe_generator::VariantOverrides) -> String {
+    expand_variant_directives_in_block(css, overrides)
+}
+
+fn expand_variant_directives_in_block(
+    content: &str,
+    overrides: &ironframe_generator::VariantOverrides,
+) -> String {
+    let mut out = String::new();
+    let mut cursor = 0usize;
+
+    while let Some(rel_start) = content[cursor..].find("@variant") {
+        let variant_idx = cursor + rel_start;
+        out.push_str(&content[cursor..variant_idx]);
+
+        let mut pos = variant_idx + "@variant".len();
+        while let Some(ch) = content[pos..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        let name_start = pos;
+        while let Some(ch) = content[pos..].chars().next() {
+            if ch.is_whitespace() || ch == '{' {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        let variant_name = content[name_start..pos].trim();
+        if variant_name.is_empty() {
+            out.push_str("@variant");
+            cursor = variant_idx + "@variant".len();
+            continue;
+        }
+        while let Some(ch) = content[pos..].chars().next() {
+            if !ch.is_whitespace() {
+                break;
+            }
+            pos += ch.len_utf8();
+        }
+        if !content[pos..].starts_with('{') {
+            out.push_str("@variant");
+            cursor = variant_idx + "@variant".len();
+            continue;
+        }
+        let open_idx = pos;
+        let Some(close_idx) = find_matching_brace(content, open_idx) else {
+            out.push_str(&content[variant_idx..]);
+            return out;
+        };
+        let inner = &content[open_idx + 1..close_idx];
+        let expanded_inner = expand_variant_directives_in_block(inner, overrides);
+        let wrapped = wrap_variant_block_for_css(variant_name, &expanded_inner, overrides)
+            .unwrap_or_else(|| format!("@variant {} {{ {} }}", variant_name, expanded_inner));
+        out.push_str(&wrapped);
+        cursor = close_idx + 1;
+    }
+
+    out.push_str(&content[cursor..]);
+    out
+}
+
+fn wrap_variant_block_for_css(
+    variant: &str,
+    inner: &str,
+    overrides: &ironframe_generator::VariantOverrides,
+) -> Option<String> {
+    if variant == "dark" {
+        if let Some(template) = overrides.dark_variant_selector.as_ref() {
+            return Some(format!("{} {{ {} }}", normalize_variant_template(template), inner));
+        }
+        return Some(format!("@media (prefers-color-scheme: dark) {{ {} }}", inner));
+    }
+
+    if let Some((_, template)) = overrides
+        .custom_variant_selectors
+        .iter()
+        .find(|(name, _)| name == variant)
+    {
+        let template = normalize_variant_template(template);
+        if template.contains("@slot") {
+            return Some(template.replace("@slot", inner));
+        }
+        return Some(format!("{} {{ {} }}", template, inner));
+    }
+
+    if let Some((_, width)) = overrides
+        .responsive_breakpoints
+        .iter()
+        .find(|(name, _)| name == variant)
+    {
+        return Some(format!("@media (width >= {}) {{ {} }}", width, inner));
+    }
+
+    match variant {
+        "hover" => Some(format!(
+            "&:hover {{ @media (hover: hover) {{ {} }} }}",
+            inner
+        )),
+        "focus" => Some(format!("&:focus {{ {} }}", inner)),
+        "focus-within" => Some(format!("&:focus-within {{ {} }}", inner)),
+        "focus-visible" => Some(format!("&:focus-visible {{ {} }}", inner)),
+        "active" => Some(format!("&:active {{ {} }}", inner)),
+        "visited" => Some(format!("&:visited {{ {} }}", inner)),
+        "disabled" => Some(format!("&:disabled {{ {} }}", inner)),
+        _ => None,
+    }
+}
+
+fn normalize_variant_template(template: &str) -> String {
+    template.trim().replace('_', " ")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1490,8 +1807,8 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        emit_parsed_theme_css, parse_args, parse_framework_import_directives, parse_theme,
-        strip_tailwind_custom_directives, Command,
+        emit_parsed_theme_css, expand_variant_directives, parse_args,
+        parse_framework_import_directives, parse_theme, strip_tailwind_custom_directives, Command,
     };
 
     #[test]
@@ -1670,6 +1987,22 @@ mod tests {
   --color-brand-500: #10b981;
 }
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant theme-midnight (&:where([data-theme="midnight"] *));
+@custom-variant any-hover {
+  @media (any-hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+@utility content-auto {
+  content-visibility: auto;
+}
+@utility scrollbar-hidden {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
 "#;
         let overrides = parse_theme(css).variant_overrides;
         assert!(overrides
@@ -1687,6 +2020,27 @@ mod tests {
             overrides.dark_variant_selector,
             Some("&:where(.dark, .dark *)".to_string())
         );
+        assert!(overrides
+            .custom_variant_selectors
+            .contains(&(
+                "theme-midnight".to_string(),
+                "&:where([data-theme=\"midnight\"] *)".to_string()
+            )));
+        assert!(overrides
+            .custom_variant_selectors
+            .iter()
+            .any(|(name, template)| name == "any-hover" && template.contains("@slot")));
+        assert!(overrides.custom_utilities.contains(&(
+            "content-auto".to_string(),
+            "content-visibility: auto;".to_string()
+        )));
+        assert!(overrides
+            .theme_variable_values
+            .contains(&("--color-brand-500".to_string(), "#10b981".to_string())));
+        assert!(overrides
+            .custom_utilities
+            .iter()
+            .any(|(name, body)| name == "scrollbar-hidden" && body.contains("&::-webkit-scrollbar")));
         assert!(!overrides.global_theme_reset);
         assert!(overrides
             .disabled_namespaces
@@ -1835,6 +2189,14 @@ mod tests {
 @import "tailwindcss";
 @theme { --color-brand: #123456; }
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant any-hover {
+  @media (any-hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
+}
+@utility content-auto { content-visibility: auto; }
 body { margin: 0; }
 "#;
         let stripped = strip_tailwind_custom_directives(css);
@@ -1842,6 +2204,66 @@ body { margin: 0; }
         assert!(stripped.contains("body { margin: 0; }"));
         assert!(!stripped.contains("@theme"));
         assert!(!stripped.contains("@custom-variant"));
+        assert!(!stripped.contains("@utility"));
+        assert!(stripped.contains("body { margin: 0; }"));
+    }
+
+    #[test]
+    fn expands_variant_directive_in_custom_css() {
+        let css = r#"
+.my-element {
+  background: white;
+  @variant dark {
+    background: black;
+  }
+}
+"#;
+        let overrides = ironframe_generator::VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let expanded = expand_variant_directives(css, &overrides);
+        assert!(expanded.contains("@media (prefers-color-scheme: dark)"));
+        assert!(expanded.contains("background: black;"));
+        assert!(!expanded.contains("@variant dark"));
+    }
+
+    #[test]
+    fn expands_nested_variant_directives_in_custom_css() {
+        let css = r#"
+.my-element {
+  @variant dark {
+    @variant hover {
+      background: black;
+    }
+  }
+}
+"#;
+        let overrides = ironframe_generator::VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let expanded = expand_variant_directives(css, &overrides);
+        assert!(expanded.contains("@media (prefers-color-scheme: dark)"));
+        assert!(expanded.contains("&:hover"));
+        assert!(expanded.contains("@media (hover: hover)"));
+        assert!(!expanded.contains("@variant hover"));
     }
 
     #[test]

@@ -375,6 +375,7 @@ fn parse_quoted_value(text: &str, mut idx: usize, quote: char) -> (Vec<String>, 
         if ch == '\\' {
             let next_idx = idx + size;
             if let Some((next, next_size)) = next_char(text, next_idx) {
+                value.push('\\');
                 value.push(next);
                 idx = next_idx + next_size;
                 continue;
@@ -468,6 +469,7 @@ fn parse_string_literal(text: &str, mut idx: usize, quote: char) -> (String, usi
         if ch == '\\' {
             let next_idx = idx + size;
             if let Some((next, next_size)) = next_char(text, next_idx) {
+                value.push('\\');
                 value.push(next);
                 idx = next_idx + next_size;
                 continue;
@@ -502,6 +504,7 @@ fn parse_template_literal(text: &str, mut idx: usize) -> (Vec<String>, usize) {
         if ch == '\\' {
             let next_idx = idx + size;
             if let Some((next, next_size)) = next_char(text, next_idx) {
+                current.push('\\');
                 current.push(next);
                 idx = next_idx + next_size;
                 continue;
@@ -752,6 +755,7 @@ fn tokenize_class_list(input: &str) -> Vec<String> {
         if ch == '\\' {
             let next_idx = idx + size;
             if let Some((next, next_size)) = next_char(input, next_idx) {
+                current.push('\\');
                 current.push(next);
                 idx = next_idx + next_size;
                 continue;
@@ -808,7 +812,25 @@ fn is_allowed_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric()
         || matches!(
             ch,
-            '-' | '_' | '/' | ':' | '.' | '%' | '#' | '[' | ']' | '(' | ')' | '!' | '&' | '>' | '+'
+            '-'
+                | '_'
+                | '/'
+                | ':'
+                | '.'
+                | '%'
+                | '#'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '!'
+                | '&'
+                | '>'
+                | '+'
+                | ','
+                | '\''
+                | '"'
+                | '\\'
         )
 }
 
@@ -902,6 +924,24 @@ mod tests {
         );
         assert!(classes.contains(&"[--gutter-width:1rem]".to_string()));
         assert!(classes.contains(&"lg:[--gutter-width:2rem]".to_string()));
+    }
+
+    #[test]
+    fn keeps_arbitrary_content_and_url_classes_intact() {
+        let classes = extract_classes(
+            r#"<div class="before:content-['hello\_world'] bg-[url('/what_a_rush.png')]"></div>"#,
+        );
+        assert!(classes.contains(&"before:content-['hello\\_world']".to_string()));
+        assert!(classes.contains(&"bg-[url('/what_a_rush.png')]".to_string()));
+    }
+
+    #[test]
+    fn keeps_string_raw_escaped_underscore_class_intact() {
+        let classes = extract_classes_by_extension(
+            r#"const cls = String.raw`before:content-['hello\_world']`;"#,
+            Some("tsx"),
+        );
+        assert!(classes.contains(&"before:content-['hello\\_world']".to_string()));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
