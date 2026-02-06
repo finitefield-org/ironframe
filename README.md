@@ -52,9 +52,11 @@ This repository is for learning and prototyping a Rust implementation that match
   - `parse(input: &str) -> Result<AstNode, ParseError>`
 - `ironframe_scanner`
   - `ScanTarget` and `ScanResult`
+  - `ScanGlobOptions`
   - `scan(paths: &[PathBuf]) -> Result<ScanResult, ScanError>`
   - `scan_globs(patterns: &[String]) -> Result<ScanResult, ScanError>`
   - `scan_globs_with_ignore(patterns: &[String], ignore: &[String]) -> Result<ScanResult, ScanError>`
+  - `scan_globs_with_options(patterns: &[String], ignore: &[String], options: &ScanGlobOptions) -> Result<ScanResult, ScanError>`
   - `extract_classes(text: &str) -> Vec<String>`
 - `ironframe_generator`
   - `GeneratorConfig` and `GenerationResult`
@@ -71,6 +73,13 @@ This repository is for learning and prototyping a Rust implementation that match
 ## Notes
 
 This repository references Tailwind CSS v4.1 for behavior and ideas but is not affiliated with the official implementation.
+
+`ironframe_cli build --input-css` supports Tailwind-style `@source` directives for:
+- explicit source registration (`@source "../path"`)
+- source exclusion (`@source not "../path"`)
+- disabling auto detection (`@import "tailwindcss" source(none)`)
+- base path override (`@import "tailwindcss" source("../src")`)
+- inline safelist / blocklist via brace expansion (`@source inline(...)`, `@source not inline(...)`)
 
 ## Example Config
 

@@ -20,6 +20,29 @@ pub struct ScanError {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanGlobOptions {
+    pub base_path: PathBuf,
+    pub respect_gitignore: bool,
+    pub include_node_modules: bool,
+    pub include_binary_files: bool,
+    pub include_css_files: bool,
+    pub include_lock_files: bool,
+}
+
+impl Default for ScanGlobOptions {
+    fn default() -> Self {
+        Self {
+            base_path: PathBuf::from("."),
+            respect_gitignore: true,
+            include_node_modules: false,
+            include_binary_files: false,
+            include_css_files: false,
+            include_lock_files: false,
+        }
+    }
+}
+
 pub fn scan(_paths: &[PathBuf]) -> Result<ScanResult, ScanError> {
     let mut classes = Vec::new();
     let mut seen = HashSet::new();
@@ -43,6 +66,14 @@ pub fn scan_globs_with_ignore(
     patterns: &[String],
     ignore_patterns: &[String],
 ) -> Result<ScanResult, ScanError> {
+    scan_globs_with_options(patterns, ignore_patterns, &ScanGlobOptions::default())
+}
+
+pub fn scan_globs_with_options(
+    patterns: &[String],
+    ignore_patterns: &[String],
+    options: &ScanGlobOptions,
+) -> Result<ScanResult, ScanError> {
     if patterns.is_empty() {
         return Err(ScanError {
             message: "scan_globs requires at least one pattern".to_string(),
@@ -54,15 +85,12 @@ pub fn scan_globs_with_ignore(
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
 
-    let mut builder = WalkBuilder::new(".");
+    let mut builder = WalkBuilder::new(&options.base_path);
     builder
         .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true);
-    for pattern in ignore_patterns {
-        builder.add_ignore(pattern);
-    }
+        .git_ignore(options.respect_gitignore)
+        .git_global(options.respect_gitignore)
+        .git_exclude(options.respect_gitignore);
     let walker = builder.build();
 
     for entry in walker {
@@ -74,10 +102,14 @@ pub fn scan_globs_with_ignore(
             continue;
         }
         let path = entry.path();
-        if !globset.is_match(path) {
+        let relative_path = path.strip_prefix(&options.base_path).unwrap_or(path);
+        if !globset.is_match(relative_path) && !globset.is_match(path) {
             continue;
         }
-        if ignore_set.is_match(path) {
+        if ignore_set.is_match(relative_path) || ignore_set.is_match(path) {
+            continue;
+        }
+        if should_skip_file(path, options) {
             continue;
         }
         if seen.insert(path.to_path_buf()) {
@@ -86,6 +118,92 @@ pub fn scan_globs_with_ignore(
     }
 
     scan(&paths)
+}
+
+fn should_skip_file(path: &Path, options: &ScanGlobOptions) -> bool {
+    if !options.include_node_modules
+        && path
+            .components()
+            .any(|component| component.as_os_str() == "node_modules")
+    {
+        return true;
+    }
+
+    let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("");
+    if !options.include_lock_files && is_common_lock_file(file_name) {
+        return true;
+    }
+
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+    if let Some(ext) = ext.as_deref() {
+        if !options.include_css_files && is_css_extension(ext) {
+            return true;
+        }
+        if !options.include_binary_files && is_binary_extension(ext) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn is_css_extension(ext: &str) -> bool {
+    matches!(ext, "css" | "scss" | "sass" | "less" | "styl" | "pcss")
+}
+
+fn is_binary_extension(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "ico"
+            | "bmp"
+            | "tiff"
+            | "avif"
+            | "mp4"
+            | "mov"
+            | "avi"
+            | "mkv"
+            | "webm"
+            | "mp3"
+            | "wav"
+            | "ogg"
+            | "flac"
+            | "zip"
+            | "gz"
+            | "tgz"
+            | "rar"
+            | "7z"
+            | "pdf"
+            | "woff"
+            | "woff2"
+            | "ttf"
+            | "otf"
+            | "eot"
+    )
+}
+
+fn is_common_lock_file(file_name: &str) -> bool {
+    matches!(
+        file_name,
+        "package-lock.json"
+            | "pnpm-lock.yaml"
+            | "yarn.lock"
+            | "bun.lockb"
+            | "bun.lock"
+            | "npm-shrinkwrap.json"
+            | "Cargo.lock"
+            | "composer.lock"
+            | "Gemfile.lock"
+            | "poetry.lock"
+            | "Pipfile.lock"
+    )
 }
 
 pub fn extract_classes(_text: &str) -> Vec<String> {
@@ -843,6 +961,8 @@ mod tests {
     use super::extract_classes;
     use super::extract_classes_by_extension;
     use super::scan_globs;
+    use super::scan_globs_with_options;
+    use super::ScanGlobOptions;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -904,6 +1024,62 @@ mod tests {
         let result = scan_globs(&["**/*.html".to_string()]).expect("scan_globs should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn default_glob_scanning_excludes_css_binary_lock_and_node_modules() {
+        let base = temp_dir("scanner_default_filters");
+        let _ = fs::create_dir_all(base.join("src"));
+        let _ = fs::create_dir_all(base.join("node_modules/lib"));
+        let _ = fs::write(base.join("src/index.html"), r#"<div class="p-2"></div>"#);
+        let _ = fs::write(base.join("src/styles.css"), ".bg-red-500{}");
+        let _ = fs::write(base.join("src/logo.png"), "not-an-image-but-binary-ext");
+        let _ = fs::write(base.join("package-lock.json"), "{}");
+        let _ = fs::write(
+            base.join("node_modules/lib/index.html"),
+            r#"<div class="text-sm"></div>"#,
+        );
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
+        assert!(result.classes.contains(&"p-2".to_string()));
+        assert!(!result.classes.contains(&"bg-red-500".to_string()));
+        assert!(!result.classes.contains(&"text-sm".to_string()));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn glob_options_can_include_node_modules_and_gitignored_files() {
+        let base = temp_dir("scanner_source_overrides");
+        let _ = fs::create_dir_all(base.join("node_modules/lib"));
+        let _ = fs::write(base.join(".gitignore"), "vendor/**\n");
+        let _ = fs::create_dir_all(base.join("vendor"));
+        let _ = fs::write(
+            base.join("node_modules/lib/index.html"),
+            r#"<div class="text-sm"></div>"#,
+        );
+        let _ = fs::write(
+            base.join("vendor/index.html"),
+            r#"<div class="underline"></div>"#,
+        );
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            respect_gitignore: false,
+            include_node_modules: true,
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*.html".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
+        assert!(result.classes.contains(&"text-sm".to_string()));
+        assert!(result.classes.contains(&"underline".to_string()));
+
         let _ = fs::remove_dir_all(&base);
     }
 

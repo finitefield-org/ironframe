@@ -10,7 +10,7 @@ This document describes the initial design for the `ironframe_scanner` crate. Th
 
 ## High-Level Pipeline
 
-1. Resolve file list from config/CLI globs
+1. Resolve file list from config/CLI globs (with scan options)
 2. Read file contents as UTF-8 text, skip binary or invalid encodings
 3. Select extractor by extension
 4. Extract class lists or string literals
@@ -96,6 +96,7 @@ In the future, validation should call `ironframe_core::parse` and keep only toke
 
 - `ScanTarget { path: PathBuf }`
 - `ScanResult { classes: Vec<String>, files_scanned: usize }`
+- `ScanGlobOptions { base_path, respect_gitignore, include_node_modules, include_binary_files, include_css_files, include_lock_files }`
 - Internally use `HashSet<String>` for de-duplication and a `Vec<String>` for stable output order
 
 ## Error Handling
@@ -111,6 +112,18 @@ In the future, validation should call `ironframe_core::parse` and keep only toke
 - Cache extractor selection by extension
 - Respect `.gitignore`/`.ignore` rules via the filesystem walker
 - Optional extra ignore patterns can be provided via CLI (`--ignore`)
+
+## Default Exclusions
+
+When scanning with glob APIs and default options:
+
+- Respect `.gitignore` / global gitignore / git exclude
+- Ignore files under `node_modules`
+- Ignore CSS files (`.css`, `.scss`, `.sass`, `.less`, `.styl`, `.pcss`)
+- Ignore common lock files (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, etc.)
+- Ignore common binary/media/archive/font extensions
+
+These defaults can be overridden with `ScanGlobOptions`, which is used by CLI features like `@source`.
 
 ## Test Fixtures (Initial)
 

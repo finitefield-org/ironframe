@@ -334,10 +334,14 @@ fn run_build(
     let mut template_css = None;
     let mut stripped_template_css = None;
     let mut parsed_theme = None;
+    let mut source_directives = SourceDirectives::default();
+    let mut stylesheet_dir = None;
     if let Some(path) = input_css_path.as_ref() {
         let template = fs::read_to_string(path).map_err(|err| CliError {
             message: format!("failed to read input css {}: {}", path, err),
         })?;
+        source_directives = parse_source_directives(&template);
+        stylesheet_dir = Some(resolve_stylesheet_dir(path));
         parsed_theme = Some(parse_theme(&template));
         let stripped = strip_tailwind_custom_directives(&template);
         let variant_overrides = parsed_theme
@@ -348,12 +352,94 @@ fn run_build(
         template_css = Some(template);
     }
 
-    let mut scan_result =
-        ironframe_scanner::scan_globs_with_ignore(&inputs, &ignore).map_err(|err| CliError {
-            message: err.message,
-        })?;
-    scan_result.classes.sort();
-    scan_result.classes.dedup();
+    let mut classes = std::collections::BTreeSet::<String>::new();
+    let mut files_scanned = 0usize;
+
+    if source_directives.auto_detection {
+        let mut auto_options = ironframe_scanner::ScanGlobOptions::default();
+        let mut auto_patterns = inputs.clone();
+        if input_css_path.is_some() {
+            auto_patterns = vec!["**/*".to_string()];
+        }
+        if let Some(base_path) = source_directives.base_path.as_deref() {
+            if let Some(dir) = stylesheet_dir.as_deref() {
+                auto_options.base_path = resolve_source_path(dir, base_path);
+            }
+        }
+        let mut auto_ignore = ignore.clone();
+        auto_ignore.extend(
+            source_directives
+                .exclude_paths
+                .iter()
+                .map(|path| {
+                    if let Some(dir) = stylesheet_dir.as_deref() {
+                        normalize_source_pattern(dir, path)
+                    } else {
+                        path.clone()
+                    }
+                })
+                .collect::<Vec<_>>(),
+        );
+        let auto_scan = ironframe_scanner::scan_globs_with_options(
+            &auto_patterns,
+            &auto_ignore,
+            &auto_options,
+        )
+        .map_err(|err| CliError {
+                message: err.message,
+            })?;
+        files_scanned += auto_scan.files_scanned;
+        for class in auto_scan.classes {
+            classes.insert(class);
+        }
+    }
+
+    if let Some(dir) = stylesheet_dir.as_deref() {
+        let mut explicit_patterns = Vec::new();
+        for path in &source_directives.include_paths {
+            explicit_patterns.push(normalize_source_pattern(dir, path));
+        }
+        if !explicit_patterns.is_empty() {
+            let mut explicit_options = ironframe_scanner::ScanGlobOptions::default();
+            explicit_options.base_path = std::env::current_dir().map_err(|err| CliError {
+                message: format!("failed to resolve current directory: {}", err),
+            })?;
+            explicit_options.respect_gitignore = false;
+            explicit_options.include_node_modules = true;
+
+            let mut explicit_ignore = ignore.clone();
+            explicit_ignore.extend(
+                source_directives
+                    .exclude_paths
+                    .iter()
+                    .map(|path| normalize_source_pattern(dir, path))
+                    .collect::<Vec<_>>(),
+            );
+            let explicit_scan = ironframe_scanner::scan_globs_with_options(
+                &explicit_patterns,
+                &explicit_ignore,
+                &explicit_options,
+            )
+            .map_err(|err| CliError {
+                message: err.message,
+            })?;
+            files_scanned += explicit_scan.files_scanned;
+            for class in explicit_scan.classes {
+                classes.insert(class);
+            }
+        }
+    }
+
+    for class in &source_directives.inline_include {
+        classes.insert(class.clone());
+    }
+    for class in &source_directives.inline_exclude {
+        classes.remove(class);
+    }
+    let scan_result = ironframe_scanner::ScanResult {
+        classes: classes.into_iter().collect(),
+        files_scanned,
+    };
 
     let config = match config_path {
         Some(path) => {
@@ -1381,8 +1467,12 @@ fn strip_tailwind_custom_directives(template_css: &str) -> String {
         out.push_str(&template_css[cursor..]);
     }
 
-    let mut rendered = out;
-    if template_css.ends_with('\n') {
+    let filtered_lines = out
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("@source"))
+        .collect::<Vec<_>>();
+    let mut rendered = filtered_lines.join("\n");
+    if template_css.ends_with('\n') && !rendered.ends_with('\n') {
         rendered.push('\n');
     }
     rendered
@@ -1508,6 +1598,29 @@ struct ImportDirectives {
     prefix: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SourceDirectives {
+    auto_detection: bool,
+    base_path: Option<String>,
+    include_paths: Vec<String>,
+    exclude_paths: Vec<String>,
+    inline_include: Vec<String>,
+    inline_exclude: Vec<String>,
+}
+
+impl Default for SourceDirectives {
+    fn default() -> Self {
+        Self {
+            auto_detection: true,
+            base_path: None,
+            include_paths: Vec::new(),
+            exclude_paths: Vec::new(),
+            inline_include: Vec::new(),
+            inline_exclude: Vec::new(),
+        }
+    }
+}
+
 fn parse_framework_import_directives(line: &str) -> Option<ImportDirectives> {
     let trimmed = line.trim();
     if !trimmed.starts_with("@import") {
@@ -1545,6 +1658,279 @@ fn extract_prefix_directive(import_line: &str) -> Option<String> {
         return None;
     }
     Some(prefix.to_string())
+}
+
+fn parse_source_directives(css: &str) -> SourceDirectives {
+    let mut directives = SourceDirectives::default();
+
+    for line in css.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("@import") {
+            if let Some(source_value) = extract_import_source_directive(trimmed) {
+                if source_value == "none" {
+                    directives.auto_detection = false;
+                } else {
+                    directives.base_path = Some(source_value);
+                }
+            }
+            continue;
+        }
+
+        if !trimmed.starts_with("@source") {
+            continue;
+        }
+        let mut raw = trimmed.trim_start_matches("@source").trim();
+        raw = raw.trim_end_matches(';').trim();
+        let mut is_not = false;
+        if let Some(rest) = raw.strip_prefix("not ") {
+            is_not = true;
+            raw = rest.trim();
+        }
+
+        if raw.starts_with("inline(") && raw.ends_with(')') {
+            if let Some(value) = parse_parenthesized_quoted_value(raw, "inline") {
+                let expanded = expand_braces(&value);
+                if is_not {
+                    directives.inline_exclude.extend(expanded);
+                } else {
+                    directives.inline_include.extend(expanded);
+                }
+            }
+            continue;
+        }
+
+        if let Some(value) = parse_quoted_literal(raw) {
+            if is_not {
+                directives.exclude_paths.push(value);
+            } else {
+                directives.include_paths.push(value);
+            }
+        }
+    }
+
+    directives.inline_include.sort();
+    directives.inline_include.dedup();
+    directives.inline_exclude.sort();
+    directives.inline_exclude.dedup();
+    directives.include_paths.sort();
+    directives.include_paths.dedup();
+    directives.exclude_paths.sort();
+    directives.exclude_paths.dedup();
+    directives
+}
+
+fn extract_import_source_directive(import_line: &str) -> Option<String> {
+    if parse_framework_import_directives(import_line).is_none() {
+        return None;
+    }
+    parse_parenthesized_quoted_value(import_line, "source")
+}
+
+fn parse_parenthesized_quoted_value(input: &str, fn_name: &str) -> Option<String> {
+    let value = parse_parenthesized_unquoted_or_quoted_value(input, fn_name)?;
+    if value == "none" {
+        return Some(value);
+    }
+    parse_quoted_literal(value.as_str()).or(Some(value))
+}
+
+fn parse_parenthesized_unquoted_or_quoted_value(input: &str, fn_name: &str) -> Option<String> {
+    let marker = format!("{}(", fn_name);
+    let start = input.find(&marker)? + marker.len();
+    let mut depth = 1usize;
+    let mut in_string: Option<char> = None;
+    let mut escaped = false;
+
+    for (offset, ch) in input[start..].char_indices() {
+        if let Some(quote) = in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                in_string = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            in_string = Some(ch);
+            continue;
+        }
+        if ch == '(' {
+            depth += 1;
+            continue;
+        }
+        if ch == ')' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                let raw = input[start..start + offset].trim().to_string();
+                return Some(raw);
+            }
+        }
+    }
+
+    None
+}
+
+fn parse_quoted_literal(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    if trimmed.len() < 2 {
+        return None;
+    }
+    let quote = trimmed.chars().next()?;
+    if (quote != '"' && quote != '\'') || !trimmed.ends_with(quote) {
+        return None;
+    }
+    Some(trimmed[1..trimmed.len() - 1].to_string())
+}
+
+fn resolve_stylesheet_dir(path: &str) -> PathBuf {
+    let raw = Path::new(path);
+    if raw.is_absolute() {
+        return raw.parent().unwrap_or(Path::new("/")).to_path_buf();
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    cwd.join(raw).parent().unwrap_or(&cwd).to_path_buf()
+}
+
+fn resolve_source_path(base_dir: &Path, source: &str) -> PathBuf {
+    let raw = Path::new(source);
+    if raw.is_absolute() {
+        return raw.to_path_buf();
+    }
+    base_dir.join(raw)
+}
+
+fn normalize_source_pattern(base_dir: &Path, source: &str) -> String {
+    if contains_glob_meta(source) {
+        return resolve_source_path(base_dir, source)
+            .to_string_lossy()
+            .to_string();
+    }
+
+    let resolved = resolve_source_path(base_dir, source);
+    if source.ends_with('/') || source.ends_with('\\') || resolved.is_dir() {
+        return resolved.join("**/*").to_string_lossy().to_string();
+    }
+
+    resolved.to_string_lossy().to_string()
+}
+
+fn contains_glob_meta(input: &str) -> bool {
+    input.chars().any(|ch| matches!(ch, '*' | '?' | '[' | '{'))
+}
+
+fn expand_braces(input: &str) -> Vec<String> {
+    let Some((open, close)) = first_brace_pair(input) else {
+        return vec![input.to_string()];
+    };
+
+    let prefix = &input[..open];
+    let body = &input[open + 1..close];
+    let suffix = &input[close + 1..];
+    let mut expanded = Vec::new();
+
+    for variant in split_top_level_commas_owned(body) {
+        let options = expand_brace_variant(&variant);
+        for option in options {
+            for rest in expand_braces(suffix) {
+                expanded.push(format!("{}{}{}", prefix, option, rest));
+            }
+        }
+    }
+
+    expanded
+}
+
+fn first_brace_pair(input: &str) -> Option<(usize, usize)> {
+    let mut depth = 0usize;
+    let mut open_idx = None;
+    for (idx, ch) in input.char_indices() {
+        if ch == '{' {
+            if depth == 0 {
+                open_idx = Some(idx);
+            }
+            depth += 1;
+            continue;
+        }
+        if ch == '}' {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return open_idx.map(|open| (open, idx));
+            }
+        }
+    }
+    None
+}
+
+fn split_top_level_commas_owned(value: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (idx, ch) in value.char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(value[start..idx].trim().to_string());
+                start = idx + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(value[start..].trim().to_string());
+    parts
+}
+
+fn expand_brace_variant(variant: &str) -> Vec<String> {
+    if let Some(values) = expand_numeric_range(variant) {
+        return values;
+    }
+    expand_braces(variant)
+}
+
+fn expand_numeric_range(variant: &str) -> Option<Vec<String>> {
+    let parts = variant.split("..").collect::<Vec<_>>();
+    if parts.len() != 2 && parts.len() != 3 {
+        return None;
+    }
+    let start = parts[0].trim().parse::<i32>().ok()?;
+    let end = parts[1].trim().parse::<i32>().ok()?;
+    let mut step = if parts.len() == 3 {
+        parts[2].trim().parse::<i32>().ok()?
+    } else if start <= end {
+        1
+    } else {
+        -1
+    };
+    if step == 0 {
+        return None;
+    }
+    if start < end && step < 0 {
+        step = -step;
+    }
+    if start > end && step > 0 {
+        step = -step;
+    }
+
+    let mut values = Vec::new();
+    let mut current = start;
+    loop {
+        values.push(current.to_string());
+        if current == end {
+            break;
+        }
+        current += step;
+        if (step > 0 && current > end) || (step < 0 && current < end) {
+            break;
+        }
+    }
+
+    Some(values)
 }
 
 fn apply_important_to_css(css: &str) -> String {
@@ -1807,9 +2193,14 @@ fn should_ignore_event(event: &notify::Event, ignore_set: Option<&GlobSet>) -> b
 mod tests {
     use super::{
         apply_framework_import_alias, apply_important_to_css, apply_prefix_to_css,
-        emit_parsed_theme_css, expand_variant_directives, parse_args,
-        parse_framework_import_directives, parse_theme, strip_tailwind_custom_directives, Command,
+        emit_parsed_theme_css, expand_braces, expand_variant_directives, normalize_source_pattern,
+        parse_args,
+        parse_framework_import_directives, parse_source_directives, parse_theme,
+        strip_tailwind_custom_directives, Command,
     };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parse_build_supports_input_css_flag() {
@@ -2206,6 +2597,93 @@ body { margin: 0; }
         assert!(!stripped.contains("@custom-variant"));
         assert!(!stripped.contains("@utility"));
         assert!(stripped.contains("body { margin: 0; }"));
+    }
+
+    #[test]
+    fn strips_source_directives_from_template() {
+        let css = r#"
+@import "tailwindcss";
+@source "../node_modules/acme-ui";
+@source not "../legacy";
+body { margin: 0; }
+"#;
+        let stripped = strip_tailwind_custom_directives(css);
+        assert!(stripped.contains("@import \"tailwindcss\";"));
+        assert!(stripped.contains("body { margin: 0; }"));
+        assert!(!stripped.contains("@source"));
+    }
+
+    #[test]
+    fn parses_source_directives_from_import_and_source_rules() {
+        let css = r#"
+@import "tailwindcss" source("../src");
+@source "../node_modules/@acmecorp/ui-lib";
+@source not "../src/components/legacy";
+@source inline("{hover:,focus:,}underline");
+@source not inline("{hover:,focus:,}bg-red-{50,{100..900..100},950}");
+"#;
+        let directives = parse_source_directives(css);
+        assert!(directives.auto_detection);
+        assert_eq!(directives.base_path, Some("../src".to_string()));
+        assert!(directives
+            .include_paths
+            .contains(&"../node_modules/@acmecorp/ui-lib".to_string()));
+        assert!(directives
+            .exclude_paths
+            .contains(&"../src/components/legacy".to_string()));
+        assert!(directives
+            .inline_include
+            .contains(&"hover:underline".to_string()));
+        assert!(directives
+            .inline_include
+            .contains(&"focus:underline".to_string()));
+        assert!(directives
+            .inline_exclude
+            .contains(&"bg-red-50".to_string()));
+        assert!(directives
+            .inline_exclude
+            .contains(&"hover:bg-red-500".to_string()));
+        assert!(directives
+            .inline_exclude
+            .contains(&"focus:bg-red-950".to_string()));
+    }
+
+    #[test]
+    fn parses_source_none_on_import() {
+        let css = r#"@import "tailwindcss" source(none);"#;
+        let directives = parse_source_directives(css);
+        assert!(!directives.auto_detection);
+        assert!(directives.base_path.is_none());
+    }
+
+    #[test]
+    fn expands_braces_with_nested_lists_and_ranges() {
+        let expanded = expand_braces("{hover:,}bg-red-{50,{100..300..100},950}");
+        assert!(expanded.contains(&"bg-red-50".to_string()));
+        assert!(expanded.contains(&"hover:bg-red-50".to_string()));
+        assert!(expanded.contains(&"bg-red-100".to_string()));
+        assert!(expanded.contains(&"hover:bg-red-300".to_string()));
+        assert!(expanded.contains(&"bg-red-950".to_string()));
+    }
+
+    #[test]
+    fn normalizes_source_directory_to_recursive_glob() {
+        let base = temp_dir("cli_source_pattern");
+        let dir = base.join("node_modules/acme-ui");
+        let _ = fs::create_dir_all(&dir);
+        let pattern = normalize_source_pattern(&base, "node_modules/acme-ui");
+        assert!(pattern.ends_with("node_modules/acme-ui/**/*"));
+        let _ = fs::remove_dir_all(base);
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(format!("{}_{}", prefix, nanos))
     }
 
     #[test]
