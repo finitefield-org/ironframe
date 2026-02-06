@@ -287,6 +287,7 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_text_palette_color_rule(base, config))
             .or_else(|| generate_background_arbitrary_color_rule(base, config))
             .or_else(|| generate_background_palette_color_rule(base, config))
+            .or_else(|| generate_background_blend_mode_rule(base, config))
             .or_else(|| generate_background_position_rule(base, config))
             .or_else(|| generate_background_size_rule(base, config))
             .or_else(|| generate_background_image_rule(base, config))
@@ -326,6 +327,16 @@ fn generate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
             .or_else(|| generate_float_rule(base, config))
             .or_else(|| generate_clear_rule(base, config))
             .or_else(|| generate_isolation_rule(base, config))
+            .or_else(|| generate_mix_blend_mode_rule(base, config))
+            .or_else(|| generate_mask_image_rule(base, config))
+            .or_else(|| generate_mask_mode_rule(base, config))
+            .or_else(|| generate_mask_type_rule(base, config))
+            .or_else(|| generate_mask_origin_rule(base, config))
+            .or_else(|| generate_mask_position_rule(base, config))
+            .or_else(|| generate_mask_repeat_rule(base, config))
+            .or_else(|| generate_mask_size_rule(base, config))
+            .or_else(|| generate_mask_clip_rule(base, config))
+            .or_else(|| generate_mask_composite_rule(base, config))
             .or_else(|| generate_object_fit_rule(base, config))
             .or_else(|| generate_object_position_rule(base, config))
             .or_else(|| generate_overscroll_rule(base, config))
@@ -417,6 +428,9 @@ fn generate_background_arbitrary_color_rule(class: &str, config: &GeneratorConfi
 }
 
 fn generate_background_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    if class.starts_with("bg-blend-") {
+        return None;
+    }
     let selector = format!(".{}", escape_selector(class));
     let raw = class.strip_prefix("bg-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
@@ -2348,6 +2362,671 @@ fn generate_isolation_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     }
 }
 
+fn generate_mix_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mix-blend-normal" => "normal",
+        "mix-blend-multiply" => "multiply",
+        "mix-blend-screen" => "screen",
+        "mix-blend-overlay" => "overlay",
+        "mix-blend-darken" => "darken",
+        "mix-blend-lighten" => "lighten",
+        "mix-blend-color-dodge" => "color-dodge",
+        "mix-blend-color-burn" => "color-burn",
+        "mix-blend-hard-light" => "hard-light",
+        "mix-blend-soft-light" => "soft-light",
+        "mix-blend-difference" => "difference",
+        "mix-blend-exclusion" => "exclusion",
+        "mix-blend-hue" => "hue",
+        "mix-blend-saturation" => "saturation",
+        "mix-blend-color" => "color",
+        "mix-blend-luminosity" => "luminosity",
+        "mix-blend-plus-darker" => "plus-darker",
+        "mix-blend-plus-lighter" => "plus-lighter",
+        _ => return None,
+    };
+    rule(&selector, &format!("mix-blend-mode:{}", value), config)
+}
+
+fn generate_background_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "bg-blend-normal" => "normal",
+        "bg-blend-multiply" => "multiply",
+        "bg-blend-screen" => "screen",
+        "bg-blend-overlay" => "overlay",
+        "bg-blend-darken" => "darken",
+        "bg-blend-lighten" => "lighten",
+        "bg-blend-color-dodge" => "color-dodge",
+        "bg-blend-color-burn" => "color-burn",
+        "bg-blend-hard-light" => "hard-light",
+        "bg-blend-soft-light" => "soft-light",
+        "bg-blend-difference" => "difference",
+        "bg-blend-exclusion" => "exclusion",
+        "bg-blend-hue" => "hue",
+        "bg-blend-saturation" => "saturation",
+        "bg-blend-color" => "color",
+        "bg-blend-luminosity" => "luminosity",
+        _ => return None,
+    };
+    rule(&selector, &format!("background-blend-mode:{}", value), config)
+}
+
+#[derive(Clone)]
+enum MaskStopValue {
+    Value(String),
+    Color(String),
+}
+
+fn is_percentage_value(raw: &str) -> bool {
+    if let Some(value) = raw.strip_suffix('%') {
+        return !value.is_empty() && value.chars().all(|c| c.is_ascii_digit() || c == '.');
+    }
+    false
+}
+
+fn parse_mask_color_value(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if is_color_like_value(raw) {
+        return Some(raw.to_string());
+    }
+    match raw {
+        "black" => Some("var(--color-black)".to_string()),
+        "white" => Some("var(--color-white)".to_string()),
+        "transparent" => Some("transparent".to_string()),
+        "current" => Some("currentColor".to_string()),
+        "inherit" => Some("inherit".to_string()),
+        _ => {
+            if raw.contains('-') {
+                Some(format!("var(--color-{})", raw))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn parse_mask_stop_value(raw: &str) -> Option<MaskStopValue> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit()) {
+        return Some(MaskStopValue::Value(format!(
+            "calc(var(--spacing) * {})",
+            raw
+        )));
+    }
+    if is_percentage_value(raw) {
+        return Some(MaskStopValue::Value(raw.to_string()));
+    }
+    if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(MaskStopValue::Value(format!("var({})", value)));
+    }
+    if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return Some(MaskStopValue::Value(value.to_string()));
+    }
+    Some(MaskStopValue::Color(parse_mask_color_value(raw)?))
+}
+
+fn mask_linear_side_from_gradient(
+    direction: &str,
+    side_token: &str,
+    stop: MaskStopValue,
+) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "linear-gradient({},black {},transparent var(--tw-mask-{}-to))",
+            direction, value, side_token
+        ),
+        MaskStopValue::Color(color) => format!(
+            "linear-gradient({},{} var(--tw-mask-{}-from),transparent var(--tw-mask-{}-to))",
+            direction, color, side_token, side_token
+        ),
+    }
+}
+
+fn mask_linear_side_to_gradient(
+    direction: &str,
+    side_token: &str,
+    stop: MaskStopValue,
+) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "linear-gradient({},black var(--tw-mask-{}-from),transparent {})",
+            direction, side_token, value
+        ),
+        MaskStopValue::Color(color) => format!(
+            "linear-gradient({},black var(--tw-mask-{}-from),{} var(--tw-mask-{}-to))",
+            direction, side_token, color, side_token
+        ),
+    }
+}
+
+fn mask_linear_bi_from_declarations(
+    first_direction: &str,
+    first_side: &str,
+    second_direction: &str,
+    second_side: &str,
+    stop: MaskStopValue,
+) -> String {
+    let first = mask_linear_side_from_gradient(first_direction, first_side, stop.clone());
+    let second = mask_linear_side_from_gradient(second_direction, second_side, stop);
+    format!("mask-image:{},{};mask-composite:intersect", first, second)
+}
+
+fn mask_linear_bi_to_declarations(
+    first_direction: &str,
+    first_side: &str,
+    second_direction: &str,
+    second_side: &str,
+    stop: MaskStopValue,
+) -> String {
+    let first = mask_linear_side_to_gradient(first_direction, first_side, stop.clone());
+    let second = mask_linear_side_to_gradient(second_direction, second_side, stop);
+    format!("mask-image:{},{};mask-composite:intersect", first, second)
+}
+
+fn mask_radial_from_declarations(stop: MaskStopValue) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "mask-image:radial-gradient(var(--tw-mask-radial-shape) var(--tw-mask-radial-size) at var(--tw-mask-radial-position),black {},transparent var(--tw-mask-radial-to))",
+            value
+        ),
+        MaskStopValue::Color(color) => format!(
+            "mask-image:radial-gradient(var(--tw-mask-radial-shape) var(--tw-mask-radial-size) at var(--tw-mask-radial-position),{} var(--tw-mask-radial-from),transparent var(--tw-mask-radial-to))",
+            color
+        ),
+    }
+}
+
+fn mask_radial_to_declarations(stop: MaskStopValue) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "mask-image:radial-gradient(var(--tw-mask-radial-shape) var(--tw-mask-radial-size) at var(--tw-mask-radial-position),black var(--tw-mask-radial-from),transparent {})",
+            value
+        ),
+        MaskStopValue::Color(color) => format!(
+            "mask-image:radial-gradient(var(--tw-mask-radial-shape) var(--tw-mask-radial-size) at var(--tw-mask-radial-position),black var(--tw-mask-radial-from),{} var(--tw-mask-radial-to))",
+            color
+        ),
+    }
+}
+
+fn mask_conic_from_declarations(stop: MaskStopValue) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "mask-image:conic-gradient(from var(--tw-mask-conic-position),black {},transparent var(--tw-mask-conic-to))",
+            value
+        ),
+        MaskStopValue::Color(color) => format!(
+            "mask-image:conic-gradient(from var(--tw-mask-conic-position),{} var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))",
+            color
+        ),
+    }
+}
+
+fn mask_conic_to_declarations(stop: MaskStopValue) -> String {
+    match stop {
+        MaskStopValue::Value(value) => format!(
+            "mask-image:conic-gradient(from var(--tw-mask-conic-position),black var(--tw-mask-conic-from),transparent {})",
+            value
+        ),
+        MaskStopValue::Color(color) => format!(
+            "mask-image:conic-gradient(from var(--tw-mask-conic-position),black var(--tw-mask-conic-from),{} var(--tw-mask-conic-to))",
+            color
+        ),
+    }
+}
+
+fn parse_mask_angle(raw: &str) -> Option<String> {
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Some(format!("{}deg", raw));
+    }
+    None
+}
+
+fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+
+    if class == "mask-none" {
+        return rule(&selector, "mask-image:none", config);
+    }
+
+    if let Some(value) = class.strip_prefix("mask-[").and_then(|v| v.strip_suffix(']')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-image:{}", value), config);
+    }
+
+    if let Some(value) = class.strip_prefix("mask-(").and_then(|v| v.strip_suffix(')')) {
+        if value.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-image:var({})", value), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-linear-") {
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(&selector, &format!("mask-image:linear-gradient({})", value), config);
+        }
+        if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("mask-image:linear-gradient(var({}))", value),
+                config,
+            );
+        }
+        if let Some(angle) = parse_mask_angle(raw) {
+            return rule(
+                &selector,
+                &format!(
+                    "mask-image:linear-gradient({},black var(--tw-mask-linear-from),transparent var(--tw-mask-linear-to))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("-mask-linear-") {
+        let angle = parse_mask_angle(raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "mask-image:linear-gradient(calc({} * -1),black var(--tw-mask-linear-from),transparent var(--tw-mask-linear-to))",
+                angle
+            ),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-linear-from-") {
+        let stop = parse_mask_stop_value(raw)?;
+        let declarations = match stop {
+            MaskStopValue::Value(value) => format!(
+                "mask-image:linear-gradient(var(--tw-mask-linear-position),black {},transparent var(--tw-mask-linear-to))",
+                value
+            ),
+            MaskStopValue::Color(color) => format!(
+                "mask-image:linear-gradient(var(--tw-mask-linear-position),{} var(--tw-mask-linear-from),transparent var(--tw-mask-linear-to))",
+                color
+            ),
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-linear-to-") {
+        let stop = parse_mask_stop_value(raw)?;
+        let declarations = match stop {
+            MaskStopValue::Value(value) => format!(
+                "mask-image:linear-gradient(var(--tw-mask-linear-position),black var(--tw-mask-linear-from),transparent {})",
+                value
+            ),
+            MaskStopValue::Color(color) => format!(
+                "mask-image:linear-gradient(var(--tw-mask-linear-position),black var(--tw-mask-linear-from),{} var(--tw-mask-linear-to))",
+                color
+            ),
+        };
+        return rule(&selector, &declarations, config);
+    }
+
+    for (prefix, direction, side) in [
+        ("mask-t-from-", "to top", "top"),
+        ("mask-r-from-", "to right", "right"),
+        ("mask-b-from-", "to bottom", "bottom"),
+        ("mask-l-from-", "to left", "left"),
+    ] {
+        if let Some(raw) = class.strip_prefix(prefix) {
+            let stop = parse_mask_stop_value(raw)?;
+            return rule(
+                &selector,
+                &format!(
+                    "mask-image:{}",
+                    mask_linear_side_from_gradient(direction, side, stop)
+                ),
+                config,
+            );
+        }
+    }
+
+    for (prefix, direction, side) in [
+        ("mask-t-to-", "to top", "top"),
+        ("mask-r-to-", "to right", "right"),
+        ("mask-b-to-", "to bottom", "bottom"),
+        ("mask-l-to-", "to left", "left"),
+    ] {
+        if let Some(raw) = class.strip_prefix(prefix) {
+            let stop = parse_mask_stop_value(raw)?;
+            return rule(
+                &selector,
+                &format!(
+                    "mask-image:{}",
+                    mask_linear_side_to_gradient(direction, side, stop)
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-y-from-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(
+            &selector,
+            &mask_linear_bi_from_declarations("to top", "top", "to bottom", "bottom", stop),
+            config,
+        );
+    }
+    if let Some(raw) = class.strip_prefix("mask-y-to-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(
+            &selector,
+            &mask_linear_bi_to_declarations("to top", "top", "to bottom", "bottom", stop),
+            config,
+        );
+    }
+    if let Some(raw) = class.strip_prefix("mask-x-from-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(
+            &selector,
+            &mask_linear_bi_from_declarations("to right", "right", "to left", "left", stop),
+            config,
+        );
+    }
+    if let Some(raw) = class.strip_prefix("mask-x-to-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(
+            &selector,
+            &mask_linear_bi_to_declarations("to right", "right", "to left", "left", stop),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-radial-") {
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            if value.contains(',') {
+                return rule(
+                    &selector,
+                    &format!("mask-image:radial-gradient({})", value),
+                    config,
+                );
+            }
+            return rule(&selector, &format!("--tw-mask-radial-size:{}", value), config);
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-radial-at-") {
+        let value = match raw {
+            "top-left" => Some("top left"),
+            "top" => Some("top"),
+            "top-right" => Some("top right"),
+            "left" => Some("left"),
+            "center" => Some("center"),
+            "right" => Some("right"),
+            "bottom-left" => Some("bottom left"),
+            "bottom" => Some("bottom"),
+            "bottom-right" => Some("bottom right"),
+            _ => None,
+        };
+        if let Some(value) = value {
+            return rule(&selector, &format!("--tw-mask-radial-position:{}", value), config);
+        }
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("--tw-mask-radial-position:{}", value),
+                config,
+            );
+        }
+    }
+
+    match class {
+        "mask-circle" => return rule(&selector, "--tw-mask-radial-shape:circle", config),
+        "mask-ellipse" => return rule(&selector, "--tw-mask-radial-shape:ellipse", config),
+        "mask-radial-closest-corner" => {
+            return rule(&selector, "--tw-mask-radial-size:closest-corner", config);
+        }
+        "mask-radial-closest-side" => {
+            return rule(&selector, "--tw-mask-radial-size:closest-side", config);
+        }
+        "mask-radial-farthest-corner" => {
+            return rule(&selector, "--tw-mask-radial-size:farthest-corner", config);
+        }
+        "mask-radial-farthest-side" => {
+            return rule(&selector, "--tw-mask-radial-size:farthest-side", config);
+        }
+        _ => {}
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-radial-from-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(&selector, &mask_radial_from_declarations(stop), config);
+    }
+    if let Some(raw) = class.strip_prefix("mask-radial-to-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(&selector, &mask_radial_to_declarations(stop), config);
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-conic-") {
+        if let Some(value) = raw.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("mask-image:conic-gradient({})", value),
+                config,
+            );
+        }
+        if let Some(value) = raw.strip_prefix('(').and_then(|v| v.strip_suffix(')')) {
+            if value.is_empty() {
+                return None;
+            }
+            return rule(
+                &selector,
+                &format!("mask-image:conic-gradient(var({}))", value),
+                config,
+            );
+        }
+        if let Some(angle) = parse_mask_angle(raw) {
+            return rule(
+                &selector,
+                &format!(
+                    "mask-image:conic-gradient(from {},black var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))",
+                    angle
+                ),
+                config,
+            );
+        }
+    }
+
+    if let Some(raw) = class.strip_prefix("-mask-conic-") {
+        let angle = parse_mask_angle(raw)?;
+        return rule(
+            &selector,
+            &format!(
+                "mask-image:conic-gradient(from calc({} * -1),black var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))",
+                angle
+            ),
+            config,
+        );
+    }
+
+    if let Some(raw) = class.strip_prefix("mask-conic-from-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(&selector, &mask_conic_from_declarations(stop), config);
+    }
+    if let Some(raw) = class.strip_prefix("mask-conic-to-") {
+        let stop = parse_mask_stop_value(raw)?;
+        return rule(&selector, &mask_conic_to_declarations(stop), config);
+    }
+
+    None
+}
+
+fn generate_mask_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-alpha" => "alpha",
+        "mask-luminance" => "luminance",
+        "mask-match" => "match-source",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-mode:{}", value), config)
+}
+
+fn generate_mask_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-type-alpha" => "alpha",
+        "mask-type-luminance" => "luminance",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-type:{}", value), config)
+}
+
+fn generate_mask_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-origin-border" => "border-box",
+        "mask-origin-padding" => "padding-box",
+        "mask-origin-content" => "content-box",
+        "mask-origin-fill" => "fill-box",
+        "mask-origin-stroke" => "stroke-box",
+        "mask-origin-view" => "view-box",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-origin:{}", value), config)
+}
+
+fn generate_mask_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "mask-top-left" => return rule(&selector, "mask-position:top left", config),
+        "mask-top" => return rule(&selector, "mask-position:top", config),
+        "mask-top-right" => return rule(&selector, "mask-position:top right", config),
+        "mask-left" => return rule(&selector, "mask-position:left", config),
+        "mask-center" => return rule(&selector, "mask-position:center", config),
+        "mask-right" => return rule(&selector, "mask-position:right", config),
+        "mask-bottom-left" => return rule(&selector, "mask-position:bottom left", config),
+        "mask-bottom" => return rule(&selector, "mask-position:bottom", config),
+        "mask-bottom-right" => return rule(&selector, "mask-position:bottom right", config),
+        _ => {}
+    }
+    if let Some(raw) = class
+        .strip_prefix("mask-position-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-position:var({})", raw), config);
+    }
+    if let Some(raw) = class
+        .strip_prefix("mask-position-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-position:{}", raw), config);
+    }
+    None
+}
+
+fn generate_mask_repeat_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-repeat" => "repeat",
+        "mask-no-repeat" => "no-repeat",
+        "mask-repeat-x" => "repeat-x",
+        "mask-repeat-y" => "repeat-y",
+        "mask-repeat-space" => "space",
+        "mask-repeat-round" => "round",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-repeat:{}", value), config)
+}
+
+fn generate_mask_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    match class {
+        "mask-auto" => return rule(&selector, "mask-size:auto", config),
+        "mask-cover" => return rule(&selector, "mask-size:cover", config),
+        "mask-contain" => return rule(&selector, "mask-size:contain", config),
+        _ => {}
+    }
+    if let Some(raw) = class
+        .strip_prefix("mask-size-(")
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-size:var({})", raw), config);
+    }
+    if let Some(raw) = class
+        .strip_prefix("mask-size-[")
+        .and_then(|v| v.strip_suffix(']'))
+    {
+        if raw.is_empty() {
+            return None;
+        }
+        return rule(&selector, &format!("mask-size:{}", raw), config);
+    }
+    None
+}
+
+fn generate_mask_clip_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-clip-border" => "border-box",
+        "mask-clip-padding" => "padding-box",
+        "mask-clip-content" => "content-box",
+        "mask-clip-fill" => "fill-box",
+        "mask-clip-stroke" => "stroke-box",
+        "mask-clip-view" => "view-box",
+        "mask-no-clip" => "no-clip",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-clip:{}", value), config)
+}
+
+fn generate_mask_composite_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    let value = match class {
+        "mask-add" => "add",
+        "mask-subtract" => "subtract",
+        "mask-intersect" => "intersect",
+        "mask-exclude" => "exclude",
+        _ => return None,
+    };
+    rule(&selector, &format!("mask-composite:{}", value), config)
+}
+
 fn generate_object_fit_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
     let selector = format!(".{}", escape_selector(class));
     match class {
@@ -3372,7 +4051,7 @@ fn is_container_token(token: &str) -> bool {
 }
 
 fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    if class.starts_with("text-shadow-") {
+    if class.starts_with("text-shadow-") || class.starts_with("bg-blend-") {
         return None;
     }
     let (prefix, color, shade) = split_color_class(class)?;
@@ -6562,6 +7241,523 @@ mod tests {
         assert!(result.css.contains("isolation: auto"));
         assert!(result.css.contains("@media (min-width: 768px)"));
         assert!(result.css.contains(".md\\:isolation-auto"));
+    }
+
+    #[test]
+    fn generates_mix_blend_mode_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mix-blend-normal".to_string(),
+                "mix-blend-multiply".to_string(),
+                "mix-blend-screen".to_string(),
+                "mix-blend-overlay".to_string(),
+                "mix-blend-darken".to_string(),
+                "mix-blend-lighten".to_string(),
+                "mix-blend-color-dodge".to_string(),
+                "mix-blend-color-burn".to_string(),
+                "mix-blend-hard-light".to_string(),
+                "mix-blend-soft-light".to_string(),
+                "mix-blend-difference".to_string(),
+                "mix-blend-exclusion".to_string(),
+                "mix-blend-hue".to_string(),
+                "mix-blend-saturation".to_string(),
+                "mix-blend-color".to_string(),
+                "mix-blend-luminosity".to_string(),
+                "mix-blend-plus-darker".to_string(),
+                "mix-blend-plus-lighter".to_string(),
+                "md:mix-blend-overlay".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mix-blend-normal"));
+        assert!(result.css.contains("mix-blend-mode: normal"));
+        assert!(result.css.contains(".mix-blend-multiply"));
+        assert!(result.css.contains("mix-blend-mode: multiply"));
+        assert!(result.css.contains(".mix-blend-screen"));
+        assert!(result.css.contains("mix-blend-mode: screen"));
+        assert!(result.css.contains(".mix-blend-overlay"));
+        assert!(result.css.contains("mix-blend-mode: overlay"));
+        assert!(result.css.contains(".mix-blend-darken"));
+        assert!(result.css.contains("mix-blend-mode: darken"));
+        assert!(result.css.contains(".mix-blend-lighten"));
+        assert!(result.css.contains("mix-blend-mode: lighten"));
+        assert!(result.css.contains(".mix-blend-color-dodge"));
+        assert!(result.css.contains("mix-blend-mode: color-dodge"));
+        assert!(result.css.contains(".mix-blend-color-burn"));
+        assert!(result.css.contains("mix-blend-mode: color-burn"));
+        assert!(result.css.contains(".mix-blend-hard-light"));
+        assert!(result.css.contains("mix-blend-mode: hard-light"));
+        assert!(result.css.contains(".mix-blend-soft-light"));
+        assert!(result.css.contains("mix-blend-mode: soft-light"));
+        assert!(result.css.contains(".mix-blend-difference"));
+        assert!(result.css.contains("mix-blend-mode: difference"));
+        assert!(result.css.contains(".mix-blend-exclusion"));
+        assert!(result.css.contains("mix-blend-mode: exclusion"));
+        assert!(result.css.contains(".mix-blend-hue"));
+        assert!(result.css.contains("mix-blend-mode: hue"));
+        assert!(result.css.contains(".mix-blend-saturation"));
+        assert!(result.css.contains("mix-blend-mode: saturation"));
+        assert!(result.css.contains(".mix-blend-color"));
+        assert!(result.css.contains("mix-blend-mode: color"));
+        assert!(result.css.contains(".mix-blend-luminosity"));
+        assert!(result.css.contains("mix-blend-mode: luminosity"));
+        assert!(result.css.contains(".mix-blend-plus-darker"));
+        assert!(result.css.contains("mix-blend-mode: plus-darker"));
+        assert!(result.css.contains(".mix-blend-plus-lighter"));
+        assert!(result.css.contains("mix-blend-mode: plus-lighter"));
+        assert!(result.css.contains(".md\\:mix-blend-overlay"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_background_blend_mode_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "bg-blend-normal".to_string(),
+                "bg-blend-multiply".to_string(),
+                "bg-blend-screen".to_string(),
+                "bg-blend-overlay".to_string(),
+                "bg-blend-darken".to_string(),
+                "bg-blend-lighten".to_string(),
+                "bg-blend-color-dodge".to_string(),
+                "bg-blend-color-burn".to_string(),
+                "bg-blend-hard-light".to_string(),
+                "bg-blend-soft-light".to_string(),
+                "bg-blend-difference".to_string(),
+                "bg-blend-exclusion".to_string(),
+                "bg-blend-hue".to_string(),
+                "bg-blend-saturation".to_string(),
+                "bg-blend-color".to_string(),
+                "bg-blend-luminosity".to_string(),
+                "md:bg-blend-darken".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".bg-blend-normal"));
+        assert!(result.css.contains("background-blend-mode: normal"));
+        assert!(result.css.contains(".bg-blend-multiply"));
+        assert!(result.css.contains("background-blend-mode: multiply"));
+        assert!(result.css.contains(".bg-blend-screen"));
+        assert!(result.css.contains("background-blend-mode: screen"));
+        assert!(result.css.contains(".bg-blend-overlay"));
+        assert!(result.css.contains("background-blend-mode: overlay"));
+        assert!(result.css.contains(".bg-blend-darken"));
+        assert!(result.css.contains("background-blend-mode: darken"));
+        assert!(result.css.contains(".bg-blend-lighten"));
+        assert!(result.css.contains("background-blend-mode: lighten"));
+        assert!(result.css.contains(".bg-blend-color-dodge"));
+        assert!(result.css.contains("background-blend-mode: color-dodge"));
+        assert!(result.css.contains(".bg-blend-color-burn"));
+        assert!(result.css.contains("background-blend-mode: color-burn"));
+        assert!(result.css.contains(".bg-blend-hard-light"));
+        assert!(result.css.contains("background-blend-mode: hard-light"));
+        assert!(result.css.contains(".bg-blend-soft-light"));
+        assert!(result.css.contains("background-blend-mode: soft-light"));
+        assert!(result.css.contains(".bg-blend-difference"));
+        assert!(result.css.contains("background-blend-mode: difference"));
+        assert!(result.css.contains(".bg-blend-exclusion"));
+        assert!(result.css.contains("background-blend-mode: exclusion"));
+        assert!(result.css.contains(".bg-blend-hue"));
+        assert!(result.css.contains("background-blend-mode: hue"));
+        assert!(result.css.contains(".bg-blend-saturation"));
+        assert!(result.css.contains("background-blend-mode: saturation"));
+        assert!(result.css.contains(".bg-blend-color"));
+        assert!(result.css.contains("background-blend-mode: color"));
+        assert!(result.css.contains(".bg-blend-luminosity"));
+        assert!(result.css.contains("background-blend-mode: luminosity"));
+        assert!(result.css.contains(".md\\:bg-blend-darken"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_image_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-none".to_string(),
+                "mask-[url(/img/scribble.png)]".to_string(),
+                "mask-(--my-mask)".to_string(),
+                "mask-linear-50".to_string(),
+                "-mask-linear-50".to_string(),
+                "mask-linear-from-20".to_string(),
+                "mask-linear-from-50%".to_string(),
+                "mask-linear-from-regal-blue".to_string(),
+                "mask-linear-from-(--my-stop)".to_string(),
+                "mask-linear-from-[12px]".to_string(),
+                "mask-linear-to-40".to_string(),
+                "mask-linear-to-80%".to_string(),
+                "mask-linear-to-regal-blue".to_string(),
+                "mask-linear-to-(--my-stop)".to_string(),
+                "mask-linear-to-[18px]".to_string(),
+                "mask-t-from-50%".to_string(),
+                "mask-r-to-30%".to_string(),
+                "mask-y-from-70%".to_string(),
+                "mask-x-to-90%".to_string(),
+                "mask-radial-[100%_100%]".to_string(),
+                "mask-radial-[at_30%_30%,black,transparent]".to_string(),
+                "mask-circle".to_string(),
+                "mask-radial-farthest-corner".to_string(),
+                "mask-radial-at-bottom-left".to_string(),
+                "mask-radial-at-[35%_35%]".to_string(),
+                "mask-radial-from-75%".to_string(),
+                "mask-radial-to-regal-blue".to_string(),
+                "mask-conic-75".to_string(),
+                "-mask-conic-75".to_string(),
+                "mask-conic-from-75%".to_string(),
+                "mask-conic-to-regal-blue".to_string(),
+                "md:mask-radial-from-50%".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-none"));
+        assert!(result.css.contains("mask-image: none"));
+        assert!(result.css.contains(".mask-\\[url\\(\\/img\\/scribble.png\\)\\]"));
+        assert!(result.css.contains("mask-image: url(/img/scribble.png)"));
+        assert!(result.css.contains(".mask-\\(--my-mask\\)"));
+        assert!(result.css.contains("mask-image: var(--my-mask)"));
+        assert!(result.css.contains(".mask-linear-50"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(50deg,black var(--tw-mask-linear-from),transparent var(--tw-mask-linear-to))"
+        ));
+        assert!(result.css.contains(".-mask-linear-50"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(calc(50deg * -1),black var(--tw-mask-linear-from),transparent var(--tw-mask-linear-to))"
+        ));
+        assert!(result.css.contains(".mask-linear-from-20"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(var(--tw-mask-linear-position),black calc(var(--spacing) * 20),transparent var(--tw-mask-linear-to))"
+        ));
+        assert!(result.css.contains(".mask-linear-from-50\\%"));
+        assert!(result.css.contains("black 50%,transparent var(--tw-mask-linear-to)"));
+        assert!(result.css.contains(".mask-linear-from-regal-blue"));
+        assert!(result
+            .css
+            .contains("var(--color-regal-blue) var(--tw-mask-linear-from)"));
+        assert!(result.css.contains(".mask-linear-from-\\(--my-stop\\)"));
+        assert!(result
+            .css
+            .contains("black var(--my-stop),transparent var(--tw-mask-linear-to)"));
+        assert!(result.css.contains(".mask-linear-to-40"));
+        assert!(result.css.contains(
+            "mask-image: linear-gradient(var(--tw-mask-linear-position),black var(--tw-mask-linear-from),transparent calc(var(--spacing) * 40))"
+        ));
+        assert!(result.css.contains(".mask-t-from-50\\%"));
+        assert!(result.css.contains("mask-image: linear-gradient(to top,black 50%,transparent var(--tw-mask-top-to))"));
+        assert!(result.css.contains(".mask-r-to-30\\%"));
+        assert!(result.css.contains("mask-image: linear-gradient(to right,black var(--tw-mask-right-from),transparent 30%)"));
+        assert!(result.css.contains(".mask-y-from-70\\%"));
+        assert!(result.css.contains("mask-composite: intersect"));
+        assert!(result.css.contains(".mask-x-to-90\\%"));
+        assert!(result
+            .css
+            .contains("linear-gradient(to right,black var(--tw-mask-right-from),transparent 90%),linear-gradient(to left,black var(--tw-mask-left-from),transparent 90%)"));
+        assert!(result.css.contains(".mask-radial-\\[100\\%_100\\%\\]"));
+        assert!(result.css.contains("--tw-mask-radial-size: 100%_100%"));
+        assert!(result
+            .css
+            .contains(".mask-radial-\\[at_30\\%_30\\%\\,black\\,transparent\\]"));
+        assert!(result.css.contains("mask-image: radial-gradient(at_30%_30%,black,transparent)"));
+        assert!(result.css.contains(".mask-circle"));
+        assert!(result.css.contains("--tw-mask-radial-shape: circle"));
+        assert!(result.css.contains(".mask-radial-farthest-corner"));
+        assert!(result.css.contains("--tw-mask-radial-size: farthest-corner"));
+        assert!(result.css.contains(".mask-radial-at-bottom-left"));
+        assert!(result.css.contains("--tw-mask-radial-position: bottom left"));
+        assert!(result.css.contains(".mask-radial-at-\\[35\\%_35\\%\\]"));
+        assert!(result.css.contains("--tw-mask-radial-position: 35%_35%"));
+        assert!(result.css.contains(".mask-radial-from-75\\%"));
+        assert!(result.css.contains("mask-image: radial-gradient"));
+        assert!(result.css.contains(".mask-radial-to-regal-blue"));
+        assert!(result
+            .css
+            .contains("var(--color-regal-blue) var(--tw-mask-radial-to)"));
+        assert!(result.css.contains(".mask-conic-75"));
+        assert!(result.css.contains(
+            "mask-image: conic-gradient(from 75deg,black var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))"
+        ));
+        assert!(result.css.contains(".-mask-conic-75"));
+        assert!(result.css.contains(
+            "mask-image: conic-gradient(from calc(75deg * -1),black var(--tw-mask-conic-from),transparent var(--tw-mask-conic-to))"
+        ));
+        assert!(result.css.contains(".mask-conic-from-75\\%"));
+        assert!(result.css.contains("from var(--tw-mask-conic-position),black 75%"));
+        assert!(result.css.contains(".mask-conic-to-regal-blue"));
+        assert!(result
+            .css
+            .contains("var(--color-regal-blue) var(--tw-mask-conic-to)"));
+        assert!(result.css.contains(".md\\:mask-radial-from-50\\%"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_mode_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-alpha".to_string(),
+                "mask-luminance".to_string(),
+                "mask-match".to_string(),
+                "md:mask-luminance".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-alpha"));
+        assert!(result.css.contains("mask-mode: alpha"));
+        assert!(result.css.contains(".mask-luminance"));
+        assert!(result.css.contains("mask-mode: luminance"));
+        assert!(result.css.contains(".mask-match"));
+        assert!(result.css.contains("mask-mode: match-source"));
+        assert!(result.css.contains(".md\\:mask-luminance"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_type_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-type-alpha".to_string(),
+                "mask-type-luminance".to_string(),
+                "md:mask-type-luminance".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-type-alpha"));
+        assert!(result.css.contains("mask-type: alpha"));
+        assert!(result.css.contains(".mask-type-luminance"));
+        assert!(result.css.contains("mask-type: luminance"));
+        assert!(result.css.contains(".md\\:mask-type-luminance"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_origin_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-origin-border".to_string(),
+                "mask-origin-padding".to_string(),
+                "mask-origin-content".to_string(),
+                "mask-origin-fill".to_string(),
+                "mask-origin-stroke".to_string(),
+                "mask-origin-view".to_string(),
+                "md:mask-origin-padding".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-origin-border"));
+        assert!(result.css.contains("mask-origin: border-box"));
+        assert!(result.css.contains(".mask-origin-padding"));
+        assert!(result.css.contains("mask-origin: padding-box"));
+        assert!(result.css.contains(".mask-origin-content"));
+        assert!(result.css.contains("mask-origin: content-box"));
+        assert!(result.css.contains(".mask-origin-fill"));
+        assert!(result.css.contains("mask-origin: fill-box"));
+        assert!(result.css.contains(".mask-origin-stroke"));
+        assert!(result.css.contains("mask-origin: stroke-box"));
+        assert!(result.css.contains(".mask-origin-view"));
+        assert!(result.css.contains("mask-origin: view-box"));
+        assert!(result.css.contains(".md\\:mask-origin-padding"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_position_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-top-left".to_string(),
+                "mask-top".to_string(),
+                "mask-top-right".to_string(),
+                "mask-left".to_string(),
+                "mask-center".to_string(),
+                "mask-right".to_string(),
+                "mask-bottom-left".to_string(),
+                "mask-bottom".to_string(),
+                "mask-bottom-right".to_string(),
+                "mask-position-(--my-mask-position)".to_string(),
+                "mask-position-[center_top_1rem]".to_string(),
+                "md:mask-top".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-top-left"));
+        assert!(result.css.contains("mask-position: top left"));
+        assert!(result.css.contains(".mask-top"));
+        assert!(result.css.contains("mask-position: top"));
+        assert!(result.css.contains(".mask-top-right"));
+        assert!(result.css.contains("mask-position: top right"));
+        assert!(result.css.contains(".mask-left"));
+        assert!(result.css.contains("mask-position: left"));
+        assert!(result.css.contains(".mask-center"));
+        assert!(result.css.contains("mask-position: center"));
+        assert!(result.css.contains(".mask-right"));
+        assert!(result.css.contains("mask-position: right"));
+        assert!(result.css.contains(".mask-bottom-left"));
+        assert!(result.css.contains("mask-position: bottom left"));
+        assert!(result.css.contains(".mask-bottom"));
+        assert!(result.css.contains("mask-position: bottom"));
+        assert!(result.css.contains(".mask-bottom-right"));
+        assert!(result.css.contains("mask-position: bottom right"));
+        assert!(result.css.contains(".mask-position-\\(--my-mask-position\\)"));
+        assert!(result.css.contains("mask-position: var(--my-mask-position)"));
+        assert!(result.css.contains(".mask-position-\\[center_top_1rem\\]"));
+        assert!(result.css.contains("mask-position: center_top_1rem"));
+        assert!(result.css.contains(".md\\:mask-top"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_repeat_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-repeat".to_string(),
+                "mask-no-repeat".to_string(),
+                "mask-repeat-x".to_string(),
+                "mask-repeat-y".to_string(),
+                "mask-repeat-space".to_string(),
+                "mask-repeat-round".to_string(),
+                "md:mask-repeat-x".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-repeat"));
+        assert!(result.css.contains("mask-repeat: repeat"));
+        assert!(result.css.contains(".mask-no-repeat"));
+        assert!(result.css.contains("mask-repeat: no-repeat"));
+        assert!(result.css.contains(".mask-repeat-x"));
+        assert!(result.css.contains("mask-repeat: repeat-x"));
+        assert!(result.css.contains(".mask-repeat-y"));
+        assert!(result.css.contains("mask-repeat: repeat-y"));
+        assert!(result.css.contains(".mask-repeat-space"));
+        assert!(result.css.contains("mask-repeat: space"));
+        assert!(result.css.contains(".mask-repeat-round"));
+        assert!(result.css.contains("mask-repeat: round"));
+        assert!(result.css.contains(".md\\:mask-repeat-x"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_size_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-auto".to_string(),
+                "mask-cover".to_string(),
+                "mask-contain".to_string(),
+                "mask-size-(--my-mask-size)".to_string(),
+                "mask-size-[auto_100px]".to_string(),
+                "md:mask-contain".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-auto"));
+        assert!(result.css.contains("mask-size: auto"));
+        assert!(result.css.contains(".mask-cover"));
+        assert!(result.css.contains("mask-size: cover"));
+        assert!(result.css.contains(".mask-contain"));
+        assert!(result.css.contains("mask-size: contain"));
+        assert!(result.css.contains(".mask-size-\\(--my-mask-size\\)"));
+        assert!(result.css.contains("mask-size: var(--my-mask-size)"));
+        assert!(result.css.contains(".mask-size-\\[auto_100px\\]"));
+        assert!(result.css.contains("mask-size: auto_100px"));
+        assert!(result.css.contains(".md\\:mask-contain"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_clip_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-clip-border".to_string(),
+                "mask-clip-padding".to_string(),
+                "mask-clip-content".to_string(),
+                "mask-clip-fill".to_string(),
+                "mask-clip-stroke".to_string(),
+                "mask-clip-view".to_string(),
+                "mask-no-clip".to_string(),
+                "md:mask-clip-padding".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-clip-border"));
+        assert!(result.css.contains("mask-clip: border-box"));
+        assert!(result.css.contains(".mask-clip-padding"));
+        assert!(result.css.contains("mask-clip: padding-box"));
+        assert!(result.css.contains(".mask-clip-content"));
+        assert!(result.css.contains("mask-clip: content-box"));
+        assert!(result.css.contains(".mask-clip-fill"));
+        assert!(result.css.contains("mask-clip: fill-box"));
+        assert!(result.css.contains(".mask-clip-stroke"));
+        assert!(result.css.contains("mask-clip: stroke-box"));
+        assert!(result.css.contains(".mask-clip-view"));
+        assert!(result.css.contains("mask-clip: view-box"));
+        assert!(result.css.contains(".mask-no-clip"));
+        assert!(result.css.contains("mask-clip: no-clip"));
+        assert!(result.css.contains(".md\\:mask-clip-padding"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
+    }
+
+    #[test]
+    fn generates_mask_composite_rules() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let result = generate(
+            &[
+                "mask-add".to_string(),
+                "mask-subtract".to_string(),
+                "mask-intersect".to_string(),
+                "mask-exclude".to_string(),
+                "md:mask-subtract".to_string(),
+            ],
+            &config,
+        );
+        assert!(result.css.contains(".mask-add"));
+        assert!(result.css.contains("mask-composite: add"));
+        assert!(result.css.contains(".mask-subtract"));
+        assert!(result.css.contains("mask-composite: subtract"));
+        assert!(result.css.contains(".mask-intersect"));
+        assert!(result.css.contains("mask-composite: intersect"));
+        assert!(result.css.contains(".mask-exclude"));
+        assert!(result.css.contains("mask-composite: exclude"));
+        assert!(result.css.contains(".md\\:mask-subtract"));
+        assert!(result.css.contains("@media (min-width: 768px)"));
     }
 
     #[test]
