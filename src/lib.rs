@@ -3349,13 +3349,15 @@ mod tests {
     use super::{
         Command, PREFLIGHT_CSS, apply_framework_import_alias, apply_important_to_css,
         apply_prefix_to_css, emit_parsed_theme_css, expand_apply_directives, expand_braces,
-        expand_build_time_functions, expand_variant_directives, inline_css_imports,
-        normalize_source_pattern, parse_args, parse_framework_import_directives,
-        parse_source_directives, parse_theme, strip_tailwind_custom_directives,
-        watch_roots_for_build,
+        expand_build_time_functions, expand_variant_directives, find_matching_brace,
+        inline_css_imports, normalize_source_pattern, parse_args,
+        parse_framework_import_directives, parse_source_directives, parse_theme,
+        strip_tailwind_custom_directives, watch_roots_for_build,
     };
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
+    use std::process::Command as ProcessCommand;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn render_framework_import(template_css: &str, generated_css: &str) -> Option<String> {
@@ -3367,6 +3369,156 @@ mod tests {
             generated_css,
             false,
         )
+    }
+
+    fn run_process(cmd: &mut ProcessCommand, context: &str) {
+        let output = cmd
+            .output()
+            .unwrap_or_else(|err| panic!("{} failed to execute: {}", context, err));
+        if !output.status.success() {
+            panic!(
+                "{} failed with status {}\nstdout:\n{}\nstderr:\n{}",
+                context,
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    fn strip_ascii_whitespace(input: &str) -> String {
+        input
+            .chars()
+            .filter(|ch| !ch.is_ascii_whitespace())
+            .collect()
+    }
+
+    fn consume_comment(css: &str, start: usize) -> usize {
+        if !css[start..].starts_with("/*") {
+            return start;
+        }
+        let tail = &css[start + 2..];
+        let Some(end_rel) = tail.find("*/") else {
+            return css.len();
+        };
+        start + 2 + end_rel + 2
+    }
+
+    fn collect_class_rule_blocks(css: &str) -> BTreeMap<String, String> {
+        fn recurse(fragment: &str, out: &mut BTreeMap<String, String>) {
+            let mut cursor = 0usize;
+            let len = fragment.len();
+
+            while cursor < len {
+                while cursor < len {
+                    let next = consume_comment(fragment, cursor);
+                    if next != cursor {
+                        cursor = next;
+                        continue;
+                    }
+                    if fragment.as_bytes()[cursor].is_ascii_whitespace() {
+                        cursor += 1;
+                        continue;
+                    }
+                    break;
+                }
+                if cursor >= len {
+                    break;
+                }
+
+                let header_start = cursor;
+                let mut idx = cursor;
+                let mut delimiter = None;
+                while idx < len {
+                    let next = consume_comment(fragment, idx);
+                    if next != idx {
+                        idx = next;
+                        continue;
+                    }
+                    match fragment.as_bytes()[idx] {
+                        b'{' => {
+                            delimiter = Some((idx, b'{'));
+                            break;
+                        }
+                        b';' => {
+                            delimiter = Some((idx, b';'));
+                            break;
+                        }
+                        _ => idx += 1,
+                    }
+                }
+
+                let Some((end, kind)) = delimiter else {
+                    break;
+                };
+                let header = fragment[header_start..end].trim();
+                if kind == b';' {
+                    cursor = end + 1;
+                    continue;
+                }
+
+                let Some(close) = find_matching_brace(fragment, end) else {
+                    break;
+                };
+                let body = &fragment[end + 1..close];
+                if header.starts_with('@') {
+                    recurse(body, out);
+                } else if header.starts_with('.') {
+                    let key = strip_ascii_whitespace(header);
+                    let value = strip_ascii_whitespace(body);
+                    if let Some(previous) = out.insert(key.clone(), value.clone()) {
+                        panic!(
+                            "duplicate selector block `{}`\nprev: {}\nnext: {}",
+                            key, previous, value
+                        );
+                    }
+                }
+                cursor = close + 1;
+            }
+        }
+
+        let mut blocks = BTreeMap::new();
+        recurse(css, &mut blocks);
+        blocks
+    }
+
+    fn assert_class_rule_maps_equal(
+        expected: &BTreeMap<String, String>,
+        actual: &BTreeMap<String, String>,
+    ) {
+        if expected == actual {
+            return;
+        }
+
+        let expected_keys = expected.keys().cloned().collect::<BTreeSet<_>>();
+        let actual_keys = actual.keys().cloned().collect::<BTreeSet<_>>();
+
+        let missing = expected_keys
+            .difference(&actual_keys)
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>();
+        let extra = actual_keys
+            .difference(&expected_keys)
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>();
+        let changed = expected_keys
+            .intersection(&actual_keys)
+            .filter_map(|key| {
+                if expected.get(key) != actual.get(key) {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .take(10)
+            .collect::<Vec<_>>();
+
+        panic!(
+            "class rule mismatch\nmissing selectors (first 10): {:?}\nextra selectors (first 10): {:?}\nchanged selectors (first 10): {:?}",
+            missing, extra, changed
+        );
     }
 
     #[test]
@@ -3493,6 +3645,48 @@ mod tests {
         let err = super::compare_css_from_second_line(actual, reference)
             .expect_err("comparison should fail");
         assert!(err.contains("line 3"));
+    }
+
+    #[test]
+    fn complex_html_utility_output_matches_tailwind() {
+        let fixture_dir =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/complex_parity");
+        let base = temp_dir("tailwind_parity_complex");
+        fs::create_dir_all(&base).expect("should create temporary workspace");
+        fs::copy(fixture_dir.join("app.css"), base.join("app.css"))
+            .expect("should copy fixture app.css");
+        fs::copy(fixture_dir.join("complex.html"), base.join("complex.html"))
+            .expect("should copy fixture complex.html");
+
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let mut ironframe = ProcessCommand::new("cargo");
+        ironframe
+            .args([
+                "run",
+                "-q",
+                "--manifest-path",
+                manifest.to_string_lossy().as_ref(),
+                "--",
+                "build",
+                "-i",
+                "app.css",
+                "-o",
+                "ironframe.css",
+                "complex.html",
+            ])
+            .current_dir(&base);
+        run_process(&mut ironframe, "ironframe build");
+
+        let tailwind_css = fs::read_to_string(fixture_dir.join("tailwind.css"))
+            .expect("should read fixture tailwind output");
+        let ironframe_css =
+            fs::read_to_string(base.join("ironframe.css")).expect("should read ironframe output");
+
+        let tailwind_blocks = collect_class_rule_blocks(&tailwind_css);
+        let ironframe_blocks = collect_class_rule_blocks(&ironframe_css);
+        assert_class_rule_maps_equal(&tailwind_blocks, &ironframe_blocks);
+
+        let _ = fs::remove_dir_all(base);
     }
 
     #[test]
