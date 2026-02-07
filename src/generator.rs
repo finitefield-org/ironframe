@@ -245,11 +245,17 @@ fn single_variant_sort_rank(variant: &str) -> u16 {
     if variant.is_empty() {
         return 0;
     }
-    if is_responsive_variant(variant) {
-        return 1000;
+    if let Some(responsive_rank) = responsive_variant_sort_rank(variant) {
+        return responsive_rank;
+    }
+    if variant.starts_with('[') && variant.ends_with(']') {
+        return 1106;
     }
     if is_container_variant(variant) {
         return 980;
+    }
+    if variant == "group-open" {
+        return 95;
     }
     if variant.starts_with("group-") || variant.starts_with("peer-") {
         return 100;
@@ -257,7 +263,6 @@ fn single_variant_sort_rank(variant: &str) -> u16 {
     if matches!(
         variant,
         "before"
-            | "after"
             | "hover"
             | "focus"
             | "focus-visible"
@@ -277,19 +282,30 @@ fn single_variant_sort_rank(variant: &str) -> u16 {
     ) {
         return 120;
     }
+    if variant == "after" {
+        return 121;
+    }
     if variant == "dark" {
         return 160;
     }
     if variant.starts_with("supports-") {
         return 220;
     }
-    200
+    260
 }
 
-fn is_responsive_variant(variant: &str) -> bool {
-    matches!(variant, "sm" | "md" | "lg" | "xl" | "2xl")
-        || variant.starts_with("max-")
-        || variant.starts_with("min-")
+fn responsive_variant_sort_rank(variant: &str) -> Option<u16> {
+    let rank = match variant {
+        "sm" => 1000,
+        "md" => 1001,
+        "lg" => 1002,
+        "xl" => 1003,
+        "2xl" => 1004,
+        _ if variant.starts_with("max-") => 995,
+        _ if variant.starts_with("min-") => 1005,
+        _ => return None,
+    };
+    Some(rank)
 }
 
 fn is_container_variant(variant: &str) -> bool {
@@ -343,6 +359,9 @@ fn natural_class_sort_key(class_name: &str) -> String {
 }
 
 fn utility_family_rank(base: &str) -> u16 {
+    if base == "ring-inset" {
+        return 1209;
+    }
     if base.starts_with("pointer-events-") {
         return 0;
     }
@@ -577,7 +596,7 @@ fn utility_family_rank(base: &str) -> u16 {
         return 1205;
     }
     if base.starts_with("accent-") {
-        return 1206;
+        return 1010;
     }
     if matches!(
         base,
@@ -592,7 +611,7 @@ fn utility_family_rank(base: &str) -> u16 {
             | "line-through"
             | "overline"
     ) {
-        return 1207;
+        return 1120;
     }
     if base.starts_with("delay-")
         || base.starts_with("duration-")
@@ -875,33 +894,71 @@ fn utility_subfamily_rank(base: &str) -> u16 {
     if base.starts_with("-translate-y-") || base.starts_with("translate-y-") {
         return 11;
     }
-    if base == "rounded"
-        || (base.starts_with("rounded-")
-            && !base.starts_with("rounded-t")
-            && !base.starts_with("rounded-r")
-            && !base.starts_with("rounded-b")
-            && !base.starts_with("rounded-l"))
-    {
+    if base == "rounded" || (base.starts_with("rounded-") && !is_directional_rounded_utility(base)) {
         return 15;
     }
-    if base.starts_with("rounded-") {
+    if base.starts_with("rounded-t") {
         return 16;
     }
-    if base == "border"
-        || matches!(base, "border-0" | "border-2" | "border-4" | "border-dashed" | "border-none")
-        || base == "border-t"
-        || base.starts_with("border-t-")
-        || base == "border-r"
-        || base.starts_with("border-r-")
-        || base == "border-b"
-        || base.starts_with("border-b-")
-        || base == "border-l"
-        || base.starts_with("border-l-")
-    {
+    if base.starts_with("rounded-r") {
         return 17;
     }
-    if base.starts_with("border-") {
+    if base.starts_with("rounded-b") {
         return 18;
+    }
+    if base.starts_with("rounded-l") {
+        return 19;
+    }
+    if base.starts_with("rounded-") {
+        return 20;
+    }
+    if base == "border" || matches!(base, "border-0" | "border-2" | "border-4") {
+        return 21;
+    }
+    if base == "border-t" || base.starts_with("border-t-") {
+        return 22;
+    }
+    if base == "border-r" || base.starts_with("border-r-") {
+        return 23;
+    }
+    if base == "border-b" || base.starts_with("border-b-") {
+        return 24;
+    }
+    if base == "border-l" || base.starts_with("border-l-") {
+        return 25;
+    }
+    if matches!(base, "border-dashed" | "border-none") {
+        return 26;
+    }
+    if base.starts_with("border-") {
+        return 27;
+    }
+    if base.starts_with("bg-")
+        && !base.starts_with("bg-gradient-to-")
+        && !base.starts_with("bg-[radial-gradient(")
+    {
+        return 39;
+    }
+    if base.starts_with("p-") && !base.starts_with("px-") && !base.starts_with("py-") {
+        return 46;
+    }
+    if base.starts_with("px-") {
+        return 47;
+    }
+    if base.starts_with("py-") {
+        return 48;
+    }
+    if base.starts_with("pt-") {
+        return 49;
+    }
+    if base.starts_with("pr-") {
+        return 50;
+    }
+    if base.starts_with("pb-") {
+        return 51;
+    }
+    if base.starts_with("pl-") {
+        return 52;
     }
     if base.starts_with("gap-") && !base.starts_with("gap-x-") && !base.starts_with("gap-y-") {
         return 20;
@@ -952,6 +1009,39 @@ fn utility_subfamily_rank(base: &str) -> u16 {
         return 45;
     }
     65535
+}
+
+fn is_directional_rounded_utility(base: &str) -> bool {
+    matches!(
+        base,
+        "rounded-t"
+            | "rounded-r"
+            | "rounded-b"
+            | "rounded-l"
+            | "rounded-tl"
+            | "rounded-tr"
+            | "rounded-br"
+            | "rounded-bl"
+            | "rounded-s"
+            | "rounded-e"
+            | "rounded-ss"
+            | "rounded-se"
+            | "rounded-ee"
+            | "rounded-es"
+    ) || base.starts_with("rounded-t-")
+        || base.starts_with("rounded-r-")
+        || base.starts_with("rounded-b-")
+        || base.starts_with("rounded-l-")
+        || base.starts_with("rounded-tl-")
+        || base.starts_with("rounded-tr-")
+        || base.starts_with("rounded-br-")
+        || base.starts_with("rounded-bl-")
+        || base.starts_with("rounded-s-")
+        || base.starts_with("rounded-e-")
+        || base.starts_with("rounded-ss-")
+        || base.starts_with("rounded-se-")
+        || base.starts_with("rounded-ee-")
+        || base.starts_with("rounded-es-")
 }
 
 fn position_utility_rank(base: &str) -> Option<u16> {
@@ -1148,6 +1238,9 @@ fn find_matching_brace_index(css: &str, open_idx: usize) -> Option<usize> {
 
 fn property_order_rank(property: &str) -> u16 {
     let property = property.trim();
+    if property == "background-clip" {
+        return 214;
+    }
     if property.starts_with("--tw-gradient-from") {
         return 211;
     }
@@ -1175,6 +1268,15 @@ fn property_order_rank(property: &str) -> u16 {
     }
     if property.starts_with("--tw-space-") {
         return 15;
+    }
+    if property.starts_with("--tw-font-weight") || property.starts_with("--tw-font-stretch") {
+        return 322;
+    }
+    if property.starts_with("--tw-leading") {
+        return 321;
+    }
+    if property.starts_with("--tw-tracking") {
+        return 323;
     }
     if property.starts_with("--tw-divide-") {
         return 217;
@@ -1288,22 +1390,19 @@ fn property_order_rank(property: &str) -> u16 {
         | "backface-visibility" => 270,
         "animation" => 280,
         "cursor" => 290,
-        "touch-action" | "user-select" | "resize" => 300,
+        "touch-action" | "resize" => 300,
+        "user-select" => 336,
         "accent-color" | "appearance" | "color-scheme" | "forced-color-adjust" => 310,
-        "font-size"
-        | "line-height"
-        | "font-family"
-        | "font-weight"
-        | "font-style"
-        | "font-variant-numeric"
-        | "letter-spacing"
-        | "text-transform"
-        | "text-overflow"
-        | "text-wrap"
-        | "text-align"
-        | "text-indent"
-        | "vertical-align"
-        | "white-space" => 320,
+        "text-align" => 314,
+        "vertical-align" => 315,
+        "font-family" => 316,
+        "font-size" => 320,
+        "line-height" => 321,
+        "font-weight" | "font-style" | "font-variant-numeric" => 322,
+        "letter-spacing" => 323,
+        "text-overflow" | "text-wrap" | "text-indent" | "word-break" | "overflow-wrap" => 324,
+        "white-space" => 325,
+        "text-transform" => 326,
         "color"
         | "fill"
         | "stroke"
@@ -4333,7 +4432,7 @@ fn gradient_stop_rule(
             "via" => {
                 let with_via = append_declaration(
                     color_declaration,
-                    "--tw-gradient-via-stops:var(--tw-gradient-position),var(--tw-gradient-from) var(--tw-gradient-from-position),var(--tw-gradient-via) var(--tw-gradient-via-position),var(--tw-gradient-to) var(--tw-gradient-to-position)",
+                    "--tw-gradient-via-stops:var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-via) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)",
                 );
                 append_declaration(
                     &with_via,
@@ -4342,7 +4441,7 @@ fn gradient_stop_rule(
             }
             _ => append_declaration(
                 color_declaration,
-                "--tw-gradient-stops:var(--tw-gradient-via-stops,var(--tw-gradient-position),var(--tw-gradient-from) var(--tw-gradient-from-position),var(--tw-gradient-to) var(--tw-gradient-to-position))",
+                "--tw-gradient-stops:var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position))",
             ),
         }
     };

@@ -542,12 +542,12 @@ fn run_build(
             ),
         })?;
     }
-    let mut used_compiled_passthrough = false;
+    let mut used_passthrough = false;
     if let Some(compiled_template) = compiled_template_css.as_ref() {
-        css = compiled_template.clone();
-        used_compiled_passthrough = true;
+        css = replace_first_line(compiled_template, &header);
+        used_passthrough = true;
     }
-    if !used_compiled_passthrough {
+    if !used_passthrough {
         css = expand_build_time_functions(&css);
     }
 
@@ -593,7 +593,26 @@ fn print_help() {
 }
 
 fn build_header(_files_scanned: usize, _class_count: usize, _minify: bool) -> String {
-    "/*! tailwindcss v4.1.17 | MIT License | https://tailwindcss.com */".to_string()
+    "/*! ironframe | MIT License | https://finitefield.com/en/oss/ironframe/ */".to_string()
+}
+
+fn replace_first_line(css: &str, first_line: &str) -> String {
+    let mut lines = css.lines();
+    let had_any = lines.next().is_some();
+    if !had_any {
+        return first_line.to_string();
+    }
+
+    let mut out = String::new();
+    out.push_str(first_line);
+    for line in lines {
+        out.push('\n');
+        out.push_str(line);
+    }
+    if css.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 #[derive(Debug, Clone)]
