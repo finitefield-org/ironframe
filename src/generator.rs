@@ -17,6 +17,7 @@ pub struct GenerationResult {
 struct RuleSortKey {
     variant_bucket: u8,
     variant_rank: u16,
+    variant_chain_key: String,
     wrapper_bucket: u8,
     family_rank: u16,
     property_rank: u16,
@@ -221,6 +222,7 @@ fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
     RuleSortKey {
         variant_bucket: if variants.is_empty() { 0 } else { 1 },
         variant_rank: variant_sort_rank(&variants),
+        variant_chain_key: variant_chain_sort_key(&variants),
         wrapper_bucket: rule_wrapper_bucket(rule),
         family_rank: utility_family_rank(base),
         property_rank: extract_primary_declaration_property(rule)
@@ -241,6 +243,31 @@ fn variant_sort_rank(variants: &[&str]) -> u16 {
         .unwrap_or(0)
 }
 
+fn variant_chain_sort_key(variants: &[&str]) -> String {
+    if variants.is_empty() {
+        return String::new();
+    }
+
+    let mut parts: Vec<(u16, &str)> = variants
+        .iter()
+        .map(|variant| (single_variant_sort_rank(variant), *variant))
+        .collect();
+    parts.sort_by(|(left_rank, left_name), (right_rank, right_name)| {
+        right_rank
+            .cmp(left_rank)
+            .then_with(|| left_name.cmp(right_name))
+    });
+
+    let mut key = String::with_capacity(variants.len() * 18);
+    for (idx, (rank, variant)) in parts.into_iter().enumerate() {
+        if idx > 0 {
+            key.push('|');
+        }
+        key.push_str(&format!("{rank:04}:{variant}"));
+    }
+    key
+}
+
 fn single_variant_sort_rank(variant: &str) -> u16 {
     if variant.is_empty() {
         return 0;
@@ -257,33 +284,66 @@ fn single_variant_sort_rank(variant: &str) -> u16 {
     if variant == "group-open" {
         return 95;
     }
-    if variant.starts_with("group-") || variant.starts_with("peer-") {
+    if variant == "group-odd" {
+        return 99;
+    }
+    if variant == "group-even" {
         return 100;
+    }
+    if variant.starts_with("group-") {
+        return 100;
+    }
+    if variant.starts_with("peer-") {
+        return 101;
+    }
+    if variant == "placeholder" {
+        return 120;
+    }
+    if variant == "before" {
+        return 121;
+    }
+    if variant == "after" {
+        return 122;
+    }
+    if variant == "open" {
+        return 123;
+    }
+    if variant == "odd" {
+        return 124;
+    }
+    if variant == "even" {
+        return 125;
+    }
+    if variant == "hover" {
+        return 124;
+    }
+    if variant == "focus-within" {
+        return 125;
+    }
+    if variant == "focus" {
+        return 126;
+    }
+    if variant == "focus-visible" {
+        return 127;
+    }
+    if variant == "active" {
+        return 128;
+    }
+    if variant == "visited" {
+        return 129;
+    }
+    if variant == "disabled" {
+        return 130;
     }
     if matches!(
         variant,
-        "before"
-            | "hover"
-            | "focus"
-            | "focus-visible"
-            | "focus-within"
-            | "active"
-            | "visited"
-            | "disabled"
-            | "placeholder"
-            | "selection"
+        "selection"
             | "first"
             | "last"
-            | "odd"
-            | "even"
             | "only"
             | "empty"
-            | "open"
     ) {
         return 120;
-    }
-    if variant == "after" {
-        return 121;
     }
     if variant == "dark" {
         return 160;
@@ -324,7 +384,6 @@ fn natural_class_sort_key(class_name: &str) -> String {
 
         if ch.is_ascii_digit() {
             let mut end = cursor + ch.len_utf8();
-            let mut seen_dot = false;
             while end < class_name.len() {
                 let Some(next) = class_name[end..].chars().next() else {
                     break;
@@ -333,17 +392,12 @@ fn natural_class_sort_key(class_name: &str) -> String {
                     end += next.len_utf8();
                     continue;
                 }
-                if next == '.' && !seen_dot {
-                    seen_dot = true;
-                    end += next.len_utf8();
-                    continue;
-                }
                 break;
             }
 
             let number = &class_name[cursor..end];
-            if let Ok(parsed) = number.parse::<f64>() {
-                out.push_str(&format!("#{:020.6}", parsed));
+            if let Ok(parsed) = number.parse::<u64>() {
+                out.push_str(&format!("#{parsed:020}"));
             } else {
                 out.push_str(number);
             }
@@ -360,6 +414,12 @@ fn natural_class_sort_key(class_name: &str) -> String {
 
 fn utility_family_rank(base: &str) -> u16 {
     if base == "ring-inset" {
+        return 1210;
+    }
+    if base == "outline-none" {
+        return 1209;
+    }
+    if base.starts_with("select-") {
         return 1209;
     }
     if base.starts_with("pointer-events-") {
@@ -448,6 +508,9 @@ fn utility_family_rank(base: &str) -> u16 {
     }
     if is_display_family_utility(base) || base.starts_with("aspect-") {
         return 498;
+    }
+    if base == "content-none" || base.starts_with("content-[") || base.starts_with("content-(") {
+        return 1209;
     }
     if base.starts_with("size-") {
         return 499;
@@ -560,56 +623,75 @@ fn utility_family_rank(base: &str) -> u16 {
     if base.starts_with("gap-y-") {
         return 533;
     }
-    if base.starts_with("divide-") {
+    if base == "divide-x" || base == "divide-y" {
         return 534;
     }
-    if base.starts_with("self-") {
+    if base.starts_with("divide-") {
         return 535;
+    }
+    if base.starts_with("self-") {
+        return 536;
     }
     if base.starts_with("overflow-") || base == "truncate" {
         return 536;
     }
-    if base.starts_with("shadow-") || base == "shadow" {
+    if base == "shadow" || is_shadow_non_color_utility(base) {
         return 1200;
     }
-    if base.starts_with("ring-") || base == "ring" {
+    if is_shadow_color_utility(base) || is_ring_width_utility(base) {
         return 1201;
     }
-    if base.starts_with("outline-") || base == "outline" {
+    if is_ring_color_utility(base) {
         return 1202;
     }
-    if base.starts_with("drop-shadow-") {
+    if base.starts_with("outline-") || base == "outline" {
         return 1203;
     }
+    if base.starts_with("drop-shadow-") {
+        return 1205;
+    }
     if base.starts_with("opacity-") {
+        return 1190;
+    }
+    if base == "blur" || base.starts_with("blur-") {
         return 1204;
     }
-    if base == "blur"
-        || base.starts_with("blur-")
-        || base == "backdrop-filter"
-        || base == "backdrop-blur"
-        || base.starts_with("backdrop-blur-")
-    {
-        return 1205;
+    if base.starts_with("mix-blend-") || base.starts_with("bg-blend-") {
+        return 1191;
     }
-    if base == "filter" || base.starts_with("mix-blend-") || base.starts_with("bg-blend-") {
-        return 1205;
+    if base == "filter" {
+        return 1206;
+    }
+    if base == "backdrop-filter" || base == "backdrop-blur" || base.starts_with("backdrop-blur-")
+    {
+        return 1207;
     }
     if base.starts_with("accent-") {
-        return 1010;
+        return 1124;
+    }
+    if matches!(base, "uppercase" | "lowercase" | "capitalize" | "normal-case") {
+        return 1120;
+    }
+    if matches!(base, "italic" | "not-italic") {
+        return 1121;
+    }
+    if matches!(base, "underline" | "no-underline" | "line-through" | "overline") {
+        return 1122;
+    }
+    if matches!(base, "antialiased" | "subpixel-antialiased") {
+        return 1123;
     }
     if matches!(
         base,
-        "italic"
-            | "not-italic"
-            | "uppercase"
-            | "lowercase"
-            | "capitalize"
-            | "normal-case"
-            | "underline"
-            | "no-underline"
-            | "line-through"
-            | "overline"
+        "ordinal"
+            | "slashed-zero"
+            | "lining-nums"
+            | "oldstyle-nums"
+            | "proportional-nums"
+            | "tabular-nums"
+            | "diagonal-fractions"
+            | "stacked-fractions"
+            | "normal-nums"
     ) {
         return 1120;
     }
@@ -651,7 +733,78 @@ fn is_display_family_utility(base: &str) -> bool {
     )
 }
 
+fn is_shadow_non_color_utility(base: &str) -> bool {
+    let Some(raw) = base.strip_prefix("shadow-") else {
+        return false;
+    };
+    if matches!(raw, "sm" | "md" | "lg" | "xl" | "2xl" | "inner" | "none") {
+        return true;
+    }
+    if raw.starts_with('[') && !raw.starts_with("[color:") {
+        return true;
+    }
+    if raw.starts_with('(') && !raw.starts_with("(color:") {
+        return true;
+    }
+    false
+}
+
+fn is_shadow_color_utility(base: &str) -> bool {
+    let Some(raw) = base.strip_prefix("shadow-") else {
+        return false;
+    };
+    if raw.is_empty() {
+        return false;
+    }
+    !is_shadow_non_color_utility(base)
+}
+
+fn is_ring_width_utility(base: &str) -> bool {
+    if base == "ring" {
+        return true;
+    }
+    let Some(raw) = base.strip_prefix("ring-") else {
+        return false;
+    };
+    matches!(raw, "0" | "1" | "2" | "4" | "8")
+        || raw.starts_with("(length:")
+        || raw.starts_with("[length:")
+}
+
+fn is_ring_color_utility(base: &str) -> bool {
+    if base == "ring" || base == "ring-inset" {
+        return false;
+    }
+    if !base.starts_with("ring-") {
+        return false;
+    }
+    !is_ring_width_utility(base)
+}
+
+fn is_outline_color_utility(base: &str) -> bool {
+    let Some(raw) = base.strip_prefix("outline-") else {
+        return false;
+    };
+    if raw.is_empty()
+        || raw.starts_with("offset-")
+        || raw.starts_with("[length:")
+        || raw.starts_with("(length:")
+        || matches!(
+            raw,
+            "solid" | "dashed" | "dotted" | "double" | "none" | "hidden"
+        )
+        || raw.chars().all(|ch| ch.is_ascii_digit())
+    {
+        return false;
+    }
+    true
+}
+
 fn utility_value_rank(base: &str) -> i32 {
+    if let Some(rank) = text_size_value_rank(base) {
+        return rank;
+    }
+
     let Some(meta) = rankable_utility_meta(base) else {
         return i32::MAX;
     };
@@ -738,6 +891,45 @@ fn utility_value_rank(base: &str) -> i32 {
     }
 
     99_999
+}
+
+fn text_size_value_rank(base: &str) -> Option<i32> {
+    let token = base.strip_prefix("text-")?;
+    if token.is_empty() || token.contains('-') {
+        return None;
+    }
+
+    if let Some((size, _line)) = token.split_once('/') {
+        return text_size_token_rank(size);
+    }
+
+    text_size_token_rank(token)
+}
+
+fn text_size_token_rank(token: &str) -> Option<i32> {
+    match token {
+        "2xl" => Some(200),
+        "3xl" => Some(210),
+        "4xl" => Some(220),
+        "5xl" => Some(230),
+        "6xl" => Some(240),
+        "7xl" => Some(250),
+        "8xl" => Some(260),
+        "9xl" => Some(270),
+        "base" => Some(300),
+        "lg" => Some(310),
+        "sm" => Some(320),
+        "xl" => Some(330),
+        "xs" => Some(340),
+        _ => {
+            if let Some(raw) = token.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+                if raw.chars().all(|ch| ch.is_ascii_digit()) {
+                    return raw.parse::<i32>().ok().map(|n| 400 + n);
+                }
+            }
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -865,6 +1057,7 @@ fn sizing_keyword_rank(token: &str) -> Option<i32> {
         "lvh" => Some(177_000),
         "svh" => Some(178_000),
         "px" => Some(179_000),
+        "none" => Some(190_000),
         _ => None,
     }
 }
@@ -887,6 +1080,9 @@ fn utility_subfamily_rank(base: &str) -> u16 {
     }
     if base.starts_with("min-w-") {
         return 6;
+    }
+    if base.starts_with("aspect-") {
+        return 90;
     }
     if base.starts_with("-translate-x-") || base.starts_with("translate-x-") {
         return 10;
@@ -977,6 +1173,41 @@ fn utility_subfamily_rank(base: &str) -> u16 {
     }
     if base == "divide-x" || base == "divide-y" {
         return 25;
+    }
+    if base == "outline"
+        || matches!(
+            base,
+            "outline-solid"
+                | "outline-dashed"
+                | "outline-dotted"
+                | "outline-double"
+                | "outline-none"
+                | "outline-hidden"
+        )
+        || (base.starts_with("outline-")
+            && base["outline-".len()..]
+                .chars()
+                .all(|ch| ch.is_ascii_digit()))
+    {
+        return 70;
+    }
+    if base.starts_with("outline-offset-") || base.starts_with("-outline-offset-") {
+        return 71;
+    }
+    if is_outline_color_utility(base) {
+        return 72;
+    }
+    if base.starts_with("transition") {
+        return 80;
+    }
+    if base.starts_with("delay-") {
+        return 81;
+    }
+    if base.starts_with("duration-") {
+        return 82;
+    }
+    if base.starts_with("ease-") {
+        return 83;
     }
     if base.starts_with("divide-x-reverse") || base.starts_with("divide-y-reverse") {
         return 26;
@@ -1104,8 +1335,10 @@ fn extract_property_from_rule_body(body: &str) -> Option<String> {
     let mut token = String::new();
     let mut in_string: Option<char> = None;
     let mut escaped = false;
+    let mut nested_ranges = Vec::<(usize, usize)>::new();
+    let mut nested_start: Option<usize> = None;
 
-    for ch in body.chars() {
+    for (idx, ch) in body.char_indices() {
         if let Some(quote) = in_string {
             token.push(ch);
             if escaped {
@@ -1128,6 +1361,9 @@ fn extract_property_from_rule_body(body: &str) -> Option<String> {
                 in_string = Some(ch);
             }
             '{' => {
+                if depth == 0 {
+                    nested_start = Some(idx + ch.len_utf8());
+                }
                 depth += 1;
                 if depth == 1 {
                     token.clear();
@@ -1137,10 +1373,15 @@ fn extract_property_from_rule_body(body: &str) -> Option<String> {
             }
             '}' => {
                 depth = depth.saturating_sub(1);
-                if depth > 0 {
-                    token.push(ch);
-                } else {
+                if depth == 0 {
+                    if let Some(start) = nested_start.take() {
+                        if start <= idx {
+                            nested_ranges.push((start, idx));
+                        }
+                    }
                     token.clear();
+                } else {
+                    token.push(ch);
                 }
             }
             ':' if depth == 0 => {
@@ -1157,6 +1398,15 @@ fn extract_property_from_rule_body(body: &str) -> Option<String> {
                 token.push(ch);
             }
             _ => {}
+        }
+    }
+
+    for (start, end) in nested_ranges {
+        if start >= end || end > body.len() {
+            continue;
+        }
+        if let Some(property) = extract_property_from_rule_body(&body[start..end]) {
+            return Some(property);
         }
     }
 
@@ -1369,7 +1619,8 @@ fn property_order_rank(property: &str) -> u16 {
         | "border-block-color"
         | "border-block-start-color"
         | "border-block-end-color"
-        | "outline-width" | "outline-style" | "outline-offset" | "outline-color" => 19,
+        | "outline-width" | "outline-style" | "outline-color" => 19,
+        "outline-offset" => 19,
         "object-fit" | "object-position" => 215,
         "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
         | "padding-inline" | "padding-inline-start" | "padding-inline-end" | "padding-block"
@@ -1400,8 +1651,10 @@ fn property_order_rank(property: &str) -> u16 {
         "line-height" => 321,
         "font-weight" | "font-style" | "font-variant-numeric" => 322,
         "letter-spacing" => 323,
-        "text-overflow" | "text-wrap" | "text-indent" | "word-break" | "overflow-wrap" => 324,
-        "white-space" => 325,
+        "text-overflow" | "text-wrap" | "text-indent" => 324,
+        "overflow-wrap" => 325,
+        "word-break" => 326,
+        "white-space" => 327,
         "text-transform" => 326,
         "color"
         | "fill"
@@ -5830,7 +6083,7 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
     rule(
         &selector,
         &format!(
-            "font-size:var(--text-{});line-height:var(--tw-leading,var(--text-{}--line-height))",
+            "font-size:var(--text-{});line-height:var(--tw-leading, var(--text-{}--line-height))",
             token, token
         ),
         config,
@@ -10169,7 +10422,7 @@ fn apply_variants(
         ));
     }
 
-    let mut nested_body = declarations_body(&declarations_block)?.to_string();
+    let mut nested_body = strip_base_indentation(declarations_body(&declarations_block)?);
     for wrapper in post_selector_wrappers.iter().rev() {
         nested_body = wrap_rule(wrapper, nested_body.trim(), false);
     }
@@ -10254,6 +10507,13 @@ fn declarations_body(block: &str) -> Option<&str> {
         return None;
     }
     Some(block[open + 1..close].trim())
+}
+
+fn strip_base_indentation(body: &str) -> String {
+    body.lines()
+        .map(|line| line.strip_prefix("  ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn compose_flat_variant_rule(

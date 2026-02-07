@@ -550,6 +550,9 @@ fn run_build(
     if !used_passthrough {
         css = expand_build_time_functions(&css);
     }
+    if !minify {
+        css = normalize_non_minified_output(&css);
+    }
 
     if let Some(out_path) = out {
         fs::write(&out_path, css).map_err(|err| CliError {
@@ -613,6 +616,175 @@ fn replace_first_line(css: &str, first_line: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+fn normalize_non_minified_output(css: &str) -> String {
+    let lines = css.lines().collect::<Vec<_>>();
+    let mut out = Vec::<String>::with_capacity(lines.len());
+    let mut idx = 0usize;
+
+    while idx < lines.len() {
+        let line = lines[idx];
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            idx += 1;
+            continue;
+        }
+
+        if trimmed.ends_with(',')
+            && (trimmed.starts_with('.')
+                || trimmed.starts_with('#')
+                || trimmed.starts_with('[')
+                || trimmed.starts_with('*'))
+        {
+            let indent = line
+                .chars()
+                .take_while(|ch| ch.is_ascii_whitespace())
+                .count();
+            let mut selectors = Vec::<String>::new();
+            let mut cursor = idx;
+            let mut joined = false;
+
+            while cursor < lines.len() {
+                let segment = lines[cursor].trim();
+                if segment.is_empty() {
+                    cursor += 1;
+                    continue;
+                }
+                if segment.ends_with(',') {
+                    selectors.push(segment.trim_end_matches(',').trim().to_string());
+                    cursor += 1;
+                    continue;
+                }
+                if segment.ends_with('{') {
+                    selectors.push(segment.trim_end_matches('{').trim().to_string());
+                    out.push(format!(
+                        "{}{} {{",
+                        " ".repeat(indent),
+                        selectors.join(", ")
+                    ));
+                    idx = cursor + 1;
+                    joined = true;
+                }
+                break;
+            }
+
+            if joined {
+                continue;
+            }
+        }
+
+        out.push(normalize_non_minified_declaration_spacing(line));
+        idx += 1;
+    }
+
+    let mut rendered = out.join("\n");
+    rendered = normalize_keyframes_indentation(&rendered);
+    if css.ends_with('\n') {
+        rendered.push('\n');
+    }
+    rendered
+}
+
+fn normalize_keyframes_indentation(css: &str) -> String {
+    let lines = css.lines().collect::<Vec<_>>();
+    let mut out = Vec::<String>::with_capacity(lines.len());
+    let mut idx = 0usize;
+
+    while idx < lines.len() {
+        let line = lines[idx];
+        let trimmed = line.trim();
+        if trimmed.starts_with("@keyframes ") && trimmed.ends_with('{') {
+            out.push(trimmed.to_string());
+            idx += 1;
+            let mut depth = 1usize;
+            while idx < lines.len() {
+                let entry = lines[idx].trim();
+                if entry.is_empty() {
+                    idx += 1;
+                    continue;
+                }
+                if entry.ends_with('{') {
+                    out.push(format!("{}{}", "  ".repeat(depth), entry));
+                    depth += 1;
+                    idx += 1;
+                    continue;
+                }
+                if entry == "}" {
+                    depth = depth.saturating_sub(1);
+                    out.push(format!("{}{}", "  ".repeat(depth), entry));
+                    idx += 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    continue;
+                }
+                out.push(format!("{}{}", "  ".repeat(depth), entry));
+                idx += 1;
+            }
+            continue;
+        }
+
+        out.push(line.to_string());
+        idx += 1;
+    }
+
+    out.join("\n")
+}
+
+fn normalize_non_minified_declaration_spacing(line: &str) -> String {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('.') || trimmed.starts_with('}') {
+        return line.to_string();
+    }
+    if trimmed.starts_with('@') && !trimmed.starts_with("@supports") {
+        return line.to_string();
+    }
+    if !line.contains(':') {
+        return line.to_string();
+    }
+
+    if line.contains("--tw-shadow:")
+        || line.contains("--tw-ring-shadow:")
+        || line.contains("box-shadow:")
+        || line.contains("text-shadow:")
+        || line.contains("--tw-drop-shadow-size:")
+        || line.contains("transition-property:")
+        || line.contains("transition-timing-function:")
+        || line.contains("transition-duration:")
+        || line.contains("color-mix(")
+        || line.contains("@supports (color:color-mix(")
+    {
+        let mut normalized = line
+            .replace("@supports (color:color-mix(", "@supports (color: color-mix(")
+            .replace("color-mix(in srgb,oklch(", "color-mix(in srgb, oklch(")
+            .replace("color-mix(in srgb,#", "color-mix(in srgb, #")
+            .replace("color-mix(in oklab,var(", "color-mix(in oklab, var(")
+            .replace("color-mix(in oklab,color-mix(", "color-mix(in oklab, color-mix(")
+            .replace(",transparent)", ", transparent)")
+            .replace(")),0", ")), 0")
+            .replace("),var(", "), var(")
+            .replace(",var(", ", var(")
+            .replace(",rgb(", ", rgb(")
+            .replace(",rgba(", ", rgba(")
+            .replace(",currentcolor", ", currentcolor");
+
+        if normalized.contains("transition-property:") {
+            if let Some((prefix, value)) = normalized.split_once(':') {
+                let normalized_value = value
+                    .split(',')
+                    .map(|part| part.trim())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                normalized = format!("{}: {}", prefix.trim_end(), normalized_value);
+            }
+        }
+
+        return normalized;
+    }
+
+    line.to_string()
 }
 
 #[derive(Debug, Clone)]
