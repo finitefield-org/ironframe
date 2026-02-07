@@ -1,13 +1,13 @@
 [package]
 name = "ironframe"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["Finite Field, K.K."]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/finitefield-org/ironframe"
 homepage = "https://finitefield.org/en/oss/ironframe/"
 readme = "README.md"
-description = "Rust implementation aiming for Tailwind CSS v4.1-equivalent functionality."
+description = "Production-ready Tailwind CSS v4.1-compatible Rust engine for Node.js/npm-free workflows, including htmx-style web development."
 
 [lib]
 name = "ironframe"

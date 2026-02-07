@@ -1,13 +1,15 @@
 # ironframe
 
-This repository is for learning and prototyping a Rust implementation that matches the feature set of Tailwind CSS v4.1.
+ironframe is a production-ready Rust implementation targeting high compatibility with Tailwind CSS v4.1 behavior and output.
+It is designed for teams that want a Tailwind-compatible workflow without installing Tailwind CSS through Node.js or npm.
+It is especially suited to developers building web apps in ecosystems like htmx, where avoiding Node.js-based tooling is a key requirement.
 Developed by [Finite Field, K.K.](https://finitefield.org/en/).
 
 ## Goals
 
-- Understand the design principles and feature composition of Tailwind CSS v4.1
-- Design a Rust architecture with equivalent capabilities and build a minimal working prototype
-- Evaluate performance and developer experience tradeoffs
+- Provide a production-operable Rust CSS engine with Tailwind CSS v4.1-equivalent features
+- Maintain high compatibility with Tailwind CSS utility generation, variants, and directives
+- Deliver reproducible builds, strong performance, and practical developer ergonomics
 
 ## Target Feature Scope (Tailwind CSS v4.1 Equivalent)
 
@@ -26,7 +28,7 @@ Developed by [Finite Field, K.K.](https://finitefield.org/en/).
 
 1. Break down features and define requirements
 2. Implement core pieces in Rust (parser, scanner, generator)
-3. Design the CLI and ship a minimal MVP
+3. Design and operate a production-grade CLI
 4. Benchmark and optimize
 
 ## Expected Outputs
@@ -137,6 +139,7 @@ When using `build --input-css`, the CSS file must include `@import "tailwindcss"
 ## Notes
 
 This repository references Tailwind CSS v4.1 for behavior and ideas but is not affiliated with the official implementation.
+ironframe is intended for production use and prioritizes high output compatibility with Tailwind CSS while keeping a Rust-only toolchain option.
 
 `ironframe build --input-css` supports Tailwind-style `@source` directives for:
 - explicit source registration (`@source "../path"`)
