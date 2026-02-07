@@ -370,12 +370,12 @@ fn run_build(
             .as_ref()
             .map(|theme| &theme.variant_overrides)
             .unwrap();
-        let expanded_variants = if stripped.contains("@variant") || stripped.contains("@custom-variant")
-        {
-            expand_variant_directives(&stripped, variant_overrides)
-        } else {
-            stripped
-        };
+        let expanded_variants =
+            if stripped.contains("@variant") || stripped.contains("@custom-variant") {
+                expand_variant_directives(&stripped, variant_overrides)
+            } else {
+                stripped
+            };
         stripped_template_css = Some(expanded_variants);
         template_css = Some(template);
     }
@@ -659,11 +659,7 @@ fn normalize_non_minified_output(css: &str) -> String {
                 }
                 if segment.ends_with('{') {
                     selectors.push(segment.trim_end_matches('{').trim().to_string());
-                    out.push(format!(
-                        "{}{} {{",
-                        " ".repeat(indent),
-                        selectors.join(", ")
-                    ));
+                    out.push(format!("{}{} {{", " ".repeat(indent), selectors.join(", ")));
                     idx = cursor + 1;
                     joined = true;
                 }
@@ -757,11 +753,17 @@ fn normalize_non_minified_declaration_spacing(line: &str) -> String {
         || line.contains("@supports (color:color-mix(")
     {
         let mut normalized = line
-            .replace("@supports (color:color-mix(", "@supports (color: color-mix(")
+            .replace(
+                "@supports (color:color-mix(",
+                "@supports (color: color-mix(",
+            )
             .replace("color-mix(in srgb,oklch(", "color-mix(in srgb, oklch(")
             .replace("color-mix(in srgb,#", "color-mix(in srgb, #")
             .replace("color-mix(in oklab,var(", "color-mix(in oklab, var(")
-            .replace("color-mix(in oklab,color-mix(", "color-mix(in oklab, color-mix(")
+            .replace(
+                "color-mix(in oklab,color-mix(",
+                "color-mix(in oklab, color-mix(",
+            )
             .replace(",transparent)", ", transparent)")
             .replace(")),0", ")), 0")
             .replace("),var(", "), var(")

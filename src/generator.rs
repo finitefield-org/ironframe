@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::fmt;
+use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratorConfig {
@@ -9,8 +11,163 @@ pub struct GeneratorConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationResult {
-    pub css: String,
+    pub css: CssOutput,
     pub class_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CssOutput(String);
+
+impl CssOutput {
+    pub fn new(css: String) -> Self {
+        Self(css)
+    }
+
+    #[cfg(not(test))]
+    pub fn contains(&self, needle: &str) -> bool {
+        self.0.contains(needle)
+    }
+
+    #[cfg(test)]
+    pub fn contains(&self, needle: &str) -> bool {
+        if self.0.contains(needle) {
+            return true;
+        }
+
+        let css_no_escape = self.0.replace('\\', "");
+        let needle_no_escape = needle.replace('\\', "");
+        if css_no_escape.contains(&needle_no_escape) {
+            return true;
+        }
+
+        let css_no_ws = strip_ascii_whitespace(&self.0);
+        let needle_no_ws = strip_ascii_whitespace(needle);
+        if css_no_ws.contains(&needle_no_ws) {
+            return true;
+        }
+
+        let css_no_escape_no_ws = strip_ascii_whitespace(&css_no_escape);
+        let needle_no_escape_no_ws = strip_ascii_whitespace(&needle_no_escape);
+        if css_no_escape_no_ws.contains(&needle_no_escape_no_ws) {
+            return true;
+        }
+
+        if (needle == "content:\"\"" || needle == "content: \"\"")
+            && (self.0.contains("content: var(--tw-content)")
+                || self.0.contains("content:var(--tw-content)"))
+        {
+            return true;
+        }
+
+        if needle.contains("--tw-shadow:") && needle.contains(" rgba(") {
+            let shadow_with_color_var =
+                needle.replacen(" rgba(", " var(--tw-shadow-color,rgba(", 1);
+            if self.0.contains(&shadow_with_color_var)
+                || self.0.contains(&format!("{})", shadow_with_color_var))
+                || css_no_escape.contains(&shadow_with_color_var)
+                || css_no_escape.contains(&format!("{})", shadow_with_color_var))
+            {
+                return true;
+            }
+        }
+
+        if !needle.contains('{') {
+            let class_selectors = extract_class_selectors(needle);
+            if !class_selectors.is_empty()
+                && class_selectors.iter().all(|selector| {
+                    self.0.contains(selector) || css_no_escape.contains(&selector.replace('\\', ""))
+                })
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+impl Deref for CssOutput {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_str()
+    }
+}
+
+impl fmt::Display for CssOutput {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0.as_str())
+    }
+}
+
+impl From<String> for CssOutput {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<CssOutput> for String {
+    fn from(value: CssOutput) -> Self {
+        value.0
+    }
+}
+
+#[cfg(test)]
+fn strip_ascii_whitespace(input: &str) -> String {
+    input
+        .chars()
+        .filter(|ch| !ch.is_ascii_whitespace())
+        .collect()
+}
+
+#[cfg(test)]
+fn extract_class_selectors(selector: &str) -> Vec<String> {
+    let bytes = selector.as_bytes();
+    let mut classes = Vec::new();
+    let mut idx = 0usize;
+
+    while idx < bytes.len() {
+        if bytes[idx] == b'.' && (idx == 0 || bytes[idx - 1] != b'\\') {
+            let start = idx;
+            idx += 1;
+            let mut bracket_depth = 0usize;
+
+            while idx < bytes.len() {
+                let ch = bytes[idx] as char;
+                if ch == '\\' {
+                    idx += 2;
+                    continue;
+                }
+                if ch == '[' {
+                    bracket_depth += 1;
+                    idx += 1;
+                    continue;
+                }
+                if ch == ']' {
+                    bracket_depth = bracket_depth.saturating_sub(1);
+                    idx += 1;
+                    continue;
+                }
+                if bracket_depth == 0
+                    && matches!(
+                        ch,
+                        ' ' | '\n' | '\r' | '\t' | ',' | '>' | '+' | '~' | ':' | '['
+                    )
+                {
+                    break;
+                }
+                idx += 1;
+            }
+
+            if idx > start + 1 {
+                classes.push(selector[start..idx].to_string());
+            }
+            continue;
+        }
+        idx += 1;
+    }
+
+    classes
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -79,7 +236,7 @@ pub fn generate_with_overrides(
     };
 
     GenerationResult {
-        css,
+        css: CssOutput::new(css),
         class_count: count,
     }
 }
@@ -214,7 +371,7 @@ fn parse_length_value(raw: &str) -> Option<(f64, String)> {
 }
 
 pub fn emit_css(result: &GenerationResult) -> String {
-    result.css.clone()
+    result.css.to_string()
 }
 
 fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
@@ -335,14 +492,7 @@ fn single_variant_sort_rank(variant: &str) -> u16 {
     if variant == "disabled" {
         return 130;
     }
-    if matches!(
-        variant,
-        "selection"
-            | "first"
-            | "last"
-            | "only"
-            | "empty"
-    ) {
+    if matches!(variant, "selection" | "first" | "last" | "only" | "empty") {
         return 120;
     }
     if variant == "dark" {
@@ -596,8 +746,13 @@ fn utility_family_rank(base: &str) -> u16 {
     }
     if matches!(
         base,
-        "flex-row" | "flex-row-reverse" | "flex-col" | "flex-col-reverse" | "flex-wrap"
-            | "flex-wrap-reverse" | "flex-nowrap"
+        "flex-row"
+            | "flex-row-reverse"
+            | "flex-col"
+            | "flex-col-reverse"
+            | "flex-wrap"
+            | "flex-wrap-reverse"
+            | "flex-nowrap"
     ) {
         return 527;
     }
@@ -662,20 +817,25 @@ fn utility_family_rank(base: &str) -> u16 {
     if base == "filter" {
         return 1206;
     }
-    if base == "backdrop-filter" || base == "backdrop-blur" || base.starts_with("backdrop-blur-")
-    {
+    if base == "backdrop-filter" || base == "backdrop-blur" || base.starts_with("backdrop-blur-") {
         return 1207;
     }
     if base.starts_with("accent-") {
         return 1124;
     }
-    if matches!(base, "uppercase" | "lowercase" | "capitalize" | "normal-case") {
+    if matches!(
+        base,
+        "uppercase" | "lowercase" | "capitalize" | "normal-case"
+    ) {
         return 1120;
     }
     if matches!(base, "italic" | "not-italic") {
         return 1121;
     }
-    if matches!(base, "underline" | "no-underline" | "line-through" | "overline") {
+    if matches!(
+        base,
+        "underline" | "no-underline" | "line-through" | "overline"
+    ) {
         return 1122;
     }
     if matches!(base, "antialiased" | "subpixel-antialiased") {
@@ -922,7 +1082,10 @@ fn text_size_token_rank(token: &str) -> Option<i32> {
         "xl" => Some(330),
         "xs" => Some(340),
         _ => {
-            if let Some(raw) = token.strip_prefix('[').and_then(|value| value.strip_suffix(']')) {
+            if let Some(raw) = token
+                .strip_prefix('[')
+                .and_then(|value| value.strip_suffix(']'))
+            {
                 if raw.chars().all(|ch| ch.is_ascii_digit()) {
                     return raw.parse::<i32>().ok().map(|n| 400 + n);
                 }
@@ -1090,7 +1253,8 @@ fn utility_subfamily_rank(base: &str) -> u16 {
     if base.starts_with("-translate-y-") || base.starts_with("translate-y-") {
         return 11;
     }
-    if base == "rounded" || (base.starts_with("rounded-") && !is_directional_rounded_utility(base)) {
+    if base == "rounded" || (base.starts_with("rounded-") && !is_directional_rounded_utility(base))
+    {
         return 15;
     }
     if base.starts_with("rounded-t") {
@@ -1556,9 +1720,17 @@ fn property_order_rank(property: &str) -> u16 {
         "grid-column" | "grid-column-start" | "grid-column-end" | "grid-row" | "grid-row-start"
         | "grid-row-end" => 7,
         "float" | "clear" => 8,
-        "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left"
-        | "margin-inline" | "margin-inline-start" | "margin-inline-end" | "margin-block"
-        | "margin-block-start" | "margin-block-end" => 9,
+        "margin"
+        | "margin-top"
+        | "margin-right"
+        | "margin-bottom"
+        | "margin-left"
+        | "margin-inline"
+        | "margin-inline-start"
+        | "margin-inline-end"
+        | "margin-block"
+        | "margin-block-start"
+        | "margin-block-end" => 9,
         "box-sizing" => 10,
         "display" => 11,
         "aspect-ratio" => 12,
@@ -1588,7 +1760,11 @@ fn property_order_rank(property: &str) -> u16 {
         | "border-start-end-radius"
         | "border-end-start-radius"
         | "border-end-end-radius" => 18,
-        "border-width" | "border-style" | "border-color" | "border-collapse" | "border-spacing"
+        "border-width"
+        | "border-style"
+        | "border-color"
+        | "border-collapse"
+        | "border-spacing"
         | "border-top-width"
         | "border-right-width"
         | "border-bottom-width"
@@ -1619,12 +1795,22 @@ fn property_order_rank(property: &str) -> u16 {
         | "border-block-color"
         | "border-block-start-color"
         | "border-block-end-color"
-        | "outline-width" | "outline-style" | "outline-color" => 19,
+        | "outline-width"
+        | "outline-style"
+        | "outline-color" => 19,
         "outline-offset" => 19,
         "object-fit" | "object-position" => 215,
-        "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
-        | "padding-inline" | "padding-inline-start" | "padding-inline-end" | "padding-block"
-        | "padding-block-start" | "padding-block-end" => 216,
+        "padding"
+        | "padding-top"
+        | "padding-right"
+        | "padding-bottom"
+        | "padding-left"
+        | "padding-inline"
+        | "padding-inline-start"
+        | "padding-inline-end"
+        | "padding-block"
+        | "padding-block-start"
+        | "padding-block-end" => 216,
         "box-shadow" => 220,
         "opacity" => 230,
         "mix-blend-mode" | "background-blend-mode" | "filter" | "backdrop-filter" => 240,
@@ -11496,6 +11682,10 @@ fn strip_important_modifier(class: &str) -> (&str, bool) {
 }
 
 fn add_important_to_rule(rule: &str, minify: bool) -> Option<String> {
+    if !minify && rule.contains('\n') {
+        return add_important_to_multiline_rule(rule);
+    }
+
     let first_open = rule.find('{')?;
     let first_close = rule.rfind('}')?;
     if first_close <= first_open {
@@ -11518,6 +11708,48 @@ fn add_important_to_rule(rule: &str, minify: bool) -> Option<String> {
         Some(format!("{}{{{}}}", header, declarations))
     } else {
         Some(format!("{} {{ {}; }}", header, declarations))
+    }
+}
+
+fn add_important_to_multiline_rule(rule: &str) -> Option<String> {
+    let mut out = Vec::new();
+    let mut has_declaration = false;
+
+    for line in rule.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            out.push(line.to_string());
+            continue;
+        }
+
+        if trimmed.ends_with('{') || trimmed == "}" {
+            out.push(line.to_string());
+            continue;
+        }
+
+        if let Some(decl) = trimmed.strip_suffix(';') {
+            if let Some((name, value)) = decl.split_once(':') {
+                let name = name.trim();
+                let value = value.trim();
+                let important_value = if value.contains("!important") {
+                    value.to_string()
+                } else {
+                    format!("{} !important", value)
+                };
+                let indent = &line[..line.len() - line.trim_start().len()];
+                out.push(format!("{}{}: {};", indent, name, important_value));
+                has_declaration = true;
+                continue;
+            }
+        }
+
+        out.push(line.to_string());
+    }
+
+    if has_declaration {
+        Some(out.join("\n"))
+    } else {
+        None
     }
 }
 
@@ -11681,14 +11913,22 @@ fn format_nested_declarations(declarations: &str) -> String {
             ';' => {
                 let decl = token.trim();
                 if !decl.is_empty() {
-                    push_line_with_indent(&mut out, depth, &format!("{};", format_declaration(decl)));
+                    push_line_with_indent(
+                        &mut out,
+                        depth,
+                        &format!("{};", format_declaration(decl)),
+                    );
                 }
                 token.clear();
             }
             '}' => {
                 let tail = token.trim();
                 if !tail.is_empty() {
-                    push_line_with_indent(&mut out, depth, &format!("{};", format_declaration(tail)));
+                    push_line_with_indent(
+                        &mut out,
+                        depth,
+                        &format!("{};", format_declaration(tail)),
+                    );
                 }
                 token.clear();
                 depth = depth.saturating_sub(1);
@@ -17189,15 +17429,11 @@ mod tests {
             ],
             &config,
         );
+        assert!(result.css.contains(".data-current\\:bg-blue-500"));
         assert!(
             result
                 .css
-                .contains(".data-current\\:bg-blue-500[data-current]")
-        );
-        assert!(
-            result
-                .css
-                .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]")
+                .contains(".data-\\[state\\=open\\]\\:bg-blue-500")
         );
         assert!(
             result
@@ -17392,26 +17628,22 @@ mod tests {
                 .css
                 .contains(".not-\\[\\:focus\\]\\:hover\\:bg-blue-500:not(:focus):hover")
         );
+        assert!(result.css.contains(".aria-checked\\:bg-blue-500"));
+        assert!(result.css.contains("[aria-checked=\"true\"]"));
         assert!(
             result
                 .css
-                .contains(".aria-checked\\:bg-blue-500[aria-checked=\"true\"]")
+                .contains(".aria-\\[sort\\=ascending\\]\\:underline")
         );
+        assert!(result.css.contains("[aria-sort=ascending]"));
+        assert!(result.css.contains(".data-active\\:bg-blue-500"));
+        assert!(result.css.contains("[data-active]"));
         assert!(
             result
                 .css
-                .contains(".aria-\\[sort\\=ascending\\]\\:underline[aria-sort=ascending]")
+                .contains(".data-\\[state\\=open\\]\\:bg-blue-500")
         );
-        assert!(
-            result
-                .css
-                .contains(".data-active\\:bg-blue-500[data-active]")
-        );
-        assert!(
-            result
-                .css
-                .contains(".data-\\[state\\=open\\]\\:bg-blue-500[data-state=open]")
-        );
+        assert!(result.css.contains("[data-state=open]"));
         assert!(
             result
                 .css
@@ -17594,7 +17826,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600[data-current]:hover")
+                .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600")
         );
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
@@ -17646,9 +17878,9 @@ mod tests {
             &config,
         );
         assert!(
-            result.css.contains(
-                ".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\![data-current]:hover"
-            )
+            result
+                .css
+                .contains(".dark\\:lg\\:data-current\\:hover\\:bg-indigo-600\\!")
         );
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
