@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::fmt;
-use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratorConfig {
@@ -11,163 +9,8 @@ pub struct GeneratorConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerationResult {
-    pub css: CssOutput,
+    pub css: String,
     pub class_count: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CssOutput(String);
-
-impl CssOutput {
-    pub fn new(css: String) -> Self {
-        Self(css)
-    }
-
-    #[cfg(not(test))]
-    pub fn contains(&self, needle: &str) -> bool {
-        self.0.contains(needle)
-    }
-
-    #[cfg(test)]
-    pub fn contains(&self, needle: &str) -> bool {
-        if self.0.contains(needle) {
-            return true;
-        }
-
-        let css_no_escape = self.0.replace('\\', "");
-        let needle_no_escape = needle.replace('\\', "");
-        if css_no_escape.contains(&needle_no_escape) {
-            return true;
-        }
-
-        let css_no_ws = strip_ascii_whitespace(&self.0);
-        let needle_no_ws = strip_ascii_whitespace(needle);
-        if css_no_ws.contains(&needle_no_ws) {
-            return true;
-        }
-
-        let css_no_escape_no_ws = strip_ascii_whitespace(&css_no_escape);
-        let needle_no_escape_no_ws = strip_ascii_whitespace(&needle_no_escape);
-        if css_no_escape_no_ws.contains(&needle_no_escape_no_ws) {
-            return true;
-        }
-
-        if (needle == "content:\"\"" || needle == "content: \"\"")
-            && (self.0.contains("content: var(--tw-content)")
-                || self.0.contains("content:var(--tw-content)"))
-        {
-            return true;
-        }
-
-        if needle.contains("--tw-shadow:") && needle.contains(" rgba(") {
-            let shadow_with_color_var =
-                needle.replacen(" rgba(", " var(--tw-shadow-color,rgba(", 1);
-            if self.0.contains(&shadow_with_color_var)
-                || self.0.contains(&format!("{})", shadow_with_color_var))
-                || css_no_escape.contains(&shadow_with_color_var)
-                || css_no_escape.contains(&format!("{})", shadow_with_color_var))
-            {
-                return true;
-            }
-        }
-
-        if !needle.contains('{') {
-            let class_selectors = extract_class_selectors(needle);
-            if !class_selectors.is_empty()
-                && class_selectors.iter().all(|selector| {
-                    self.0.contains(selector) || css_no_escape.contains(&selector.replace('\\', ""))
-                })
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-}
-
-impl Deref for CssOutput {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_str()
-    }
-}
-
-impl fmt::Display for CssOutput {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0.as_str())
-    }
-}
-
-impl From<String> for CssOutput {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-
-impl From<CssOutput> for String {
-    fn from(value: CssOutput) -> Self {
-        value.0
-    }
-}
-
-#[cfg(test)]
-fn strip_ascii_whitespace(input: &str) -> String {
-    input
-        .chars()
-        .filter(|ch| !ch.is_ascii_whitespace())
-        .collect()
-}
-
-#[cfg(test)]
-fn extract_class_selectors(selector: &str) -> Vec<String> {
-    let bytes = selector.as_bytes();
-    let mut classes = Vec::new();
-    let mut idx = 0usize;
-
-    while idx < bytes.len() {
-        if bytes[idx] == b'.' && (idx == 0 || bytes[idx - 1] != b'\\') {
-            let start = idx;
-            idx += 1;
-            let mut bracket_depth = 0usize;
-
-            while idx < bytes.len() {
-                let ch = bytes[idx] as char;
-                if ch == '\\' {
-                    idx += 2;
-                    continue;
-                }
-                if ch == '[' {
-                    bracket_depth += 1;
-                    idx += 1;
-                    continue;
-                }
-                if ch == ']' {
-                    bracket_depth = bracket_depth.saturating_sub(1);
-                    idx += 1;
-                    continue;
-                }
-                if bracket_depth == 0
-                    && matches!(
-                        ch,
-                        ' ' | '\n' | '\r' | '\t' | ',' | '>' | '+' | '~' | ':' | '['
-                    )
-                {
-                    break;
-                }
-                idx += 1;
-            }
-
-            if idx > start + 1 {
-                classes.push(selector[start..idx].to_string());
-            }
-            continue;
-        }
-        idx += 1;
-    }
-
-    classes
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -236,7 +79,7 @@ pub fn generate_with_overrides(
     };
 
     GenerationResult {
-        css: CssOutput::new(css),
+        css,
         class_count: count,
     }
 }
@@ -371,7 +214,7 @@ fn parse_length_value(raw: &str) -> Option<(f64, String)> {
 }
 
 pub fn emit_css(result: &GenerationResult) -> String {
-    result.css.to_string()
+    result.css.clone()
 }
 
 fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
@@ -11966,6 +11809,56 @@ mod tests {
     use super::{GeneratorConfig, VariantOverrides, generate, generate_with_overrides};
     use std::collections::BTreeMap;
 
+    fn selector(class: &str) -> String {
+        format!(".{}", super::escape_selector(class))
+    }
+
+    fn assert_has_selector(css: &str, class: &str) {
+        let sel = selector(class);
+        assert!(css.contains(&sel), "missing selector `{}`", sel);
+    }
+
+    fn selector_block<'a>(css: &'a str, class: &str) -> &'a str {
+        let header = format!("{} {{", selector(class));
+        let start = css
+            .find(&header)
+            .unwrap_or_else(|| panic!("missing selector block `{}`", header));
+        let open = start + header.len() - 1;
+        let bytes = css.as_bytes();
+        let mut depth = 0usize;
+        for idx in open..bytes.len() {
+            match bytes[idx] {
+                b'{' => depth += 1,
+                b'}' => {
+                    if depth == 0 {
+                        panic!("unbalanced block while reading `{}`", header);
+                    }
+                    depth -= 1;
+                    if depth == 0 {
+                        return &css[start..=idx];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unterminated selector block `{}`", header);
+    }
+
+    fn assert_selector_block_contains(css: &str, class: &str, snippet: &str) {
+        let block = selector_block(css, class);
+        assert!(
+            block.contains(snippet),
+            "selector block `{}` missing snippet `{}`:\n{}",
+            selector(class),
+            snippet,
+            block
+        );
+    }
+
+    fn assert_has_nested_selector(css: &str, class: &str, nested_prefix: &str) {
+        assert_selector_block_contains(css, class, nested_prefix);
+    }
+
     #[test]
     fn generates_p4_rule() {
         let config = GeneratorConfig {
@@ -12226,7 +12119,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".ease-\\[cubic-bezier\\(0.95\\,0.05\\,0.795\\,0.035\\)\\]")
+                .contains(&selector("ease-[cubic-bezier(0.95,0.05,0.795,0.035)]"))
         );
         assert!(
             result
@@ -12327,8 +12220,9 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".motion-safe\\:hover\\:transition-all:hover")
+                .contains(&selector("motion-safe:hover:transition-all"))
         );
+        assert_has_nested_selector(&result.css, "motion-safe:hover:transition-all", "&:hover {");
     }
 
     #[test]
@@ -12738,7 +12632,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("line-height: var(--tw-leading,var(--text-xs--line-height))")
+                .contains("line-height: var(--tw-leading, var(--text-xs--line-height))")
         );
         assert!(result.css.contains(".text-sm"));
         assert!(result.css.contains("font-size: var(--text-sm)"));
@@ -12775,7 +12669,7 @@ mod tests {
         assert!(result.css.contains("line-height: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".text-sm\\/\\(--my-line-height\\)"));
         assert!(result.css.contains("line-height: var(--my-line-height)"));
-        assert!(result.css.contains(".text-lg\\/\\[1.75\\]"));
+        assert!(result.css.contains(&selector("text-lg/[1.75]")));
         assert!(result.css.contains("line-height: 1.75"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:text-base"));
@@ -12889,7 +12783,7 @@ mod tests {
         assert!(result.css.contains("line-height: calc(var(--spacing) * 6)"));
         assert!(result.css.contains(".leading-\\(--my-leading\\)"));
         assert!(result.css.contains("line-height: var(--my-leading)"));
-        assert!(result.css.contains(".leading-\\[1.5\\]"));
+        assert!(result.css.contains(&selector("leading-[1.5]")));
         assert!(result.css.contains("line-height: 1.5"));
         assert!(result.css.contains(".leading-snug"));
         assert!(result.css.contains("line-height: var(--leading-snug)"));
@@ -12968,7 +12862,7 @@ mod tests {
         assert!(result.css.contains("font-stretch: ultra-expanded"));
         assert!(result.css.contains(".font-stretch-125\\%"));
         assert!(result.css.contains("font-stretch: 125%"));
-        assert!(result.css.contains(".font-stretch-\\[66.66\\%\\]"));
+        assert!(result.css.contains(&selector("font-stretch-[66.66%]")));
         assert!(result.css.contains("font-stretch: 66.66%"));
         assert!(result.css.contains(".font-stretch-\\(--my-font-width\\)"));
         assert!(result.css.contains("font-stretch: var(--my-font-width)"));
@@ -13078,7 +12972,7 @@ mod tests {
         );
         assert!(result.css.contains(".tracking-\\(--my-tracking\\)"));
         assert!(result.css.contains("letter-spacing: var(--my-tracking)"));
-        assert!(result.css.contains(".tracking-\\[.25em\\]"));
+        assert!(result.css.contains(&selector("tracking-[.25em]")));
         assert!(result.css.contains("letter-spacing: .25em"));
         assert!(result.css.contains(".-tracking-2"));
         assert!(
@@ -13156,7 +13050,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]")
+                .contains(&selector("list-image-[url(/img/checkmark.png)]"))
         );
         assert!(
             result
@@ -13173,7 +13067,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".md\\:list-image-\\[url\\(\\/img\\/checkmark.png\\)\\]")
+                .contains(&selector("md:list-image-[url(/img/checkmark.png)]"))
         );
     }
 
@@ -13481,19 +13375,19 @@ mod tests {
         );
         assert!(result.css.contains(".content-none"));
         assert!(result.css.contains("content: none"));
-        assert!(result.css.contains(".content-\\[attr\\(before\\)\\]"));
+        assert!(result.css.contains(&selector("content-[attr(before)]")));
         assert!(result.css.contains("content: attr(before)"));
-        assert!(result.css.contains(".content-\\['Hello_World'\\]"));
+        assert!(result.css.contains(&selector("content-['Hello_World']")));
         assert!(result.css.contains("content: 'Hello World'"));
-        assert!(result.css.contains(".content-\\['Hello\\\\_World'\\]"));
+        assert!(result.css.contains(&selector("content-['Hello\\_World']")));
         assert!(result.css.contains("content: 'Hello_World'"));
-        assert!(result.css.contains(".content-\\(--my-content\\)"));
+        assert!(result.css.contains(&selector("content-(--my-content)")));
         assert!(result.css.contains("content: var(--my-content)"));
-        assert!(result.css.contains(".before\\:content-\\['x'\\]:before"));
-        assert!(
-            result
-                .css
-                .contains(".md\\:before\\:content-\\['Desktop'\\]:before")
+        assert_has_nested_selector(&result.css, "before:content-['x']", "&::before {");
+        assert_has_nested_selector(
+            &result.css,
+            "md:before:content-['Desktop']",
+            "@media (width >= 48rem) {",
         );
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -13522,12 +13416,12 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".filter-\\[url\\('filters.svg#filter-id'\\)\\]")
+                .contains(&selector("filter-[url('filters.svg#filter-id')]"))
         );
         assert!(result.css.contains("filter: url('filters.svg#filter-id')"));
-        assert!(result.css.contains(".filter-\\(--my-filter\\)"));
+        assert!(result.css.contains(&selector("filter-(--my-filter)")));
         assert!(result.css.contains("filter: var(--my-filter)"));
-        assert!(result.css.contains(".hover\\:filter-none:hover"));
+        assert_has_nested_selector(&result.css, "hover:filter-none", "&:hover {");
         assert!(result.css.contains(".md\\:filter-none"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -13616,9 +13510,13 @@ mod tests {
         assert!(result.css.contains("filter: brightness(125%)"));
         assert!(result.css.contains(".brightness-200"));
         assert!(result.css.contains("filter: brightness(200%)"));
-        assert!(result.css.contains(".brightness-\\[1.75\\]"));
+        assert!(result.css.contains(&selector("brightness-[1.75]")));
         assert!(result.css.contains("filter: brightness(1.75)"));
-        assert!(result.css.contains(".brightness-\\(--my-brightness\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("brightness-(--my-brightness)"))
+        );
         assert!(
             result
                 .css
@@ -13654,9 +13552,9 @@ mod tests {
         assert!(result.css.contains("filter: contrast(125%)"));
         assert!(result.css.contains(".contrast-200"));
         assert!(result.css.contains("filter: contrast(200%)"));
-        assert!(result.css.contains(".contrast-\\[.25\\]"));
+        assert!(result.css.contains(&selector("contrast-[.25]")));
         assert!(result.css.contains("filter: contrast(.25)"));
-        assert!(result.css.contains(".contrast-\\(--my-contrast\\)"));
+        assert!(result.css.contains(&selector("contrast-(--my-contrast)")));
         assert!(result.css.contains("filter: contrast(var(--my-contrast))"));
         assert!(result.css.contains(".md\\:contrast-150"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -13704,14 +13602,18 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".drop-shadow-\\[0_35px_35px_rgba\\(0\\,0\\,0\\,0.25\\)\\]")
+                .contains(&selector("drop-shadow-[0_35px_35px_rgba(0,0,0,0.25)]"))
         );
         assert!(
             result
                 .css
                 .contains("--tw-drop-shadow: drop-shadow(0_35px_35px_rgba(0,0,0,0.25))")
         );
-        assert!(result.css.contains(".drop-shadow-\\(--my-drop-shadow\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("drop-shadow-(--my-drop-shadow)"))
+        );
         assert!(
             result
                 .css
@@ -13720,7 +13622,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".drop-shadow-\\(color\\:--my-shadow-color\\)")
+                .contains(&selector("drop-shadow-(color:--my-shadow-color)"))
         );
         assert!(
             result
@@ -13733,11 +13635,11 @@ mod tests {
                 .css
                 .contains("--tw-drop-shadow-color: var(--color-indigo-500)")
         );
-        assert!(result.css.contains(".drop-shadow-cyan-500\\/50"));
+        assert!(result.css.contains(&selector("drop-shadow-cyan-500/50")));
         assert!(result.css.contains(
             "--tw-drop-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
         ));
-        assert!(result.css.contains(".drop-shadow-xl\\/25"));
+        assert!(result.css.contains(&selector("drop-shadow-xl/25")));
         assert!(
             result
                 .css
@@ -13778,9 +13680,9 @@ mod tests {
         assert!(result.css.contains("filter: grayscale(25%)"));
         assert!(result.css.contains(".grayscale-50"));
         assert!(result.css.contains("filter: grayscale(50%)"));
-        assert!(result.css.contains(".grayscale-\\[0.5\\]"));
+        assert!(result.css.contains(&selector("grayscale-[0.5]")));
         assert!(result.css.contains("filter: grayscale(0.5)"));
-        assert!(result.css.contains(".grayscale-\\(--my-grayscale\\)"));
+        assert!(result.css.contains(&selector("grayscale-(--my-grayscale)")));
         assert!(
             result
                 .css
@@ -13825,9 +13727,13 @@ mod tests {
         assert!(result.css.contains("filter: hue-rotate(calc(45deg * -1))"));
         assert!(result.css.contains(".-hue-rotate-90"));
         assert!(result.css.contains("filter: hue-rotate(calc(90deg * -1))"));
-        assert!(result.css.contains(".hue-rotate-\\[3.142rad\\]"));
+        assert!(result.css.contains(&selector("hue-rotate-[3.142rad]")));
         assert!(result.css.contains("filter: hue-rotate(3.142rad)"));
-        assert!(result.css.contains(".hue-rotate-\\(--my-hue-rotate\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("hue-rotate-(--my-hue-rotate)"))
+        );
         assert!(
             result
                 .css
@@ -13860,9 +13766,9 @@ mod tests {
         assert!(result.css.contains("filter: invert(0%)"));
         assert!(result.css.contains(".invert-20"));
         assert!(result.css.contains("filter: invert(20%)"));
-        assert!(result.css.contains(".invert-\\[.25\\]"));
+        assert!(result.css.contains(&selector("invert-[.25]")));
         assert!(result.css.contains("filter: invert(.25)"));
-        assert!(result.css.contains(".invert-\\(--my-inversion\\)"));
+        assert!(result.css.contains(&selector("invert-(--my-inversion)")));
         assert!(result.css.contains("filter: invert(var(--my-inversion))"));
         assert!(result.css.contains(".md\\:invert-0"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -13894,9 +13800,9 @@ mod tests {
         assert!(result.css.contains("filter: saturate(150%)"));
         assert!(result.css.contains(".saturate-200"));
         assert!(result.css.contains("filter: saturate(200%)"));
-        assert!(result.css.contains(".saturate-\\[.25\\]"));
+        assert!(result.css.contains(&selector("saturate-[.25]")));
         assert!(result.css.contains("filter: saturate(.25)"));
-        assert!(result.css.contains(".saturate-\\(--my-saturation\\)"));
+        assert!(result.css.contains(&selector("saturate-(--my-saturation)")));
         assert!(
             result
                 .css
@@ -13929,9 +13835,9 @@ mod tests {
         assert!(result.css.contains("filter: sepia(0%)"));
         assert!(result.css.contains(".sepia-50"));
         assert!(result.css.contains("filter: sepia(50%)"));
-        assert!(result.css.contains(".sepia-\\[.25\\]"));
+        assert!(result.css.contains(&selector("sepia-[.25]")));
         assert!(result.css.contains("filter: sepia(.25)"));
-        assert!(result.css.contains(".sepia-\\(--my-sepia\\)"));
+        assert!(result.css.contains(&selector("sepia-(--my-sepia)")));
         assert!(result.css.contains("filter: sepia(var(--my-sepia))"));
         assert!(result.css.contains(".md\\:sepia-0"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -13965,7 +13871,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".backdrop-filter-\\[url\\('filters.svg#filter-id'\\)\\]")
+                .contains(&selector("backdrop-filter-[url('filters.svg#filter-id')]"))
         );
         assert!(
             result
@@ -13975,14 +13881,14 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".backdrop-filter-\\(--my-backdrop-filter\\)")
+                .contains(&selector("backdrop-filter-(--my-backdrop-filter)"))
         );
         assert!(
             result
                 .css
                 .contains("backdrop-filter: var(--my-backdrop-filter)")
         );
-        assert!(result.css.contains(".hover\\:backdrop-filter-none:hover"));
+        assert_has_nested_selector(&result.css, "hover:backdrop-filter-none", "&:hover {");
         assert!(result.css.contains(".md\\:backdrop-filter-none"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -14079,12 +13985,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: brightness(110%)"));
         assert!(result.css.contains(".backdrop-brightness-150"));
         assert!(result.css.contains("backdrop-filter: brightness(150%)"));
-        assert!(result.css.contains(".backdrop-brightness-\\[1.75\\]"));
+        assert!(result.css.contains(&selector("backdrop-brightness-[1.75]")));
         assert!(result.css.contains("backdrop-filter: brightness(1.75)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-brightness-\\(--my-backdrop-brightness\\)")
+                .contains(&selector("backdrop-brightness-(--my-backdrop-brightness)"))
         );
         assert!(
             result
@@ -14118,12 +14024,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: contrast(125%)"));
         assert!(result.css.contains(".backdrop-contrast-200"));
         assert!(result.css.contains("backdrop-filter: contrast(200%)"));
-        assert!(result.css.contains(".backdrop-contrast-\\[.25\\]"));
+        assert!(result.css.contains(&selector("backdrop-contrast-[.25]")));
         assert!(result.css.contains("backdrop-filter: contrast(.25)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-contrast-\\(--my-backdrop-contrast\\)")
+                .contains(&selector("backdrop-contrast-(--my-backdrop-contrast)"))
         );
         assert!(
             result
@@ -14160,12 +14066,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: grayscale(50%)"));
         assert!(result.css.contains(".backdrop-grayscale-200"));
         assert!(result.css.contains("backdrop-filter: grayscale(200%)"));
-        assert!(result.css.contains(".backdrop-grayscale-\\[0.5\\]"));
+        assert!(result.css.contains(&selector("backdrop-grayscale-[0.5]")));
         assert!(result.css.contains("backdrop-filter: grayscale(0.5)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-grayscale-\\(--my-backdrop-grayscale\\)")
+                .contains(&selector("backdrop-grayscale-(--my-backdrop-grayscale)"))
         );
         assert!(
             result
@@ -14220,13 +14126,15 @@ mod tests {
                 .css
                 .contains("backdrop-filter: hue-rotate(calc(90deg * -1))")
         );
-        assert!(result.css.contains(".backdrop-hue-rotate-\\[3.142rad\\]"));
-        assert!(result.css.contains("backdrop-filter: hue-rotate(3.142rad)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-hue-rotate-\\(--my-backdrop-hue-rotation\\)")
+                .contains(&selector("backdrop-hue-rotate-[3.142rad]"))
         );
+        assert!(result.css.contains("backdrop-filter: hue-rotate(3.142rad)"));
+        assert!(result.css.contains(&selector(
+            "backdrop-hue-rotate-(--my-backdrop-hue-rotation)"
+        )));
         assert!(
             result
                 .css
@@ -14259,12 +14167,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: invert(0%)"));
         assert!(result.css.contains(".backdrop-invert-65"));
         assert!(result.css.contains("backdrop-filter: invert(65%)"));
-        assert!(result.css.contains(".backdrop-invert-\\[.25\\]"));
+        assert!(result.css.contains(&selector("backdrop-invert-[.25]")));
         assert!(result.css.contains("backdrop-filter: invert(.25)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-invert-\\(--my-backdrop-inversion\\)")
+                .contains(&selector("backdrop-invert-(--my-backdrop-inversion)"))
         );
         assert!(
             result
@@ -14301,12 +14209,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: opacity(95%)"));
         assert!(result.css.contains(".backdrop-opacity-100"));
         assert!(result.css.contains("backdrop-filter: opacity(100%)"));
-        assert!(result.css.contains(".backdrop-opacity-\\[.15\\]"));
+        assert!(result.css.contains(&selector("backdrop-opacity-[.15]")));
         assert!(result.css.contains("backdrop-filter: opacity(.15)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-opacity-\\(--my-backdrop-filter-opacity\\)")
+                .contains(&selector("backdrop-opacity-(--my-backdrop-filter-opacity)"))
         );
         assert!(
             result
@@ -14344,11 +14252,11 @@ mod tests {
         assert!(result.css.contains("opacity: 50%"));
         assert!(result.css.contains(".opacity-100"));
         assert!(result.css.contains("opacity: 100%"));
-        assert!(result.css.contains(".opacity-\\[.15\\]"));
+        assert!(result.css.contains(&selector("opacity-[.15]")));
         assert!(result.css.contains("opacity: .15"));
-        assert!(result.css.contains(".opacity-\\(--my-opacity\\)"));
+        assert!(result.css.contains(&selector("opacity-(--my-opacity)")));
         assert!(result.css.contains("opacity: var(--my-opacity)"));
-        assert!(result.css.contains(".disabled\\:opacity-50:disabled"));
+        assert_has_nested_selector(&result.css, "disabled:opacity-50", "&:disabled {");
         assert!(result.css.contains(".group-hover\\:opacity-100"));
     }
 
@@ -14375,12 +14283,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: saturate(125%)"));
         assert!(result.css.contains(".backdrop-saturate-200"));
         assert!(result.css.contains("backdrop-filter: saturate(200%)"));
-        assert!(result.css.contains(".backdrop-saturate-\\[.25\\]"));
+        assert!(result.css.contains(&selector("backdrop-saturate-[.25]")));
         assert!(result.css.contains("backdrop-filter: saturate(.25)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-saturate-\\(--my-backdrop-saturation\\)")
+                .contains(&selector("backdrop-saturate-(--my-backdrop-saturation)"))
         );
         assert!(
             result
@@ -14414,12 +14322,12 @@ mod tests {
         assert!(result.css.contains("backdrop-filter: sepia(0%)"));
         assert!(result.css.contains(".backdrop-sepia-50"));
         assert!(result.css.contains("backdrop-filter: sepia(50%)"));
-        assert!(result.css.contains(".backdrop-sepia-\\[.25\\]"));
+        assert!(result.css.contains(&selector("backdrop-sepia-[.25]")));
         assert!(result.css.contains("backdrop-filter: sepia(.25)"));
         assert!(
             result
                 .css
-                .contains(".backdrop-sepia-\\(--my-backdrop-sepia\\)")
+                .contains(&selector("backdrop-sepia-(--my-backdrop-sepia)"))
         );
         assert!(
             result
@@ -14539,7 +14447,7 @@ mod tests {
         assert!(result.css.contains("text-decoration-line: line-through"));
         assert!(result.css.contains(".no-underline"));
         assert!(result.css.contains("text-decoration-line: none"));
-        assert!(result.css.contains(".hover\\:underline:hover"));
+        assert_has_nested_selector(&result.css, "hover:underline", "&:hover {");
         assert!(result.css.contains(".md\\:no-underline"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -14604,12 +14512,12 @@ mod tests {
         assert!(result.css.contains("text-decoration-thickness: auto"));
         assert!(result.css.contains(".decoration-from-font"));
         assert!(result.css.contains("text-decoration-thickness: from-font"));
-        assert!(result.css.contains(".decoration-\\[0.25rem\\]"));
+        assert!(result.css.contains(&selector("decoration-[0.25rem]")));
         assert!(result.css.contains("text-decoration-thickness: 0.25rem"));
         assert!(
             result
                 .css
-                .contains(".decoration-\\(length\\:--my-decoration-thickness\\)")
+                .contains(&selector("decoration-(length:--my-decoration-thickness)"))
         );
         assert!(
             result
@@ -15017,45 +14925,45 @@ mod tests {
                 .css
                 .contains("background-color: var(--color-sky-500)")
         );
-        assert!(result.css.contains(".bg-sky-500\\/75"));
+        assert!(result.css.contains(&selector("bg-sky-500/75")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-sky-500) 75%,transparent)")
+                .contains("color-mix(in oklab, var(--color-sky-500) 75%, transparent)")
         );
-        assert!(result.css.contains(".bg-sky-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("bg-sky-500/[37%]")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-sky-500) 37%,transparent)")
+                .contains("color-mix(in oklab, var(--color-sky-500) 37%, transparent)")
         );
-        assert!(result.css.contains(".bg-sky-500\\/\\(--my-opacity\\)"));
+        assert!(result.css.contains(&selector("bg-sky-500/(--my-opacity)")));
         assert!(
-            result
-                .css
-                .contains("color-mix(in oklab,var(--color-sky-500) var(--my-opacity),transparent)")
+            result.css.contains(
+                "color-mix(in oklab, var(--color-sky-500) var(--my-opacity), transparent)"
+            )
         );
-        assert!(result.css.contains(".bg-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("bg-[#50d71e]")));
         assert!(result.css.contains("background-color: #50d71e"));
         assert!(
             result
                 .css
-                .contains(".bg-\\[color\\:var\\(--tool-surface\\)\\]")
+                .contains(&selector("bg-[color:var(--tool-surface)]"))
         );
         assert!(result.css.contains("background-color: var(--tool-surface)"));
         assert!(
             result
                 .css
-                .contains(".bg-\\[color\\:var\\(--tool-surface\\)\\]\\/90")
+                .contains(&selector("bg-[color:var(--tool-surface)]/90"))
         );
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--tool-surface) 90%,transparent)")
+                .contains("color-mix(in oklab, var(--tool-surface) 90%, transparent)")
         );
-        assert!(result.css.contains(".bg-\\(--my-color\\)"));
+        assert!(result.css.contains(&selector("bg-(--my-color)")));
         assert!(result.css.contains("background-color: var(--my-color)"));
-        assert!(result.css.contains(".hover\\:bg-fuchsia-500:hover"));
+        assert_has_nested_selector(&result.css, "hover:bg-fuchsia-500", "&:hover {");
         assert!(result.css.contains(".md\\:bg-green-500"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -15106,7 +15014,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".bg-\\[url\\(\\/img\\/mountains.jpg\\)\\]")
+                .contains(&selector("bg-[url(/img/mountains.jpg)]"))
         );
         assert!(
             result
@@ -15116,14 +15024,14 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".bg-\\[url\\('\\/what_a_rush.png'\\)\\]")
+                .contains(&selector("bg-[url('/what_a_rush.png')]"))
         );
         assert!(
             result
                 .css
                 .contains("background-image: url('/what_a_rush.png')")
         );
-        assert!(result.css.contains(".bg-\\(image\\:--my-image\\)"));
+        assert!(result.css.contains(&selector("bg-(image:--my-image)")));
         assert!(result.css.contains("background-image: var(--my-image)"));
         assert!(result.css.contains(".bg-gradient-to-r"));
         assert!(result.css.contains("--tw-gradient-position"));
@@ -15139,7 +15047,7 @@ mod tests {
                 .css
                 .contains("background-image: linear-gradient(to right, var(--tw-gradient-stops))")
         );
-        assert!(result.css.contains(".bg-linear-to-r\\/srgb"));
+        assert!(result.css.contains(&selector("bg-linear-to-r/srgb")));
         assert!(result.css.contains(
             "background-image: linear-gradient(to right in srgb, var(--tw-gradient-stops))"
         ));
@@ -15154,12 +15062,12 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".bg-linear-\\[25deg\\,red_5\\%\\,yellow_60\\%\\]")
+                .contains(&selector("bg-linear-[25deg,red_5%,yellow_60%]"))
         );
         assert!(result.css.contains(
             "background-image: linear-gradient(var(--tw-gradient-stops, 25deg,red_5%,yellow_60%))"
         ));
-        assert!(result.css.contains(".bg-linear-\\(--my-gradient\\)"));
+        assert!(result.css.contains(&selector("bg-linear-(--my-gradient)")));
         assert!(result.css.contains(
             "background-image: linear-gradient(var(--tw-gradient-stops, var(--my-gradient)))"
         ));
@@ -15169,13 +15077,13 @@ mod tests {
                 .css
                 .contains("background-image: radial-gradient(in oklab, var(--tw-gradient-stops))")
         );
-        assert!(result.css.contains(".bg-radial-\\[at_50\\%_75\\%\\]"));
+        assert!(result.css.contains(&selector("bg-radial-[at_50%_75%]")));
         assert!(
             result.css.contains(
                 "background-image: radial-gradient(var(--tw-gradient-stops, at_50%_75%))"
             )
         );
-        assert!(result.css.contains(".bg-radial-\\(--my-radial\\)"));
+        assert!(result.css.contains(&selector("bg-radial-(--my-radial)")));
         assert!(result.css.contains(
             "background-image: radial-gradient(var(--tw-gradient-stops, var(--my-radial)))"
         ));
@@ -15187,12 +15095,12 @@ mod tests {
         assert!(result.css.contains(
             "background-image: conic-gradient(from -180deg in oklab, var(--tw-gradient-stops))"
         ));
-        assert!(result.css.contains(".bg-conic-\\(--my-conic\\)"));
+        assert!(result.css.contains(&selector("bg-conic-(--my-conic)")));
         assert!(result.css.contains("background-image: var(--my-conic)"));
         assert!(
             result
                 .css
-                .contains(".bg-conic-\\[conic-gradient\\(from_0deg\\,red\\,blue\\)\\]")
+                .contains(&selector("bg-conic-[conic-gradient(from_0deg,red,blue)]"))
         );
         assert!(
             result
@@ -15205,17 +15113,17 @@ mod tests {
                 .css
                 .contains("--tw-gradient-from: var(--color-indigo-500)")
         );
-        assert!(result.css.contains(".from-white\\/10"));
+        assert!(result.css.contains(&selector("from-white/10")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-white) 10%,transparent)")
+                .contains("color-mix(in oklab, var(--color-white) 10%, transparent)")
         );
         assert!(result.css.contains(".from-10\\%"));
         assert!(result.css.contains("--tw-gradient-from-position: 10%"));
-        assert!(result.css.contains(".from-\\(--my-from\\)"));
+        assert!(result.css.contains(&selector("from-(--my-from)")));
         assert!(result.css.contains("--tw-gradient-from: var(--my-from)"));
-        assert!(result.css.contains(".from-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("from-[#50d71e]")));
         assert!(result.css.contains("--tw-gradient-from: #50d71e"));
         assert!(result.css.contains(".via-purple-500"));
         assert!(
@@ -15231,17 +15139,17 @@ mod tests {
                 .css
                 .contains("--tw-gradient-to: var(--color-pink-500)")
         );
-        assert!(result.css.contains(".to-white\\/30"));
+        assert!(result.css.contains(&selector("to-white/30")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-white) 30%,transparent)")
+                .contains("color-mix(in oklab, var(--color-white) 30%, transparent)")
         );
         assert!(result.css.contains(".to-90\\%"));
         assert!(result.css.contains("--tw-gradient-to-position: 90%"));
         assert!(result.css.contains(".md\\:from-yellow-500"));
         assert!(result.css.contains("@media (width >= 48rem)"));
-        assert!(result.css.contains(".hover\\:bg-none:hover"));
+        assert_has_nested_selector(&result.css, "hover:bg-none", "&:hover {");
     }
 
     #[test]
@@ -15287,51 +15195,59 @@ mod tests {
         assert!(result.css.contains("color: var(--color-black)"));
         assert!(result.css.contains(".text-white"));
         assert!(result.css.contains("color: var(--color-white)"));
-        assert!(result.css.contains(".text-\\(--my-color\\)"));
+        assert!(result.css.contains(&selector("text-(--my-color)")));
         assert!(result.css.contains("color: var(--my-color)"));
-        assert!(result.css.contains(".text-\\(color\\:--my-color-hinted\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("text-(color:--my-color-hinted)"))
+        );
         assert!(result.css.contains("color: var(--my-color-hinted)"));
-        assert!(result.css.contains(".text-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("text-[#50d71e]")));
         assert!(result.css.contains("color: #50d71e"));
-        assert!(result.css.contains(".text-\\[color\\:var\\(--accent\\)\\]"));
+        assert!(result.css.contains(&selector("text-[color:var(--accent)]")));
         assert!(result.css.contains("color: var(--accent)"));
         assert!(result.css.contains(".text-red-500"));
         assert!(result.css.contains("color: var(--color-red-500)"));
-        assert!(result.css.contains(".text-red-500\\/75"));
+        assert!(result.css.contains(&selector("text-red-500/75")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-red-500) 75%,transparent)")
+                .contains("color-mix(in oklab, var(--color-red-500) 75%, transparent)")
         );
-        assert!(result.css.contains(".text-red-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("text-red-500/[37%]")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-red-500) 37%,transparent)")
+                .contains("color-mix(in oklab, var(--color-red-500) 37%, transparent)")
         );
-        assert!(result.css.contains(".text-red-500\\/\\(--my-opacity\\)"));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)")
+                .contains(&selector("text-red-500/(--my-opacity)"))
         );
-        assert!(result.css.contains(".text-white\\/60"));
         assert!(
-            result
-                .css
-                .contains("color-mix(in oklab,var(--color-white) 60%,transparent)")
+            result.css.contains(
+                "color-mix(in oklab, var(--color-red-500) var(--my-opacity), transparent)"
+            )
         );
-        assert!(result.css.contains(".text-white\\/70"));
+        assert!(result.css.contains(&selector("text-white/60")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-white) 70%,transparent)")
+                .contains("color-mix(in oklab, var(--color-white) 60%, transparent)")
         );
-        assert!(result.css.contains(".text-white\\/90"));
+        assert!(result.css.contains(&selector("text-white/70")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-white) 90%,transparent)")
+                .contains("color-mix(in oklab, var(--color-white) 70%, transparent)")
+        );
+        assert!(result.css.contains(&selector("text-white/90")));
+        assert!(
+            result
+                .css
+                .contains("color-mix(in oklab, var(--color-white) 90%, transparent)")
         );
     }
 
@@ -15374,27 +15290,31 @@ mod tests {
         assert!(result.css.contains("fill: var(--color-white)"));
         assert!(result.css.contains(".fill-red-500"));
         assert!(result.css.contains("fill: var(--color-red-500)"));
-        assert!(result.css.contains(".fill-cyan-700\\/25"));
+        assert!(result.css.contains(&selector("fill-cyan-700/25")));
         assert!(
             result
                 .css
                 .contains("fill: color-mix(in oklab,var(--color-cyan-700) 25%,transparent)")
         );
-        assert!(result.css.contains(".fill-cyan-700\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("fill-cyan-700/[37%]")));
         assert!(
             result
                 .css
                 .contains("fill: color-mix(in oklab,var(--color-cyan-700) 37%,transparent)")
         );
-        assert!(result.css.contains(".fill-cyan-700\\/\\(--my-opacity\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("fill-cyan-700/(--my-opacity)"))
+        );
         assert!(result.css.contains(
             "fill: color-mix(in oklab,var(--color-cyan-700) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".fill-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("fill-[#50d71e]")));
         assert!(result.css.contains("fill: #50d71e"));
-        assert!(result.css.contains(".fill-\\(--my-fill-color\\)"));
+        assert!(result.css.contains(&selector("fill-(--my-fill-color)")));
         assert!(result.css.contains("fill: var(--my-fill-color)"));
-        assert!(result.css.contains(".hover\\:fill-lime-600:hover"));
+        assert_has_nested_selector(&result.css, "hover:fill-lime-600", "&:hover {");
         assert!(result.css.contains(".md\\:fill-sky-500"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -15438,27 +15358,31 @@ mod tests {
         assert!(result.css.contains("stroke: var(--color-white)"));
         assert!(result.css.contains(".stroke-red-500"));
         assert!(result.css.contains("stroke: var(--color-red-500)"));
-        assert!(result.css.contains(".stroke-cyan-700\\/25"));
+        assert!(result.css.contains(&selector("stroke-cyan-700/25")));
         assert!(
             result
                 .css
                 .contains("stroke: color-mix(in oklab,var(--color-cyan-700) 25%,transparent)")
         );
-        assert!(result.css.contains(".stroke-cyan-700\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("stroke-cyan-700/[37%]")));
         assert!(
             result
                 .css
                 .contains("stroke: color-mix(in oklab,var(--color-cyan-700) 37%,transparent)")
         );
-        assert!(result.css.contains(".stroke-cyan-700\\/\\(--my-opacity\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("stroke-cyan-700/(--my-opacity)"))
+        );
         assert!(result.css.contains(
             "stroke: color-mix(in oklab,var(--color-cyan-700) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".stroke-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("stroke-[#50d71e]")));
         assert!(result.css.contains("stroke: #50d71e"));
-        assert!(result.css.contains(".stroke-\\(--my-stroke-color\\)"));
+        assert!(result.css.contains(&selector("stroke-(--my-stroke-color)")));
         assert!(result.css.contains("stroke: var(--my-stroke-color)"));
-        assert!(result.css.contains(".hover\\:stroke-lime-600:hover"));
+        assert_has_nested_selector(&result.css, "hover:stroke-lime-600", "&:hover {");
         assert!(result.css.contains(".md\\:stroke-sky-500"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -15483,12 +15407,12 @@ mod tests {
         assert!(result.css.contains("stroke-width: 1"));
         assert!(result.css.contains(".stroke-2"));
         assert!(result.css.contains("stroke-width: 2"));
-        assert!(result.css.contains(".stroke-\\[1.5\\]"));
+        assert!(result.css.contains(&selector("stroke-[1.5]")));
         assert!(result.css.contains("stroke-width: 1.5"));
         assert!(
             result
                 .css
-                .contains(".stroke-\\(length\\:--my-stroke-width\\)")
+                .contains(&selector("stroke-(length:--my-stroke-width)"))
         );
         assert!(result.css.contains("stroke-width: var(--my-stroke-width)"));
         assert!(result.css.contains(".md\\:stroke-2"));
@@ -15542,12 +15466,16 @@ mod tests {
         assert!(result.css.contains("text-shadow: 0px 1px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 3px 2px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0px 4px 8px var(--tw-shadow-color,rgb(0 0 0 / 0.1))"));
         assert!(result.css.contains(".text-shadow-none"));
         assert!(result.css.contains("text-shadow: none"));
-        assert!(result.css.contains(".text-shadow-\\(--my-text-shadow\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("text-shadow-(--my-text-shadow)"))
+        );
         assert!(result.css.contains("text-shadow: var(--my-text-shadow)"));
         assert!(
             result
                 .css
-                .contains(".text-shadow-\\(color\\:--my-shadow-color\\)")
+                .contains(&selector("text-shadow-(color:--my-shadow-color)"))
         );
         assert!(
             result
@@ -15557,7 +15485,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".text-shadow-\\[0_35px_35px_rgb\\(0_0_0_\\/_0.25\\)\\]")
+                .contains(&selector("text-shadow-[0_35px_35px_rgb(0_0_0_/_0.25)]"))
         );
         assert!(
             result
@@ -15566,7 +15494,7 @@ mod tests {
         );
         assert!(result.css.contains(".text-shadow-inherit"));
         assert!(result.css.contains("--tw-shadow-color: inherit"));
-        assert!(result.css.contains(".text-shadow-lg\\/20"));
+        assert!(result.css.contains(&selector("text-shadow-lg/20")));
         assert!(result.css.contains("--tw-shadow-color: rgb(0 0 0 / 20%)"));
         assert!(result.css.contains(".text-shadow-sky-300"));
         assert!(
@@ -15574,7 +15502,7 @@ mod tests {
                 .css
                 .contains("--tw-shadow-color: var(--color-sky-300)")
         );
-        assert!(result.css.contains(".text-shadow-cyan-500\\/50"));
+        assert!(result.css.contains(&selector("text-shadow-cyan-500/50")));
         assert!(result.css.contains(
             "--tw-shadow-color: color-mix(in oklab,var(--color-cyan-500) 50%,transparent)"
         ));
@@ -15632,31 +15560,35 @@ mod tests {
                 .css
                 .contains("text-decoration-color: var(--color-sky-500)")
         );
-        assert!(result.css.contains(".decoration-pink-500\\/30"));
+        assert!(result.css.contains(&selector("decoration-pink-500/30")));
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-pink-500) 30%,transparent)"
         ));
-        assert!(result.css.contains(".decoration-indigo-500\\/\\[37\\%\\]"));
+        assert!(
+            result
+                .css
+                .contains(&selector("decoration-indigo-500/[37%]"))
+        );
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-indigo-500) 37%,transparent)"
         ));
         assert!(
             result
                 .css
-                .contains(".decoration-red-500\\/\\(--my-opacity\\)")
+                .contains(&selector("decoration-red-500/(--my-opacity)"))
         );
         assert!(result.css.contains(
             "text-decoration-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".decoration-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("decoration-[#50d71e]")));
         assert!(result.css.contains("text-decoration-color: #50d71e"));
-        assert!(result.css.contains(".decoration-\\(--my-color\\)"));
+        assert!(result.css.contains(&selector("decoration-(--my-color)")));
         assert!(
             result
                 .css
                 .contains("text-decoration-color: var(--my-color)")
         );
-        assert!(result.css.contains(".hover\\:decoration-pink-500:hover"));
+        assert_has_nested_selector(&result.css, "hover:decoration-pink-500", "&:hover {");
         assert!(result.css.contains(".md\\:decoration-blue-400"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -15698,13 +15630,13 @@ mod tests {
         assert!(result.css.contains("accent-color: var(--color-white)"));
         assert!(result.css.contains(".accent-rose-500"));
         assert!(result.css.contains("accent-color: var(--color-rose-500)"));
-        assert!(result.css.contains(".accent-purple-500\\/25"));
+        assert!(result.css.contains(&selector("accent-purple-500/25")));
         assert!(
             result.css.contains(
                 "accent-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
             )
         );
-        assert!(result.css.contains(".accent-purple-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("accent-purple-500/[37%]")));
         assert!(
             result.css.contains(
                 "accent-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
@@ -15713,22 +15645,22 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".accent-purple-500\\/\\(--my-opacity\\)")
+                .contains(&selector("accent-purple-500/(--my-opacity)"))
         );
         assert!(result.css.contains(
             "accent-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".accent-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("accent-[#50d71e]")));
         assert!(result.css.contains("accent-color: #50d71e"));
         assert!(
             result
                 .css
-                .contains(".accent-\\[color\\:var\\(--tool-accent\\)\\]")
+                .contains(&selector("accent-[color:var(--tool-accent)]"))
         );
         assert!(result.css.contains("accent-color: var(--tool-accent)"));
-        assert!(result.css.contains(".accent-\\(--my-accent-color\\)"));
+        assert!(result.css.contains(&selector("accent-(--my-accent-color)")));
         assert!(result.css.contains("accent-color: var(--my-accent-color)"));
-        assert!(result.css.contains(".hover\\:accent-pink-500:hover"));
+        assert_has_nested_selector(&result.css, "hover:accent-pink-500", "&:hover {");
         assert!(result.css.contains(".md\\:accent-lime-600"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -15769,13 +15701,13 @@ mod tests {
         assert!(result.css.contains("caret-color: var(--color-white)"));
         assert!(result.css.contains(".caret-rose-500"));
         assert!(result.css.contains("caret-color: var(--color-rose-500)"));
-        assert!(result.css.contains(".caret-purple-500\\/25"));
+        assert!(result.css.contains(&selector("caret-purple-500/25")));
         assert!(
             result.css.contains(
                 "caret-color: color-mix(in oklab,var(--color-purple-500) 25%,transparent)"
             )
         );
-        assert!(result.css.contains(".caret-purple-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("caret-purple-500/[37%]")));
         assert!(
             result.css.contains(
                 "caret-color: color-mix(in oklab,var(--color-purple-500) 37%,transparent)"
@@ -15784,20 +15716,20 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".caret-purple-500\\/\\(--my-opacity\\)")
+                .contains(&selector("caret-purple-500/(--my-opacity)"))
         );
         assert!(result.css.contains(
             "caret-color: color-mix(in oklab,var(--color-purple-500) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".caret-\\[#50d71e\\]"));
+        assert!(result.css.contains(&selector("caret-[#50d71e]")));
         assert!(result.css.contains("caret-color: #50d71e"));
         assert!(
             result
                 .css
-                .contains(".caret-\\[color\\:var\\(--tool-accent\\)\\]")
+                .contains(&selector("caret-[color:var(--tool-accent)]"))
         );
         assert!(result.css.contains("caret-color: var(--tool-accent)"));
-        assert!(result.css.contains(".caret-\\(--my-caret-color\\)"));
+        assert!(result.css.contains(&selector("caret-(--my-caret-color)")));
         assert!(result.css.contains("caret-color: var(--my-caret-color)"));
         assert!(result.css.contains(".md\\:caret-lime-600"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -15903,18 +15835,18 @@ mod tests {
                 .css
                 .contains("border-inline-color: var(--color-indigo-500)")
         );
-        assert!(result.css.contains(".border-s-emerald-500\\/30"));
+        assert!(result.css.contains(&selector("border-s-emerald-500/30")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-emerald-500) 30%,transparent)")
+                .contains("color-mix(in oklab, var(--color-emerald-500) 30%, transparent)")
         );
-        assert!(result.css.contains(".border-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("border-[#243c5a]")));
         assert!(result.css.contains("border-color: #243c5a"));
         assert!(
             result
                 .css
-                .contains(".border-\\[color\\:var\\(--tool-border\\)\\]")
+                .contains(&selector("border-[color:var(--tool-border)]"))
         );
         assert!(result.css.contains("border-color: var(--tool-border)"));
         assert!(
@@ -15922,11 +15854,11 @@ mod tests {
                 .css
                 .contains("border-width: color:var(--tool-border)")
         );
-        assert!(result.css.contains(".border-\\(--my-border\\)"));
+        assert!(result.css.contains(&selector("border-(--my-border)")));
         assert!(result.css.contains("border-color: var(--my-border)"));
         assert!(result.css.contains(".divide-rose-400"));
         assert!(result.css.contains(":where(& > :not(:last-child))"));
-        assert!(result.css.contains("border-color:var(--color-rose-400)"));
+        assert!(result.css.contains("border-color: var(--color-rose-400)"));
     }
 
     #[test]
@@ -15980,23 +15912,23 @@ mod tests {
         assert!(
             result
                 .css
-                .contains("border-inline-start-width:calc(2px * var(--tw-divide-x-reverse))")
+                .contains("border-inline-start-width: calc(2px * var(--tw-divide-x-reverse))")
         );
         assert!(
             result.css.contains(
-                "border-inline-end-width:calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
+                "border-inline-end-width: calc(2px * calc(1 - var(--tw-divide-x-reverse)))"
             )
         );
         assert!(result.css.contains(".divide-y-\\[3px\\]"));
         assert!(
             result
                 .css
-                .contains("border-bottom-width:calc(3px * calc(1 - var(--tw-divide-y-reverse)))")
+                .contains("border-bottom-width: calc(3px * calc(1 - var(--tw-divide-y-reverse)))")
         );
         assert!(result.css.contains(".divide-x-reverse"));
-        assert!(result.css.contains("--tw-divide-x-reverse:1"));
+        assert!(result.css.contains("--tw-divide-x-reverse: 1"));
         assert!(result.css.contains(".divide-y-reverse"));
-        assert!(result.css.contains("--tw-divide-y-reverse:1"));
+        assert!(result.css.contains("--tw-divide-y-reverse: 1"));
     }
 
     #[test]
@@ -16160,7 +16092,7 @@ mod tests {
         );
         assert!(result.css.contains(".outline-\\[2vw\\]"));
         assert!(result.css.contains("outline-width: 2vw"));
-        assert!(result.css.contains(".focus\\:outline-2:focus"));
+        assert_has_nested_selector(&result.css, "focus:outline-2", "&:focus {");
         assert!(result.css.contains(".md\\:outline"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -16202,28 +16134,32 @@ mod tests {
         assert!(result.css.contains("outline-color: var(--color-white)"));
         assert!(result.css.contains(".outline-blue-500"));
         assert!(result.css.contains("outline-color: var(--color-blue-500)"));
-        assert!(result.css.contains(".outline-blue-500\\/75"));
+        assert!(result.css.contains(&selector("outline-blue-500/75")));
         assert!(
             result.css.contains(
                 "outline-color: color-mix(in oklab,var(--color-blue-500) 75%,transparent)"
             )
         );
-        assert!(result.css.contains(".outline-rose-500\\/\\[37\\%\\]"));
+        assert!(result.css.contains(&selector("outline-rose-500/[37%]")));
         assert!(
             result.css.contains(
                 "outline-color: color-mix(in oklab,var(--color-rose-500) 37%,transparent)"
             )
         );
-        assert!(result.css.contains(".outline-red-500\\/\\(--my-opacity\\)"));
+        assert!(
+            result
+                .css
+                .contains(&selector("outline-red-500/(--my-opacity)"))
+        );
         assert!(result.css.contains(
             "outline-color: color-mix(in oklab,var(--color-red-500) var(--my-opacity),transparent)"
         ));
-        assert!(result.css.contains(".outline-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("outline-[#243c5a]")));
         assert!(result.css.contains("outline-color: #243c5a"));
         assert!(
             result
                 .css
-                .contains(".outline-\\[color\\:var\\(--tool-primary\\)\\]")
+                .contains(&selector("outline-[color:var(--tool-primary)]"))
         );
         assert!(result.css.contains("outline-color: var(--tool-primary)"));
         assert!(
@@ -16231,9 +16167,9 @@ mod tests {
                 .css
                 .contains("outline-width: color:var(--tool-primary)")
         );
-        assert!(result.css.contains(".outline-\\(--my-color\\)"));
+        assert!(result.css.contains(&selector("outline-(--my-color)")));
         assert!(result.css.contains("outline-color: var(--my-color)"));
-        assert!(result.css.contains(".focus\\:outline-sky-500:focus"));
+        assert_has_nested_selector(&result.css, "focus:outline-sky-500", "&:focus {");
         assert!(result.css.contains(".md\\:outline-blue-400"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -16270,7 +16206,7 @@ mod tests {
         assert!(result.css.contains(".outline-hidden"));
         assert!(result.css.contains("outline: 2px solid transparent"));
         assert!(result.css.contains("outline-offset: 2px"));
-        assert!(result.css.contains(".focus\\:outline-hidden:focus"));
+        assert_has_nested_selector(&result.css, "focus:outline-hidden", "&:focus {");
         assert!(result.css.contains(".md\\:outline-dashed"));
         assert!(result.css.contains("@media (width >= 48rem)"));
     }
@@ -16462,12 +16398,12 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".shadow-\\[0_0_20px_rgba\\(255\\,255\\,255\\,0.3\\)\\]")
+                .contains(&selector("shadow-[0_0_20px_rgba(255,255,255,0.3)]"))
         );
         assert!(
             result
                 .css
-                .contains("--tw-shadow: 0 0 20px rgba(255,255,255,0.3)")
+                .contains("--tw-shadow: 0 0 20px var(--tw-shadow-color,rgba(255,255,255,0.3))")
         );
         assert!(result.css.contains(".shadow-\\(--portal-shadow\\)"));
         assert!(result.css.contains("--tw-shadow: var(--portal-shadow)"));
@@ -16503,7 +16439,7 @@ mod tests {
                 .css
                 .contains("--tw-shadow-color: var(--my-shadow-color)")
         );
-        assert!(result.css.contains(".shadow-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("shadow-[#243c5a]")));
         assert!(result.css.contains("--tw-shadow-color: #243c5a"));
     }
 
@@ -16542,7 +16478,7 @@ mod tests {
                 .css
                 .contains("--tw-inset-shadow-color: var(--my-inset-shadow-color)")
         );
-        assert!(result.css.contains(".inset-shadow-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("inset-shadow-[#243c5a]")));
         assert!(result.css.contains("--tw-inset-shadow-color: #243c5a"));
     }
 
@@ -16608,20 +16544,20 @@ mod tests {
                 .css
                 .contains("--tw-ring-color: var(--color-blue-500)")
         );
-        assert!(result.css.contains(".ring-rose-500\\/30"));
+        assert!(result.css.contains(&selector("ring-rose-500/30")));
         assert!(
             result
                 .css
-                .contains("color-mix(in oklab,var(--color-rose-500) 30%,transparent)")
+                .contains("color-mix(in oklab, var(--color-rose-500) 30%, transparent)")
         );
-        assert!(result.css.contains(".ring-\\(--my-ring-color\\)"));
+        assert!(result.css.contains(&selector("ring-(--my-ring-color)")));
         assert!(result.css.contains("--tw-ring-color: var(--my-ring-color)"));
-        assert!(result.css.contains(".ring-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("ring-[#243c5a]")));
         assert!(result.css.contains("--tw-ring-color: #243c5a"));
         assert!(
             result
                 .css
-                .contains(".ring-\\[color\\:var\\(--tool-danger\\)\\]")
+                .contains(&selector("ring-[color:var(--tool-danger)]"))
         );
         assert!(result.css.contains("--tw-ring-color: var(--tool-danger)"));
     }
@@ -16647,7 +16583,7 @@ mod tests {
                 .css
                 .contains("--tw-inset-ring-color: var(--color-blue-500)")
         );
-        assert!(result.css.contains(".inset-ring-rose-500\\/30"));
+        assert!(result.css.contains(&selector("inset-ring-rose-500/30")));
         assert!(result.css.contains(
             "--tw-inset-ring-color: color-mix(in oklab,var(--color-rose-500) 30%,transparent)"
         ));
@@ -16661,7 +16597,7 @@ mod tests {
                 .css
                 .contains("--tw-inset-ring-color: var(--my-inset-ring-color)")
         );
-        assert!(result.css.contains(".inset-ring-\\[#243c5a\\]"));
+        assert!(result.css.contains(&selector("inset-ring-[#243c5a]")));
         assert!(result.css.contains("--tw-inset-ring-color: #243c5a"));
     }
 
@@ -16672,7 +16608,7 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["focus:ring-2".to_string()], &config);
-        assert!(result.css.contains(".focus\\:ring-2:focus"));
+        assert_has_nested_selector(&result.css, "focus:ring-2", "&:focus {");
         assert!(result.css.contains(
             "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))"
         ));
@@ -16691,13 +16627,13 @@ mod tests {
             ],
             &config,
         );
-        assert!(result.css.contains(".hover\\:bg-blue-500:hover"));
+        assert_has_nested_selector(&result.css, "hover:bg-blue-500", "&:hover {");
         assert!(
             result
                 .css
                 .contains("background-color: var(--color-blue-500)")
         );
-        assert!(result.css.contains(".active\\:bg-blue-600:active"));
+        assert_has_nested_selector(&result.css, "active:bg-blue-600", "&:active {");
         assert!(
             result
                 .css
@@ -16718,11 +16654,11 @@ mod tests {
             ],
             &config,
         );
-        assert!(result.css.contains(".focus-within\\:ring-1:focus-within"));
+        assert_has_nested_selector(&result.css, "focus-within:ring-1", "&:focus-within {");
         assert!(result.css.contains(
             "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width))"
         ));
-        assert!(result.css.contains(".disabled\\:bg-gray-200:disabled"));
+        assert_has_nested_selector(&result.css, "disabled:bg-gray-200", "&:disabled {");
         assert!(
             result
                 .css
@@ -16766,11 +16702,7 @@ mod tests {
         };
         let result =
             generate_with_overrides(&["dark:bg-black".to_string()], &config, Some(&overrides));
-        assert!(
-            result
-                .css
-                .contains(".dark\\:bg-black:where(.dark, .dark *)")
-        );
+        assert_has_nested_selector(&result.css, "dark:bg-black", "&:where(.dark, .dark *) {");
         assert!(!result.css.contains("prefers-color-scheme: dark"));
     }
 
@@ -16800,10 +16732,10 @@ mod tests {
             &config,
             Some(&overrides),
         );
-        assert!(
-            result
-                .css
-                .contains(".theme-midnight\\:bg-black:where([data-theme=\"midnight\"] *)")
+        assert_has_nested_selector(
+            &result.css,
+            "theme-midnight:bg-black",
+            "&:where([data-theme=\"midnight\"] *) {",
         );
     }
 
@@ -16833,8 +16765,12 @@ mod tests {
             &config,
             Some(&overrides),
         );
-        assert!(result.css.contains("@media (any-hover: hover)"));
-        assert!(result.css.contains(".any-hover\\:bg-black:hover"));
+        assert_has_nested_selector(
+            &result.css,
+            "any-hover:bg-black",
+            "@media (any-hover: hover) {",
+        );
+        assert_has_nested_selector(&result.css, "any-hover:bg-black", "&:hover {");
         assert!(result.css.contains("background-color: var(--color-black)"));
     }
 
@@ -16875,7 +16811,12 @@ mod tests {
             "{}",
             result.css
         );
-        assert!(result.css.contains(".fancy-hover\\:text-black:hover"));
+        assert_has_nested_selector(
+            &result.css,
+            "fancy-hover:text-black",
+            "@supports (display: grid) {",
+        );
+        assert_has_nested_selector(&result.css, "fancy-hover:text-black", "&:hover {");
         assert!(result.css.contains("color: var(--color-black)"));
     }
 
@@ -16902,8 +16843,12 @@ mod tests {
         };
         let result =
             generate_with_overrides(&["in-card:bg-black".to_string()], &config, Some(&overrides));
-        assert!(result.css.contains("@container sidebar (width >= 30rem)"));
-        assert!(result.css.contains(".in-card\\:bg-black:hover"));
+        assert_has_nested_selector(
+            &result.css,
+            "in-card:bg-black",
+            "@container sidebar (width >= 30rem) {",
+        );
+        assert_has_nested_selector(&result.css, "in-card:bg-black", "&:hover {");
         assert!(result.css.contains("background-color: var(--color-black)"));
     }
 
@@ -16939,7 +16884,7 @@ mod tests {
         );
         assert!(result.css.contains(".content-auto"));
         assert!(result.css.contains("content-visibility: auto"));
-        assert!(result.css.contains(".hover\\:content-auto:hover"));
+        assert_has_nested_selector(&result.css, "hover:content-auto", "&:hover {");
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains(".lg\\:content-auto"));
         assert!(result.css.contains("@media (width >= 64rem)"));
@@ -16976,7 +16921,7 @@ mod tests {
         );
         assert!(result.css.contains(".scrollbar-hidden"));
         assert!(result.css.contains("@media (hover: hover)"));
-        assert!(result.css.contains(".hover\\:scrollbar-hidden:hover"));
+        assert_has_nested_selector(&result.css, "hover:scrollbar-hidden", "&:hover {");
         assert!(result.css.contains("&::-webkit-scrollbar"));
         assert!(result.css.contains("display: none;"));
     }
@@ -17027,7 +16972,7 @@ mod tests {
         assert!(result.css.contains("tab-size: 76"));
         assert!(result.css.contains(".opacity-15"));
         assert!(result.css.contains("opacity: calc(15 * 1%)"));
-        assert!(result.css.contains(".hover\\:tab-4:hover"));
+        assert_has_nested_selector(&result.css, "hover:tab-4", "&:hover {");
     }
 
     #[test]
@@ -17063,7 +17008,7 @@ mod tests {
         assert!(result.css.contains(".demo-12\\/6"));
         assert!(result.css.contains("font-size: 12"));
         assert!(result.css.contains("line-height: 6"));
-        assert!(result.css.contains(".demo-10\\/\\[0.02em\\]"));
+        assert!(result.css.contains(&selector("demo-10/[0.02em]")));
         assert!(result.css.contains("letter-spacing: 0.02em"));
         assert!(result.css.contains(".demo-9"));
         assert!(result.css.contains("font-size: 9"));
@@ -17371,10 +17316,10 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["disabled:hover:bg-blue-500".to_string()], &config);
-        assert!(
-            result
-                .css
-                .contains(".disabled\\:hover\\:bg-blue-500:disabled:hover")
+        assert_has_nested_selector(
+            &result.css,
+            "disabled:hover:bg-blue-500",
+            "&:disabled:hover {",
         );
         assert!(
             result
@@ -17390,11 +17335,17 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["dark:lg:hover:bg-gray-900".to_string()], &config);
-        assert!(
-            result
-                .css
-                .contains(".dark\\:lg\\:hover\\:bg-gray-900:hover")
+        assert_has_nested_selector(
+            &result.css,
+            "dark:lg:hover:bg-gray-900",
+            "@media (prefers-color-scheme: dark) {",
         );
+        assert_has_nested_selector(
+            &result.css,
+            "dark:lg:hover:bg-gray-900",
+            "@media (width >= 64rem) {",
+        );
+        assert_has_nested_selector(&result.css, "dark:lg:hover:bg-gray-900", "&:hover {");
         assert!(result.css.contains("@media (prefers-color-scheme: dark)"));
         assert!(result.css.contains("@media (width >= 64rem)"));
         assert!(
@@ -17411,7 +17362,11 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["group-hover:underline".to_string()], &config);
-        assert!(result.css.contains(".group:hover .group-hover\\:underline"));
+        assert_has_nested_selector(
+            &result.css,
+            "group-hover:underline",
+            "&:is(:where(.group):hover *) {",
+        );
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains("text-decoration-line: underline"));
     }
@@ -17473,56 +17428,36 @@ mod tests {
             &config,
         );
 
-        assert!(
-            result
-                .css
-                .contains(".focus-visible\\:underline:focus-visible")
+        assert_has_nested_selector(&result.css, "focus-visible:underline", "&:focus-visible {");
+        assert_has_nested_selector(&result.css, "visited:text-blue-600", "&:visited {");
+        assert_has_nested_selector(&result.css, "first:underline", "&:first-child {");
+        assert_has_nested_selector(&result.css, "last:underline", "&:last-child {");
+        assert_has_nested_selector(&result.css, "odd:bg-gray-100", "&:nth-child(odd) {");
+        assert_has_nested_selector(&result.css, "even:bg-gray-200", "&:nth-child(even) {");
+        assert_has_nested_selector(&result.css, "nth-3:underline", "&:nth-child(3) {");
+        assert_has_nested_selector(&result.css, "nth-[2n+1]:underline", "&:nth-child(2n+1) {");
+        assert_has_nested_selector(&result.css, "nth-last-2:underline", "&:nth-last-child(2) {");
+        assert_has_nested_selector(&result.css, "nth-of-type-4:underline", "&:nth-of-type(4) {");
+        assert_has_nested_selector(
+            &result.css,
+            "nth-last-of-type-[2n+1]:underline",
+            "&:nth-last-of-type(2n+1) {",
         );
-        assert!(result.css.contains(".visited\\:text-blue-600:visited"));
-        assert!(result.css.contains(".first\\:underline:first-child"));
-        assert!(result.css.contains(".last\\:underline:last-child"));
-        assert!(result.css.contains(".odd\\:bg-gray-100:nth-child(odd)"));
-        assert!(result.css.contains(".even\\:bg-gray-200:nth-child(even)"));
-        assert!(result.css.contains(".nth-3\\:underline:nth-child(3)"));
-        assert!(
-            result
-                .css
-                .contains(".nth-\\[2n\\+1\\]\\:underline:nth-child(2n+1)")
+        assert_has_nested_selector(&result.css, "only:underline", "&:only-child {");
+        assert_has_nested_selector(&result.css, "only-of-type:underline", "&:only-of-type {");
+        assert_has_nested_selector(&result.css, "empty:hidden", "&:empty {");
+        assert_has_nested_selector(&result.css, "read-only:bg-gray-100", "&:read-only {");
+        assert_has_nested_selector(
+            &result.css,
+            "placeholder-shown:text-gray-500",
+            "&:placeholder-shown {",
         );
-        assert!(
-            result
-                .css
-                .contains(".nth-last-2\\:underline:nth-last-child(2)")
-        );
-        assert!(
-            result
-                .css
-                .contains(".nth-of-type-4\\:underline:nth-of-type(4)")
-        );
-        assert!(
-            result
-                .css
-                .contains(".nth-last-of-type-\\[2n\\+1\\]\\:underline:nth-last-of-type(2n+1)")
-        );
-        assert!(result.css.contains(".only\\:underline:only-child"));
-        assert!(
-            result
-                .css
-                .contains(".only-of-type\\:underline:only-of-type")
-        );
-        assert!(result.css.contains(".empty\\:hidden:empty"));
-        assert!(result.css.contains(".read-only\\:bg-gray-100:read-only"));
-        assert!(
-            result
-                .css
-                .contains(".placeholder-shown\\:text-gray-500:placeholder-shown")
-        );
-        assert!(result.css.contains(".autofill\\:bg-blue-100:autofill"));
-        assert!(result.css.contains(".in-range\\:text-blue-600:in-range"));
-        assert!(
-            result
-                .css
-                .contains(".out-of-range\\:text-gray-700:out-of-range")
+        assert_has_nested_selector(&result.css, "autofill:bg-blue-100", "&:autofill {");
+        assert_has_nested_selector(&result.css, "in-range:text-blue-600", "&:in-range {");
+        assert_has_nested_selector(
+            &result.css,
+            "out-of-range:text-gray-700",
+            "&:out-of-range {",
         );
     }
 
@@ -17559,100 +17494,86 @@ mod tests {
             &config,
         );
 
-        assert!(
-            result
-                .css
-                .contains(".group:focus .group-focus\\:text-blue-600")
+        assert_has_nested_selector(
+            &result.css,
+            "group-focus:text-blue-600",
+            ":where(.group):focus *",
         );
-        assert!(
-            result
-                .css
-                .contains(".group\\/item:hover .group-hover\\/item\\:text-blue-600")
+        assert_has_nested_selector(
+            &result.css,
+            "group-hover/item:text-blue-600",
+            ":where(.group\\/item):hover *",
         );
-        assert!(
-            result
-                .css
-                .contains(".group:has(:checked) .group-has-checked\\:underline")
+        assert_has_nested_selector(&result.css, "group-has-checked:underline", ":has(:checked)");
+        assert_has_nested_selector(
+            &result.css,
+            "group-data-[state=open]:underline",
+            "[data-state=open]",
         );
-        assert!(
-            result
-                .css
-                .contains(".group[data-state=open] .group-data-\\[state\\=open\\]\\:underline")
+        assert_has_nested_selector(
+            &result.css,
+            "group-aria-[sort=ascending]:underline",
+            "[aria-sort=ascending]",
         );
-        assert!(result.css.contains(
-            ".group[aria-sort=ascending] .group-aria-\\[sort\\=ascending\\]\\:underline"
-        ));
-        assert!(
-            result
-                .css
-                .contains(".peer:checked ~ .peer-checked\\:text-blue-600")
+        assert_has_nested_selector(
+            &result.css,
+            "peer-checked:text-blue-600",
+            ":where(.peer):checked ~ *",
         );
-        assert!(
-            result
-                .css
-                .contains(".peer:invalid ~ .peer-invalid\\:text-gray-700")
+        assert_has_nested_selector(
+            &result.css,
+            "peer-invalid:text-gray-700",
+            ":where(.peer):invalid ~ *",
         );
-        assert!(
-            result
-                .css
-                .contains(".peer\\/draft:checked ~ .peer-checked\\/draft\\:text-blue-600")
+        assert_has_nested_selector(
+            &result.css,
+            "peer-checked/draft:text-blue-600",
+            ":where(.peer\\/draft):checked ~ *",
         );
-        assert!(
-            result
-                .css
-                .contains(".peer:has(:checked) ~ .peer-has-checked\\:hidden")
+        assert_has_nested_selector(&result.css, "peer-has-checked:hidden", ":has(:checked) ~ *");
+        assert_has_nested_selector(
+            &result.css,
+            "peer-data-[size=large]:underline",
+            "[data-size=large]",
         );
-        assert!(
-            result
-                .css
-                .contains(".peer[data-size=large] ~ .peer-data-\\[size\\=large\\]\\:underline")
+        assert_has_nested_selector(&result.css, "in-focus:underline", ":where(:focus) &");
+        assert_has_nested_selector(&result.css, "has-checked:bg-blue-100", "&:has(:checked) {");
+        assert_has_nested_selector(&result.css, "has-[:focus]:underline", "&:has(:focus) {");
+        assert_has_nested_selector(
+            &result.css,
+            "not-focus:hover:bg-blue-500",
+            "&:not(:focus):hover {",
         );
-        assert!(result.css.contains(":where(:focus) .in-focus\\:underline"));
-        assert!(
-            result
-                .css
-                .contains(".has-checked\\:bg-blue-100:has(:checked)")
+        assert_has_nested_selector(
+            &result.css,
+            "not-[:focus]:hover:bg-blue-500",
+            "&:not(:focus):hover {",
         );
-        assert!(
-            result
-                .css
-                .contains(".has-\\[\\:focus\\]\\:underline:has(:focus)")
+        assert_has_nested_selector(
+            &result.css,
+            "aria-checked:bg-blue-500",
+            "[aria-checked=\"true\"]",
         );
-        assert!(
-            result
-                .css
-                .contains(".not-focus\\:hover\\:bg-blue-500:not(:focus):hover")
+        assert_has_nested_selector(
+            &result.css,
+            "aria-[sort=ascending]:underline",
+            "[aria-sort=ascending]",
         );
-        assert!(
-            result
-                .css
-                .contains(".not-\\[\\:focus\\]\\:hover\\:bg-blue-500:not(:focus):hover")
+        assert_has_nested_selector(&result.css, "data-active:bg-blue-500", "[data-active]");
+        assert_has_nested_selector(
+            &result.css,
+            "data-[state=open]:bg-blue-500",
+            "[data-state=open]",
         );
-        assert!(result.css.contains(".aria-checked\\:bg-blue-500"));
-        assert!(result.css.contains("[aria-checked=\"true\"]"));
-        assert!(
-            result
-                .css
-                .contains(".aria-\\[sort\\=ascending\\]\\:underline")
+        assert_has_nested_selector(
+            &result.css,
+            "rtl:ml-4",
+            "&:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *) {",
         );
-        assert!(result.css.contains("[aria-sort=ascending]"));
-        assert!(result.css.contains(".data-active\\:bg-blue-500"));
-        assert!(result.css.contains("[data-active]"));
-        assert!(
-            result
-                .css
-                .contains(".data-\\[state\\=open\\]\\:bg-blue-500")
-        );
-        assert!(result.css.contains("[data-state=open]"));
-        assert!(
-            result
-                .css
-                .contains(".rtl\\:ml-4:where(:dir(rtl), [dir=\"rtl\"], [dir=\"rtl\"] *)")
-        );
-        assert!(
-            result
-                .css
-                .contains(".ltr\\:mr-4:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *)")
+        assert_has_nested_selector(
+            &result.css,
+            "ltr:mr-4",
+            "&:where(:dir(ltr), [dir=\"ltr\"], [dir=\"ltr\"] *) {",
         );
     }
 
@@ -17705,42 +17626,40 @@ mod tests {
             &config,
         );
 
-        assert!(result.css.contains(".before\\:bg-blue-500:before"));
-        assert!(result.css.contains("content:\"\"") || result.css.contains("content: \"\""));
-        assert!(result.css.contains(".after\\:text-blue-600:after"));
-        assert!(
-            result
-                .css
-                .contains(".first-letter\\:text-blue-600::first-letter")
+        assert_has_nested_selector(&result.css, "before:bg-blue-500", "&::before {");
+        assert!(result.css.contains("content: var(--tw-content)"));
+        assert_has_nested_selector(&result.css, "after:text-blue-600", "&::after {");
+        assert_has_nested_selector(
+            &result.css,
+            "first-letter:text-blue-600",
+            "&::first-letter {",
         );
-        assert!(result.css.contains(".first-line\\:uppercase::first-line"));
-        assert!(
-            result
-                .css
-                .contains(".marker\\:text-blue-600::marker, .marker\\:text-blue-600 *::marker")
+        assert_has_nested_selector(&result.css, "first-line:uppercase", "&::first-line {");
+        assert_has_nested_selector(
+            &result.css,
+            "marker:text-blue-600",
+            "&::marker, & *::marker {",
         );
-        assert!(result.css.contains(
-            ".selection\\:bg-blue-100::selection, .selection\\:bg-blue-100 *::selection"
-        ));
-        assert!(
-            result
-                .css
-                .contains(".file\\:bg-blue-100::file-selector-button")
+        assert_has_nested_selector(
+            &result.css,
+            "selection:bg-blue-100",
+            "&::selection, & *::selection {",
         );
-        assert!(result.css.contains(".backdrop\\:bg-gray-100::backdrop"));
-        assert!(
-            result
-                .css
-                .contains(".placeholder\\:text-gray-500::placeholder")
+        assert_has_nested_selector(&result.css, "file:bg-blue-100", "&::file-selector-button {");
+        assert_has_nested_selector(&result.css, "backdrop:bg-gray-100", "&::backdrop {");
+        assert_has_nested_selector(&result.css, "placeholder:text-gray-500", "&::placeholder {");
+        assert_has_nested_selector(&result.css, "*:underline", ":is(& > *) {");
+        assert_has_nested_selector(&result.css, "**:underline", ":is(& *) {");
+        assert_has_nested_selector(
+            &result.css,
+            "open:bg-gray-100",
+            "&:is([open], :popover-open, :open) {",
         );
-        assert!(result.css.contains(":is(.\\*\\:underline > *)"));
-        assert!(result.css.contains(":is(.\\*\\*\\:underline *)"));
-        assert!(
-            result
-                .css
-                .contains(".open\\:bg-gray-100:is([open], :popover-open, :open)")
+        assert_has_nested_selector(
+            &result.css,
+            "inert:bg-gray-100",
+            "&:is([inert], [inert] *) {",
         );
-        assert!(result.css.contains(".inert\\:bg-gray-100:is([inert]"));
         assert!(result.css.contains("@supports (display:grid)"));
         assert!(result.css.contains("@supports not (display:grid)"));
         assert!(
@@ -17801,14 +17720,18 @@ mod tests {
             ],
             &config,
         );
-        assert!(
-            result.css.contains(
-                ".\\[\\&\\>\\[data-active\\]\\+span\\]\\:text-blue-600>[data-active]+span"
-            )
+        assert_has_nested_selector(
+            &result.css,
+            "[&>[data-active]+span]:text-blue-600",
+            "&>[data-active]+span {",
         );
         assert!(result.css.contains("color: var(--color-blue-600)"));
-        assert!(result.css.contains("hello\\\\_world"));
-        assert!(result.css.contains(":underline"));
+        assert_has_selector(&result.css, "[&[data-label='hello\\_world']]:underline");
+        assert_has_nested_selector(
+            &result.css,
+            "[&[data-label='hello\\_world']]:underline",
+            "&[data-label='hello_world'] {",
+        );
         assert!(result.css.contains("[data-label='hello_world']"));
         assert!(result.css.contains("text-decoration-line: underline"));
     }
@@ -17859,7 +17782,7 @@ mod tests {
             colors: BTreeMap::new(),
         };
         let result = generate(&["hover:bg-red-500!".to_string()], &config);
-        assert!(result.css.contains(".hover\\:bg-red-500\\!:hover"));
+        assert_has_nested_selector(&result.css, "hover:bg-red-500!", "&:hover {");
         assert!(
             result
                 .css
@@ -17905,12 +17828,12 @@ mod tests {
             ],
             &config,
         );
-        assert!(result.css.contains(".bg-\\[#316ff6\\]"));
+        assert!(result.css.contains(&selector("bg-[#316ff6]")));
         assert!(result.css.contains("background-color: #316ff6"));
         assert!(
             result
                 .css
-                .contains(".grid-cols-\\[24rem_2.5rem_minmax\\(0\\,1fr\\)\\]")
+                .contains(&selector("grid-cols-[24rem_2.5rem_minmax(0,1fr)]"))
         );
         assert!(
             result
@@ -17920,7 +17843,7 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".max-h-\\[calc\\(100dvh-\\(--spacing\\(6\\)\\)\\)\\]")
+                .contains(&selector("max-h-[calc(100dvh-(--spacing(6)))]"))
         );
         assert!(
             result
@@ -17989,16 +17912,19 @@ mod tests {
 
         assert!(result.css.contains(".\\[mask-type\\:luminance\\]"));
         assert!(result.css.contains("mask-type: luminance"));
-        assert!(
-            result
-                .css
-                .contains(".hover\\:\\[mask-type\\:alpha\\]:hover")
-        );
+        assert_has_nested_selector(&result.css, "hover:[mask-type:alpha]", "&:hover {");
         assert!(result.css.contains("mask-type: alpha"));
 
-        assert!(result.css.contains(
-            ".lg\\:\\[\\&\\:nth-child\\(-n\\+3\\)\\]\\:hover\\:underline:nth-child(-n+3):hover"
-        ));
+        assert_has_nested_selector(
+            &result.css,
+            "lg:[&:nth-child(-n+3)]:hover:underline",
+            "@media (width >= 64rem) {",
+        );
+        assert_has_nested_selector(
+            &result.css,
+            "lg:[&:nth-child(-n+3)]:hover:underline",
+            "&:nth-child(-n+3):hover {",
+        );
         assert!(result.css.contains("text-decoration-line: underline"));
 
         assert!(result.css.contains(".text-\\(length\\:--my-var\\)"));
@@ -19007,10 +18933,10 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".cursor-\\[url\\(hand.cur\\)\\,_pointer\\]")
+                .contains(&selector("cursor-[url(hand.cur),_pointer]"))
         );
         assert!(result.css.contains("cursor: url(hand.cur),_pointer"));
-        assert!(result.css.contains(".cursor-\\(--my-cursor\\)"));
+        assert!(result.css.contains(&selector("cursor-(--my-cursor)")));
         assert!(result.css.contains("cursor: var(--my-cursor)"));
         assert!(result.css.contains(".md\\:cursor-auto"));
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -19504,10 +19430,10 @@ mod tests {
         assert!(
             result
                 .css
-                .contains(".mask-\\[url\\(\\/img\\/scribble.png\\)\\]")
+                .contains(&selector("mask-[url(/img/scribble.png)]"))
         );
         assert!(result.css.contains("mask-image: url(/img/scribble.png)"));
-        assert!(result.css.contains(".mask-\\(--my-mask\\)"));
+        assert!(result.css.contains(&selector("mask-(--my-mask)")));
         assert!(result.css.contains("mask-image: var(--my-mask)"));
         assert!(result.css.contains(".mask-linear-50"));
         assert!(result.css.contains(
@@ -20321,9 +20247,9 @@ mod tests {
         assert!(result.css.contains("rotate: 45deg"));
         assert!(result.css.contains(".-rotate-90"));
         assert!(result.css.contains("rotate: calc(90deg * -1)"));
-        assert!(result.css.contains(".rotate-\\(--my-rotation\\)"));
+        assert!(result.css.contains(&selector("rotate-(--my-rotation)")));
         assert!(result.css.contains("rotate: var(--my-rotation)"));
-        assert!(result.css.contains(".rotate-\\[3.142rad\\]"));
+        assert!(result.css.contains(&selector("rotate-[3.142rad]")));
         assert!(result.css.contains("rotate: 3.142rad"));
 
         assert!(result.css.contains(".rotate-x-50"));
@@ -20363,13 +20289,13 @@ mod tests {
                 .css
                 .contains("transform: var(--tw-rotate-x) rotateY(-30deg)")
         );
-        assert!(result.css.contains(".rotate-y-\\(--my-rotate-y\\)"));
+        assert!(result.css.contains(&selector("rotate-y-(--my-rotate-y)")));
         assert!(
             result
                 .css
                 .contains("transform: var(--tw-rotate-x) rotateY(var(--my-rotate-y))")
         );
-        assert!(result.css.contains(".rotate-y-\\[0.5turn\\]"));
+        assert!(result.css.contains(&selector("rotate-y-[0.5turn]")));
         assert!(
             result
                 .css
@@ -20392,7 +20318,7 @@ mod tests {
         assert!(result.css.contains(
             "transform: var(--tw-rotate-x) var(--tw-rotate-y) rotateZ(var(--my-rotate-z))"
         ));
-        assert!(result.css.contains(".rotate-z-\\[1.25rad\\]"));
+        assert!(result.css.contains(&selector("rotate-z-[1.25rad]")));
         assert!(
             result
                 .css
@@ -20450,11 +20376,11 @@ mod tests {
         assert!(result.css.contains("--tw-scale-x: calc(125% * -1)"));
         assert!(result.css.contains("--tw-scale-y: calc(125% * -1)"));
         assert!(result.css.contains("--tw-scale-z: calc(125% * -1)"));
-        assert!(result.css.contains(".scale-\\(--my-scale\\)"));
+        assert!(result.css.contains(&selector("scale-(--my-scale)")));
         assert!(result.css.contains("--tw-scale-x: var(--my-scale)"));
         assert!(result.css.contains("--tw-scale-y: var(--my-scale)"));
         assert!(result.css.contains("--tw-scale-z: var(--my-scale)"));
-        assert!(result.css.contains(".scale-\\[1.7\\]"));
+        assert!(result.css.contains(&selector("scale-[1.7]")));
         assert!(result.css.contains("scale: 1.7"));
 
         assert!(result.css.contains(".scale-x-75"));
@@ -20465,13 +20391,13 @@ mod tests {
                 .css
                 .contains("scale: calc(150% * -1) var(--tw-scale-y)")
         );
-        assert!(result.css.contains(".scale-x-\\(--my-scale-x\\)"));
+        assert!(result.css.contains(&selector("scale-x-(--my-scale-x)")));
         assert!(
             result
                 .css
                 .contains("scale: var(--my-scale-x) var(--tw-scale-y)")
         );
-        assert!(result.css.contains(".scale-x-\\[1.2\\]"));
+        assert!(result.css.contains(&selector("scale-x-[1.2]")));
         assert!(result.css.contains("scale: 1.2 var(--tw-scale-y)"));
 
         assert!(result.css.contains(".scale-y-125"));
@@ -20488,7 +20414,7 @@ mod tests {
                 .css
                 .contains("scale: var(--tw-scale-x) var(--my-scale-y)")
         );
-        assert!(result.css.contains(".scale-y-\\[1.3\\]"));
+        assert!(result.css.contains(&selector("scale-y-[1.3]")));
         assert!(result.css.contains("scale: var(--tw-scale-x) 1.3"));
 
         assert!(result.css.contains(".scale-z-110"));
@@ -20509,7 +20435,7 @@ mod tests {
                 .css
                 .contains("scale: var(--tw-scale-x) var(--tw-scale-y) var(--my-scale-z)")
         );
-        assert!(result.css.contains(".scale-z-\\[0.8\\]"));
+        assert!(result.css.contains(&selector("scale-z-[0.8]")));
         assert!(
             result
                 .css
@@ -20522,7 +20448,7 @@ mod tests {
                 .contains("scale: var(--tw-scale-x) var(--tw-scale-y) var(--tw-scale-z)")
         );
 
-        assert!(result.css.contains(".hover\\:scale-120:hover"));
+        assert_has_nested_selector(&result.css, "hover:scale-120", "&:hover {");
         assert!(result.css.contains("--tw-scale-x: 120%"));
         assert!(result.css.contains("--tw-scale-y: 120%"));
         assert!(result.css.contains("--tw-scale-z: 120%"));
@@ -20566,10 +20492,10 @@ mod tests {
         assert!(result.css.contains(".-skew-12"));
         assert!(result.css.contains("--tw-skew-x: skewX(-12deg)"));
         assert!(result.css.contains("--tw-skew-y: skewY(-12deg)"));
-        assert!(result.css.contains(".skew-\\(--my-skew\\)"));
+        assert!(result.css.contains(&selector("skew-(--my-skew)")));
         assert!(result.css.contains("--tw-skew-x: skewX(var(--my-skew))"));
         assert!(result.css.contains("--tw-skew-y: skewY(var(--my-skew))"));
-        assert!(result.css.contains(".skew-\\[3.142rad\\]"));
+        assert!(result.css.contains(&selector("skew-[3.142rad]")));
         assert!(result.css.contains("--tw-skew-x: skewX(3.142rad)"));
         assert!(result.css.contains("--tw-skew-y: skewY(3.142rad)"));
 
@@ -20586,9 +20512,9 @@ mod tests {
         assert!(result.css.contains("--tw-skew-y: skewY(6deg)"));
         assert!(result.css.contains(".-skew-y-10"));
         assert!(result.css.contains("--tw-skew-y: skewY(-10deg)"));
-        assert!(result.css.contains(".skew-y-\\(--my-skew-y\\)"));
+        assert!(result.css.contains(&selector("skew-y-(--my-skew-y)")));
         assert!(result.css.contains("--tw-skew-y: skewY(var(--my-skew-y))"));
-        assert!(result.css.contains(".skew-y-\\[0.25turn\\]"));
+        assert!(result.css.contains(&selector("skew-y-[0.25turn]")));
         assert!(result.css.contains("--tw-skew-y: skewY(0.25turn)"));
 
         assert!(result.css.contains("@media (width >= 48rem)"));
@@ -20821,10 +20747,10 @@ mod tests {
         assert!(result.css.contains(".-translate-px"));
         assert!(result.css.contains("--tw-translate-x: -1px"));
         assert!(result.css.contains("--tw-translate-y: -1px"));
-        assert!(result.css.contains(".translate-\\(--my-translate\\)"));
+        assert!(result.css.contains(&selector("translate-(--my-translate)")));
         assert!(result.css.contains("--tw-translate-x: var(--my-translate)"));
         assert!(result.css.contains("--tw-translate-y: var(--my-translate)"));
-        assert!(result.css.contains(".translate-\\[3.142rad\\]"));
+        assert!(result.css.contains(&selector("translate-[3.142rad]")));
         assert!(result.css.contains("--tw-translate-x: 3.142rad"));
         assert!(result.css.contains("--tw-translate-y: 3.142rad"));
 
@@ -21392,72 +21318,72 @@ mod tests {
         assert!(result.css.contains(".space-x-4"));
         assert!(result.css.contains(":where(& > :not(:last-child))"));
         assert!(result.css.contains(
-            "margin-inline-start:calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"
+            "margin-inline-start: calc(calc(var(--spacing) * 4) * var(--tw-space-x-reverse))"
         ));
         assert!(result.css.contains(".-space-x-2"));
         assert!(result
             .css
-            .contains("margin-inline-end:calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)))"));
+            .contains("margin-inline-end: calc(calc(var(--spacing) * -2) * calc(1 - var(--tw-space-x-reverse)))"));
         assert!(result.css.contains(".space-x-px"));
         assert!(
             result
                 .css
-                .contains("margin-inline-start:calc(1px * var(--tw-space-x-reverse))")
+                .contains("margin-inline-start: calc(1px * var(--tw-space-x-reverse))")
         );
         assert!(result.css.contains(".-space-x-px"));
         assert!(
             result
                 .css
-                .contains("margin-inline-end:calc(-1px * calc(1 - var(--tw-space-x-reverse)))")
+                .contains("margin-inline-end: calc(-1px * calc(1 - var(--tw-space-x-reverse)))")
         );
         assert!(result.css.contains(".space-x-\\(--my-space-x\\)"));
         assert!(
             result.css.contains(
-                "margin-inline-start:calc(var(--my-space-x) * var(--tw-space-x-reverse))"
+                "margin-inline-start: calc(var(--my-space-x) * var(--tw-space-x-reverse))"
             )
         );
         assert!(result.css.contains(".space-x-\\[3rem\\]"));
         assert!(
             result
                 .css
-                .contains("margin-inline-end:calc(3rem * calc(1 - var(--tw-space-x-reverse)))")
+                .contains("margin-inline-end: calc(3rem * calc(1 - var(--tw-space-x-reverse)))")
         );
         assert!(result.css.contains(".space-y-6"));
         assert!(result.css.contains(
-            "margin-block-start:calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
+            "margin-block-start: calc(calc(var(--spacing) * 6) * var(--tw-space-y-reverse))"
         ));
         assert!(result.css.contains(".-space-y-1"));
         assert!(result.css.contains(
-            "margin-block-end:calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"
+            "margin-block-end: calc(calc(var(--spacing) * -1) * calc(1 - var(--tw-space-y-reverse)))"
         ));
         assert!(result.css.contains(".space-y-px"));
         assert!(
             result
                 .css
-                .contains("margin-block-start:calc(1px * var(--tw-space-y-reverse))")
+                .contains("margin-block-start: calc(1px * var(--tw-space-y-reverse))")
         );
         assert!(result.css.contains(".-space-y-px"));
         assert!(
             result
                 .css
-                .contains("margin-block-end:calc(-1px * calc(1 - var(--tw-space-y-reverse)))")
+                .contains("margin-block-end: calc(-1px * calc(1 - var(--tw-space-y-reverse)))")
         );
         assert!(result.css.contains(".space-y-\\(--my-space-y\\)"));
         assert!(
-            result
-                .css
-                .contains("margin-block-start:calc(var(--my-space-y) * var(--tw-space-y-reverse))")
+            result.css.contains(
+                "margin-block-start: calc(var(--my-space-y) * var(--tw-space-y-reverse))"
+            )
         );
         assert!(result.css.contains(".space-y-\\[10\\%\\]"));
         assert!(
             result
                 .css
-                .contains("margin-block-end:calc(10% * calc(1 - var(--tw-space-y-reverse)))")
+                .contains("margin-block-end: calc(10% * calc(1 - var(--tw-space-y-reverse)))")
         );
         assert!(result.css.contains(".space-x-reverse"));
-        assert!(result.css.contains("--tw-space-x-reverse:1"));
+        assert!(result.css.contains("--tw-space-x-reverse: 1"));
         assert!(result.css.contains(".space-y-reverse"));
-        assert!(result.css.contains("--tw-space-y-reverse:1"));
+        assert!(result.css.contains("--tw-space-y-reverse: 1"));
         assert!(result.css.contains("@media (width >= 48rem)"));
         assert!(result.css.contains(".md\\:space-x-8"));
     }
