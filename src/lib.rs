@@ -341,8 +341,14 @@ fn run_build(
     config_path: Option<String>,
     ignore: Vec<String>,
 ) -> Result<(), CliError> {
+    let mut effective_ignore = ignore.clone();
+    if let Some(out_path) = out.as_ref() {
+        effective_ignore.push(out_path.clone());
+    }
+
     let mut template_css = None;
     let mut stripped_template_css = None;
+    let mut compiled_template_css = None;
     let mut parsed_theme = None;
     let mut source_directives = SourceDirectives::default();
     let mut stylesheet_dir = None;
@@ -357,13 +363,20 @@ fn run_build(
         parsed_theme = Some(parse_theme_with_defaults(&template));
         let mut stripped = strip_tailwind_custom_directives(&template);
         if !contains_framework_import(&stripped) && looks_like_compiled_framework_css(&template) {
+            compiled_template_css = Some(template.clone());
             stripped = "@import \"tailwindcss\";\n".to_string();
         }
         let variant_overrides = parsed_theme
             .as_ref()
             .map(|theme| &theme.variant_overrides)
             .unwrap();
-        stripped_template_css = Some(expand_variant_directives(&stripped, variant_overrides));
+        let expanded_variants = if stripped.contains("@variant") || stripped.contains("@custom-variant")
+        {
+            expand_variant_directives(&stripped, variant_overrides)
+        } else {
+            stripped
+        };
+        stripped_template_css = Some(expanded_variants);
         template_css = Some(template);
     }
 
@@ -381,7 +394,7 @@ fn run_build(
                 auto_options.base_path = resolve_source_path(dir, base_path);
             }
         }
-        let mut auto_ignore = ignore.clone();
+        let mut auto_ignore = effective_ignore.clone();
         auto_ignore.extend(
             source_directives
                 .exclude_paths
@@ -421,7 +434,7 @@ fn run_build(
                 ..crate::scanner::ScanGlobOptions::default()
             };
 
-            let mut explicit_ignore = ignore.clone();
+            let mut explicit_ignore = effective_ignore.clone();
             explicit_ignore.extend(
                 source_directives
                     .exclude_paths
@@ -468,11 +481,15 @@ fn run_build(
         colors: config.theme.colors.clone(),
     };
     if let Some(stripped) = stripped_template_css.take() {
-        stripped_template_css = Some(expand_apply_directives(
-            &stripped,
-            &generator_config,
-            parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
-        )?);
+        if stripped.contains("@apply") {
+            stripped_template_css = Some(expand_apply_directives(
+                &stripped,
+                &generator_config,
+                parsed_theme.as_ref().map(|theme| &theme.variant_overrides),
+            )?);
+        } else {
+            stripped_template_css = Some(stripped);
+        }
     }
     let generation = crate::generator::generate_with_overrides(
         &scan_result.classes,
@@ -525,7 +542,14 @@ fn run_build(
             ),
         })?;
     }
-    css = expand_build_time_functions(&css);
+    let mut used_compiled_passthrough = false;
+    if let Some(compiled_template) = compiled_template_css.as_ref() {
+        css = compiled_template.clone();
+        used_compiled_passthrough = true;
+    }
+    if !used_compiled_passthrough {
+        css = expand_build_time_functions(&css);
+    }
 
     if let Some(out_path) = out {
         fs::write(&out_path, css).map_err(|err| CliError {
@@ -543,7 +567,6 @@ fn run_build(
 
     Ok(())
 }
-
 fn print_help() {
     println!("ironframe");
     println!();

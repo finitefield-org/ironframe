@@ -16,6 +16,7 @@ pub struct GenerationResult {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct RuleSortKey {
     variant_bucket: u8,
+    variant_rank: u16,
     wrapper_bucket: u8,
     family_rank: u16,
     property_rank: u16,
@@ -219,6 +220,7 @@ fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
     let (variants, base) = parse_variants(class_name);
     RuleSortKey {
         variant_bucket: if variants.is_empty() { 0 } else { 1 },
+        variant_rank: variant_sort_rank(&variants),
         wrapper_bucket: rule_wrapper_bucket(rule),
         family_rank: utility_family_rank(base),
         property_rank: extract_primary_declaration_property(rule)
@@ -229,6 +231,69 @@ fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
         class_sort_key: natural_class_sort_key(class_name),
         class_name: class_name.to_string(),
     }
+}
+
+fn variant_sort_rank(variants: &[&str]) -> u16 {
+    variants
+        .iter()
+        .map(|variant| single_variant_sort_rank(variant))
+        .max()
+        .unwrap_or(0)
+}
+
+fn single_variant_sort_rank(variant: &str) -> u16 {
+    if variant.is_empty() {
+        return 0;
+    }
+    if is_responsive_variant(variant) {
+        return 1000;
+    }
+    if is_container_variant(variant) {
+        return 980;
+    }
+    if variant.starts_with("group-") || variant.starts_with("peer-") {
+        return 100;
+    }
+    if matches!(
+        variant,
+        "before"
+            | "after"
+            | "hover"
+            | "focus"
+            | "focus-visible"
+            | "focus-within"
+            | "active"
+            | "visited"
+            | "disabled"
+            | "placeholder"
+            | "selection"
+            | "first"
+            | "last"
+            | "odd"
+            | "even"
+            | "only"
+            | "empty"
+            | "open"
+    ) {
+        return 120;
+    }
+    if variant == "dark" {
+        return 160;
+    }
+    if variant.starts_with("supports-") {
+        return 220;
+    }
+    200
+}
+
+fn is_responsive_variant(variant: &str) -> bool {
+    matches!(variant, "sm" | "md" | "lg" | "xl" | "2xl")
+        || variant.starts_with("max-")
+        || variant.starts_with("min-")
+}
+
+fn is_container_variant(variant: &str) -> bool {
+    variant.starts_with('@')
 }
 
 fn natural_class_sort_key(class_name: &str) -> String {
@@ -458,21 +523,83 @@ fn utility_family_rank(base: &str) -> u16 {
         || base.starts_with("justify-")
         || base.starts_with("content-")
         || base.starts_with("place-")
-        || base.starts_with("self-")
     {
         return 528;
     }
-    if base.starts_with("gap-") || base.starts_with("gap-x-") || base.starts_with("gap-y-") {
+    if base.starts_with("gap-") && !base.starts_with("gap-x-") && !base.starts_with("gap-y-") {
         return 529;
     }
-    if base.starts_with("space-x-") || base.starts_with("space-y-") {
+    if base.starts_with("space-y-") {
         return 530;
     }
-    if base.starts_with("divide-") {
+    if base.starts_with("gap-x-") {
         return 531;
     }
-    if base.starts_with("overflow-") || base == "truncate" {
+    if base.starts_with("space-x-") {
         return 532;
+    }
+    if base.starts_with("gap-y-") {
+        return 533;
+    }
+    if base.starts_with("divide-") {
+        return 534;
+    }
+    if base.starts_with("self-") {
+        return 535;
+    }
+    if base.starts_with("overflow-") || base == "truncate" {
+        return 536;
+    }
+    if base.starts_with("shadow-") || base == "shadow" {
+        return 1200;
+    }
+    if base.starts_with("ring-") || base == "ring" {
+        return 1201;
+    }
+    if base.starts_with("outline-") || base == "outline" {
+        return 1202;
+    }
+    if base.starts_with("drop-shadow-") {
+        return 1203;
+    }
+    if base.starts_with("opacity-") {
+        return 1204;
+    }
+    if base == "blur"
+        || base.starts_with("blur-")
+        || base == "backdrop-filter"
+        || base == "backdrop-blur"
+        || base.starts_with("backdrop-blur-")
+    {
+        return 1205;
+    }
+    if base == "filter" || base.starts_with("mix-blend-") || base.starts_with("bg-blend-") {
+        return 1205;
+    }
+    if base.starts_with("accent-") {
+        return 1206;
+    }
+    if matches!(
+        base,
+        "italic"
+            | "not-italic"
+            | "uppercase"
+            | "lowercase"
+            | "capitalize"
+            | "normal-case"
+            | "underline"
+            | "no-underline"
+            | "line-through"
+            | "overline"
+    ) {
+        return 1207;
+    }
+    if base.starts_with("delay-")
+        || base.starts_with("duration-")
+        || base.starts_with("ease-")
+        || base.starts_with("transition")
+    {
+        return 1208;
     }
     if base == "container" {
         return 115;
@@ -748,6 +875,82 @@ fn utility_subfamily_rank(base: &str) -> u16 {
     if base.starts_with("-translate-y-") || base.starts_with("translate-y-") {
         return 11;
     }
+    if base == "rounded"
+        || (base.starts_with("rounded-")
+            && !base.starts_with("rounded-t")
+            && !base.starts_with("rounded-r")
+            && !base.starts_with("rounded-b")
+            && !base.starts_with("rounded-l"))
+    {
+        return 15;
+    }
+    if base.starts_with("rounded-") {
+        return 16;
+    }
+    if base == "border"
+        || matches!(base, "border-0" | "border-2" | "border-4" | "border-dashed" | "border-none")
+        || base == "border-t"
+        || base.starts_with("border-t-")
+        || base == "border-r"
+        || base.starts_with("border-r-")
+        || base == "border-b"
+        || base.starts_with("border-b-")
+        || base == "border-l"
+        || base.starts_with("border-l-")
+    {
+        return 17;
+    }
+    if base.starts_with("border-") {
+        return 18;
+    }
+    if base.starts_with("gap-") && !base.starts_with("gap-x-") && !base.starts_with("gap-y-") {
+        return 20;
+    }
+    if base.starts_with("space-y-") {
+        return 21;
+    }
+    if base.starts_with("gap-x-") {
+        return 22;
+    }
+    if base.starts_with("space-x-") {
+        return 23;
+    }
+    if base.starts_with("gap-y-") {
+        return 24;
+    }
+    if base == "divide-x" || base == "divide-y" {
+        return 25;
+    }
+    if base.starts_with("divide-x-reverse") || base.starts_with("divide-y-reverse") {
+        return 26;
+    }
+    if base.starts_with("divide-") {
+        return 27;
+    }
+    if base == "truncate" {
+        return 30;
+    }
+    if base.starts_with("overflow-") {
+        return 31;
+    }
+    if base.starts_with("bg-gradient-to-") {
+        return 40;
+    }
+    if base.starts_with("bg-[radial-gradient(") {
+        return 41;
+    }
+    if base.starts_with("from-") {
+        return 42;
+    }
+    if base.starts_with("via-") {
+        return 43;
+    }
+    if base.starts_with("to-") {
+        return 44;
+    }
+    if base == "bg-clip-text" {
+        return 45;
+    }
     65535
 }
 
@@ -945,6 +1148,15 @@ fn find_matching_brace_index(css: &str, open_idx: usize) -> Option<usize> {
 
 fn property_order_rank(property: &str) -> u16 {
     let property = property.trim();
+    if property.starts_with("--tw-gradient-from") {
+        return 211;
+    }
+    if property.starts_with("--tw-gradient-via") {
+        return 212;
+    }
+    if property.starts_with("--tw-gradient-to") {
+        return 213;
+    }
     if property.starts_with("--tw-translate") || property == "translate" {
         return 260;
     }
@@ -960,6 +1172,15 @@ fn property_order_rank(property: &str) -> u16 {
     }
     if property.starts_with("--tw-gradient") || property.starts_with("background") {
         return 210;
+    }
+    if property.starts_with("--tw-space-") {
+        return 15;
+    }
+    if property.starts_with("--tw-divide-") {
+        return 217;
+    }
+    if property == "--tw-border-style" {
+        return 19;
     }
     if property.starts_with("--tw-ring")
         || property.starts_with("--tw-shadow")
@@ -984,7 +1205,8 @@ fn property_order_rank(property: &str) -> u16 {
         | "grid-row-end" => 7,
         "float" | "clear" => 8,
         "margin" | "margin-top" | "margin-right" | "margin-bottom" | "margin-left"
-        | "margin-inline" | "margin-block" => 9,
+        | "margin-inline" | "margin-inline-start" | "margin-inline-end" | "margin-block"
+        | "margin-block-start" | "margin-block-end" => 9,
         "box-sizing" => 10,
         "display" => 11,
         "aspect-ratio" => 12,
@@ -999,13 +1221,57 @@ fn property_order_rank(property: &str) -> u16 {
         | "grid-auto-flow"
         | "grid-auto-rows" => 14,
         "align-content" | "justify-content" | "place-content" | "align-items" | "justify-items"
-        | "place-items" | "align-self" | "justify-self" | "place-self" => 15,
+        | "place-items" | "align-self" | "justify-self" | "place-self" | "gap" | "column-gap"
+        | "row-gap" => 15,
         "overflow" | "overflow-x" | "overflow-y" => 16,
+        "overscroll-behavior" | "overscroll-behavior-x" | "overscroll-behavior-y" => 16,
         "scroll-behavior" | "scroll-snap-type" | "scroll-snap-align" | "scroll-snap-stop"
         | "scroll-margin" | "scroll-padding" => 17,
-        "border-radius" => 18,
+        "border-radius"
+        | "border-top-left-radius"
+        | "border-top-right-radius"
+        | "border-bottom-left-radius"
+        | "border-bottom-right-radius"
+        | "border-start-start-radius"
+        | "border-start-end-radius"
+        | "border-end-start-radius"
+        | "border-end-end-radius" => 18,
         "border-width" | "border-style" | "border-color" | "border-collapse" | "border-spacing"
+        | "border-top-width"
+        | "border-right-width"
+        | "border-bottom-width"
+        | "border-left-width"
+        | "border-inline-width"
+        | "border-inline-start-width"
+        | "border-inline-end-width"
+        | "border-block-width"
+        | "border-block-start-width"
+        | "border-block-end-width"
+        | "border-top-style"
+        | "border-right-style"
+        | "border-bottom-style"
+        | "border-left-style"
+        | "border-inline-style"
+        | "border-inline-start-style"
+        | "border-inline-end-style"
+        | "border-block-style"
+        | "border-block-start-style"
+        | "border-block-end-style"
+        | "border-top-color"
+        | "border-right-color"
+        | "border-bottom-color"
+        | "border-left-color"
+        | "border-inline-color"
+        | "border-inline-start-color"
+        | "border-inline-end-color"
+        | "border-block-color"
+        | "border-block-start-color"
+        | "border-block-end-color"
         | "outline-width" | "outline-style" | "outline-offset" | "outline-color" => 19,
+        "object-fit" | "object-position" => 215,
+        "padding" | "padding-top" | "padding-right" | "padding-bottom" | "padding-left"
+        | "padding-inline" | "padding-inline-start" | "padding-inline-end" | "padding-block"
+        | "padding-block-start" | "padding-block-end" => 216,
         "box-shadow" => 220,
         "opacity" => 230,
         "mix-blend-mode" | "background-blend-mode" | "filter" | "backdrop-filter" => 240,
