@@ -62,7 +62,7 @@ Developed by [Finite Field, K.K.](https://finitefield.org/en/).
 
 ```text
 ironframe scan [--ignore <glob>] <glob...>
-ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>
+ironframe build [--output <path>] [--minify] [--input-css <path>] [--compare-css <path>] [--config <path>] [--ignore <glob>] <glob...>
 ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>
 ```
 
@@ -72,6 +72,7 @@ ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <pat
   - generates CSS once
   - writes to stdout by default, or to `--output <path>` (alias: `--out`, `-o`) when specified
   - `--input-css <path>` (aliases: `-i`, `-s`) enables processing for `@import`, `@source`, `@theme`, and `@apply`
+  - `--compare-css <path>` compares generated CSS with a reference CSS and fails if line 2 onward differs (line 1 header is ignored)
   - `--config <path>` loads TOML config (default: built-in config)
   - `--ignore <glob>` can be passed multiple times
   - `--minify` emits minified output
@@ -92,6 +93,9 @@ ironframe build --output dist/tailwind.css "src/**/*.{html,tsx}"
 
 # Build with template CSS and config
 ironframe build -i src/app.css -c ironframe.toml -o dist/app.css "src/**/*.{html,tsx}"
+
+# Build and compare with Tailwind output (line 1 is ignored)
+ironframe build -i src/app.css -o dist/app.css --compare-css dist/app.tailwind.css "src/**/*.{html,tsx}"
 
 # Watch mode (native watcher)
 ironframe watch --output dist/tailwind.css "src/**/*.{html,tsx}"

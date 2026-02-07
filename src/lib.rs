@@ -25,6 +25,7 @@ pub enum Command {
         inputs: Vec<String>,
         out: Option<String>,
         input_css: Option<String>,
+        compare_css: Option<String>,
         minify: bool,
         config: Option<String>,
         ignore: Vec<String>,
@@ -54,10 +55,11 @@ pub fn run(command: Command) -> Result<(), CliError> {
             inputs,
             out,
             input_css,
+            compare_css,
             minify,
             config,
             ignore,
-        } => run_build(inputs, out, input_css, minify, config, ignore),
+        } => run_build(inputs, out, input_css, compare_css, minify, config, ignore),
         Command::Watch {
             inputs,
             out,
@@ -115,6 +117,7 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
     let mut inputs = Vec::new();
     let mut out = None;
     let mut input_css = None;
+    let mut compare_css = None;
     let mut minify = false;
     let mut config = None;
     let mut ignore = Vec::new();
@@ -139,6 +142,15 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
                     });
                 }
                 input_css = Some(args[idx].clone());
+            }
+            "--compare-css" => {
+                idx += 1;
+                if idx >= args.len() {
+                    return Err(CliError {
+                        message: "build requires a value for --compare-css".to_string(),
+                    });
+                }
+                compare_css = Some(args[idx].clone());
             }
             "--config" | "-c" => {
                 idx += 1;
@@ -183,6 +195,7 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
         inputs,
         out,
         input_css,
+        compare_css,
         minify,
         config,
         ignore,
@@ -337,6 +350,7 @@ fn run_build(
     inputs: Vec<String>,
     out: Option<String>,
     input_css_path: Option<String>,
+    compare_css_path: Option<String>,
     minify: bool,
     config_path: Option<String>,
     ignore: Vec<String>,
@@ -555,11 +569,24 @@ fn run_build(
     }
 
     if let Some(out_path) = out {
-        fs::write(&out_path, css).map_err(|err| CliError {
+        fs::write(&out_path, &css).map_err(|err| CliError {
             message: format!("failed to write output {}: {}", out_path, err),
         })?;
     } else {
         print!("{}", css);
+    }
+
+    if let Some(compare_path) = compare_css_path {
+        let reference_css = fs::read_to_string(&compare_path).map_err(|err| CliError {
+            message: format!("failed to read compare css {}: {}", compare_path, err),
+        })?;
+        compare_css_from_second_line(&css, &reference_css).map_err(|detail| CliError {
+            message: format!(
+                "generated css does not match {} from line 2 onward: {}",
+                compare_path, detail
+            ),
+        })?;
+        eprintln!("comparison passed against {} (line 2 onward)", compare_path);
     }
 
     eprintln!(
@@ -576,7 +603,7 @@ fn print_help() {
     println!("USAGE:");
     println!("  ironframe scan [--ignore <glob>] <glob...>");
     println!(
-        "  ironframe build [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] <glob...>"
+        "  ironframe build [--output <path>] [--minify] [--input-css <path>] [--compare-css <path>] [--config <path>] [--ignore <glob>] <glob...>"
     );
     println!(
         "  ironframe watch [--output <path>] [--minify] [--input-css <path>] [--config <path>] [--ignore <glob>] [--poll] [--poll-interval <ms>] <glob...>"
@@ -587,6 +614,9 @@ fn print_help() {
     println!("  ironframe scan -i \"**/generated/**\" \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe build --output dist/tailwind.css \"src/**/*.{{html,tsx}}\"");
     println!("  ironframe build -i src/app.css -o dist/app.css \"src/**/*.{{html,tsx}}\"");
+    println!(
+        "  ironframe build -i src/app.css -o dist/app.css --compare-css dist/app.tailwind.css \"src/**/*.{{html,tsx}}\""
+    );
     println!("  ironframe build -c ironframe.toml \"src/**/*.{{html,tsx}}\"");
     println!(
         "  ironframe watch -c ironframe.toml --output dist/tailwind.css \"src/**/*.{{html,tsx}}\""
@@ -616,6 +646,49 @@ fn replace_first_line(css: &str, first_line: &str) -> String {
         out.push('\n');
     }
     out
+}
+
+fn compare_css_from_second_line(actual_css: &str, reference_css: &str) -> Result<(), String> {
+    let actual_body = skip_first_line(actual_css);
+    let reference_body = skip_first_line(reference_css);
+    if actual_body == reference_body {
+        return Ok(());
+    }
+
+    let actual_lines = actual_body.split('\n').collect::<Vec<_>>();
+    let reference_lines = reference_body.split('\n').collect::<Vec<_>>();
+    let max_len = actual_lines.len().max(reference_lines.len());
+    for idx in 0..max_len {
+        let actual_line = actual_lines.get(idx).copied().unwrap_or("<EOF>");
+        let reference_line = reference_lines.get(idx).copied().unwrap_or("<EOF>");
+        if actual_line != reference_line {
+            return Err(format!(
+                "first mismatch at line {}: expected `{}` but got `{}`",
+                idx + 2,
+                summarize_diff_line(reference_line),
+                summarize_diff_line(actual_line),
+            ));
+        }
+    }
+
+    Err("content differs after line 1".to_string())
+}
+
+fn skip_first_line(css: &str) -> &str {
+    match css.find('\n') {
+        Some(idx) => &css[idx + 1..],
+        None => "",
+    }
+}
+
+fn summarize_diff_line(line: &str) -> String {
+    const MAX_CHARS: usize = 160;
+    if line.chars().count() <= MAX_CHARS {
+        return line.to_string();
+    }
+    let mut short = line.chars().take(MAX_CHARS).collect::<String>();
+    short.push_str("...");
+    short
 }
 
 fn normalize_non_minified_output(css: &str) -> String {
@@ -815,6 +888,7 @@ fn run_watch(inputs: Vec<String>, options: WatchOptions) -> Result<(), CliError>
         inputs.clone(),
         out.clone(),
         input_css.clone(),
+        None,
         minify,
         config.clone(),
         ignore.clone(),
@@ -884,6 +958,7 @@ fn run_watch(inputs: Vec<String>, options: WatchOptions) -> Result<(), CliError>
                     inputs.clone(),
                     out.clone(),
                     input_css.clone(),
+                    None,
                     minify,
                     config.clone(),
                     ignore.clone(),
@@ -3312,6 +3387,7 @@ mod tests {
                 inputs: vec!["src/**/*.html".to_string()],
                 out: Some("dist/app.css".to_string()),
                 input_css: Some("src/app.css".to_string()),
+                compare_css: None,
                 minify: false,
                 config: None,
                 ignore: vec![],
@@ -3362,11 +3438,61 @@ mod tests {
                 inputs: vec!["src/**/*.html".to_string()],
                 out: Some("dist/app.css".to_string()),
                 input_css: Some("src/app.css".to_string()),
+                compare_css: None,
                 minify: false,
                 config: None,
                 ignore: vec![],
             }
         );
+    }
+
+    #[test]
+    fn parse_build_supports_compare_css_flag() {
+        let command = parse_args(vec![
+            "build".to_string(),
+            "-i".to_string(),
+            "src/app.css".to_string(),
+            "--compare-css".to_string(),
+            "dist/app.tailwind.css".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect("build args should parse");
+
+        assert_eq!(
+            command,
+            Command::Build {
+                inputs: vec!["src/**/*.html".to_string()],
+                out: None,
+                input_css: Some("src/app.css".to_string()),
+                compare_css: Some("dist/app.tailwind.css".to_string()),
+                minify: false,
+                config: None,
+                ignore: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn parse_build_requires_compare_css_value() {
+        let err = parse_args(vec!["build".to_string(), "--compare-css".to_string()])
+            .expect_err("missing compare css path should fail");
+        assert_eq!(err.message, "build requires a value for --compare-css");
+    }
+
+    #[test]
+    fn compare_css_from_second_line_ignores_header_line() {
+        let actual = "/*! ironframe */\n.a { color: red; }\n.b { color: blue; }\n";
+        let reference = "/*! tailwind */\n.a { color: red; }\n.b { color: blue; }\n";
+        assert!(super::compare_css_from_second_line(actual, reference).is_ok());
+    }
+
+    #[test]
+    fn compare_css_from_second_line_reports_first_mismatch_line() {
+        let actual = "/*! ironframe */\n.a { color: red; }\n.b { color: green; }\n";
+        let reference = "/*! tailwind */\n.a { color: red; }\n.b { color: blue; }\n";
+        let err = super::compare_css_from_second_line(actual, reference)
+            .expect_err("comparison should fail");
+        assert!(err.contains("line 3"));
     }
 
     #[test]
