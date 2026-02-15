@@ -55,8 +55,16 @@ pub fn generate_with_overrides(
     let variant_tables = build_variant_tables(overrides);
 
     for class in _classes {
-        if let Some(rule) = generate_rule(class, _config, &variant_tables) {
-            let sort_key = build_rule_sort_key(class, &rule);
+        let (variants, base_with_modifier) = parse_variants(class);
+        if let Some((rule, property_rank)) = generate_rule(
+            class,
+            &variants,
+            base_with_modifier,
+            _config,
+            &variant_tables,
+        ) {
+            let sort_key =
+                build_rule_sort_key(class, &variants, base_with_modifier, property_rank, &rule);
             rules.push((sort_key, rule));
             count += 1;
         }
@@ -217,17 +225,20 @@ pub fn emit_css(result: &GenerationResult) -> String {
     result.css.clone()
 }
 
-fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
-    let (variants, base) = parse_variants(class_name);
+fn build_rule_sort_key(
+    class_name: &str,
+    variants: &[&str],
+    base: &str,
+    property_rank: u16,
+    rule: &str,
+) -> RuleSortKey {
     RuleSortKey {
         variant_bucket: if variants.is_empty() { 0 } else { 1 },
         variant_rank: variant_sort_rank(&variants),
         variant_chain_key: variant_chain_sort_key(&variants),
         wrapper_bucket: rule_wrapper_bucket(rule),
         family_rank: utility_family_rank(base),
-        property_rank: extract_primary_declaration_property(rule)
-            .map(|property| property_order_rank(&property))
-            .unwrap_or(65535),
+        property_rank,
         subfamily_rank: utility_subfamily_rank(base),
         value_rank: utility_value_rank(base),
         class_sort_key: natural_class_sort_key(class_name),
@@ -1862,10 +1873,11 @@ fn generate_ring_preset_rule(class: &str, config: &GeneratorConfig) -> Option<St
 
 fn generate_rule(
     class: &str,
+    variants: &[&str],
+    base_with_modifier: &str,
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
-) -> Option<String> {
-    let (variants, base_with_modifier) = parse_variants(class);
+) -> Option<(String, u16)> {
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
     let rule = generate_color_rule(base, config)
         .or_else(|| {
@@ -2328,18 +2340,26 @@ fn generate_rule(
                 .or_else(|| generate_layout_rule(base, config, variant_tables)),
         });
 
+    let property_rank = if variant_injects_generated_content(variants) {
+        property_order_rank("content")
+    } else {
+        rule.as_deref()
+            .and_then(extract_primary_declaration_property)
+            .map(|property| property_order_rank(&property))
+            .unwrap_or(65535)
+    };
     let generated = apply_variants(&variants, class, base, rule, config.minify, variant_tables)?;
     if important_modifier {
         let important = add_important_to_rule(&generated, config.minify)?;
         if !rule_allowed_by_theme(base, &important, variant_tables) {
             return None;
         }
-        return Some(important);
+        return Some((important, property_rank));
     }
     if !rule_allowed_by_theme(base, &generated, variant_tables) {
         return None;
     }
-    Some(generated)
+    Some((generated, property_rank))
 }
 
 fn generate_custom_utility_rule(
@@ -10532,6 +10552,12 @@ fn parse_variants(class: &str) -> (Vec<&str>, &str) {
         start = idx + 1;
     }
     (variants, &class[start..])
+}
+
+fn variant_injects_generated_content(variants: &[&str]) -> bool {
+    variants
+        .iter()
+        .any(|variant| matches!(*variant, "before" | "after"))
 }
 
 fn apply_variants(

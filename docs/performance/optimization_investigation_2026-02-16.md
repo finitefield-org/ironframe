@@ -240,3 +240,48 @@ Result:
 
 - Large and unique-heavy build workloads improved further.
 - Mixed workload is roughly flat with slight run-to-run fluctuation.
+
+## Follow-up Optimization: Sort Key Reparse Reduction (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Parsed variants only once per class in `generate_with_overrides`, then reused parsed values for generation and sort-key creation.
+2. Changed `generate_rule` to accept parsed `variants`/`base_with_modifier` and return `(generated_rule, property_rank)`.
+3. Changed `build_rule_sort_key` to accept precomputed `variants`, `base`, and `property_rank` so it no longer reparses:
+   - class variants (`parse_variants`)
+   - generated rule declaration property (`extract_primary_declaration_property`)
+4. Added `variant_injects_generated_content` to preserve property-rank behavior for `before`/`after` variants while avoiding redundant rule parsing.
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks
+
+Full suite comparison:
+
+- Baseline (clean `HEAD` worktree): `bench/results/perf_2026-02-16_07-15-03_baseline_sortkey.tsv`
+- Current (this optimization): `bench/results/perf_2026-02-16_07-16-23.tsv`
+
+| Case | Baseline avg (s) | Current avg (s) | Delta |
+|---|---:|---:|---:|
+| build_large_html | 0.0902 | 0.0867 | -3.9% |
+| build_mixed_all | 0.0301 | 0.0300 | -0.3% |
+| build_mixed_input_css | 0.0333 | 0.0316 | -5.1% |
+| build_mixed_minify | 0.0290 | 0.0294 | +1.4% |
+| build_small_html | 0.0068 | 0.0071 | +4.4% |
+| build_unique_massive | 0.0654 | 0.0635 | -2.9% |
+| build_unique_massive_minify | 0.0455 | 0.0451 | -0.9% |
+
+Targeted recheck (higher repetition, focused build hot paths):
+
+- `build_unique_massive`: `0.065000s -> 0.063604s` (`-2.15%`)
+- `build_unique_massive_minify`: `0.045875s -> 0.045312s` (`-1.23%`)
+- `build_mixed_all`: `0.030750s -> 0.030163s` (`-1.91%`)
+
+Result:
+
+- This optimization produces a modest but consistent improvement in generator-heavy build cases (about `1-3%` in focused runs).
+- The effect size is smaller than earlier fast-path optimizations, but it reduces repeated parsing work on the generation hot path with no correctness regression.
