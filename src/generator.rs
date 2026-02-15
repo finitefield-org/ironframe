@@ -1700,6 +1700,31 @@ fn property_order_rank(property: &str) -> u16 {
     }
 }
 
+fn is_layout_fast_path_candidate(base: &str) -> bool {
+    base.starts_with("w-")
+        || base.starts_with("h-")
+        || base.starts_with("max-w-")
+        || base.starts_with("min-w-")
+        || base.starts_with("max-h-")
+        || base.starts_with("min-h-")
+        || base.starts_with("size-")
+        || base.starts_with("gap-")
+        || base.starts_with("space-x-")
+        || base.starts_with("space-y-")
+        || base.starts_with("-space-x-")
+        || base.starts_with("-space-y-")
+}
+
+fn generate_layout_fast_path_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    generate_sizing_rule(class, config, variant_tables)
+        .or_else(|| generate_gap_rule(class, config))
+        .or_else(|| generate_space_rule(class, config))
+}
+
 fn generate_rule(
     class: &str,
     config: &GeneratorConfig,
@@ -1707,7 +1732,15 @@ fn generate_rule(
 ) -> Option<String> {
     let (variants, base_with_modifier) = parse_variants(class);
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
-    let rule = generate_color_rule(base, config).or_else(|| match base {
+    let rule = generate_color_rule(base, config)
+        .or_else(|| {
+            if is_layout_fast_path_candidate(base) {
+                return generate_custom_utility_rule(base, config, variant_tables)
+                    .or_else(|| generate_layout_fast_path_rule(base, config, variant_tables));
+            }
+            None
+        })
+        .or_else(|| match base {
         "font-thin" => rule(
             ".font-thin",
             "--tw-font-weight:var(--font-weight-thin);font-weight:var(--font-weight-thin)",
@@ -2143,10 +2176,10 @@ fn generate_rule(
             .or_else(|| generate_grid_auto_rows_rule(base, config))
             .or_else(|| generate_grid_column_rule(base, config))
             .or_else(|| generate_grid_row_rule(base, config))
-            .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
-            .or_else(|| generate_opacity_rule(base, config))
-            .or_else(|| generate_layout_rule(base, config, variant_tables)),
-    });
+                .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
+                .or_else(|| generate_opacity_rule(base, config))
+                .or_else(|| generate_layout_rule(base, config, variant_tables)),
+        });
 
     let generated = apply_variants(&variants, class, base, rule, config.minify, variant_tables)?;
     if important_modifier {
@@ -6759,8 +6792,6 @@ fn generate_sizing_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
-
     if class == "container" {
         let mut breakpoints = variant_tables.responsive_breakpoints.clone();
         sort_breakpoints_by_length(&mut breakpoints);
@@ -6819,7 +6850,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("min-w-") {
@@ -6855,7 +6886,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("min-h-") {
@@ -6890,7 +6921,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("max-h-") {
@@ -6925,7 +6956,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("w-") {
@@ -6961,7 +6992,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("h-") {
@@ -6996,7 +7027,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("size-") {
@@ -7029,34 +7060,28 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(
-            &selector,
-            &format!("width:{};height:{}", value, value),
-            config,
-        );
+        return class_rule(class, &format!("width:{};height:{}", value, value), config);
     }
 
     None
 }
 
 fn generate_gap_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
-
     if let Some(raw) = class.strip_prefix("gap-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("gap:{}", value), config);
+            return class_rule(class, &format!("gap:{}", value), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-x-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("column-gap:{}", value), config);
+            return class_rule(class, &format!("column-gap:{}", value), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-y-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("row-gap:{}", value), config);
+            return class_rule(class, &format!("row-gap:{}", value), config);
         }
     }
 
@@ -7068,17 +7093,16 @@ fn nested_child_selector_block(declarations: &str) -> String {
 }
 
 fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     if class == "space-x-reverse" {
-        return rule(
-            &selector,
+        return class_rule(
+            class,
             &nested_child_selector_block("--tw-space-x-reverse:1"),
             config,
         );
     }
     if class == "space-y-reverse" {
-        return rule(
-            &selector,
+        return class_rule(
+            class,
             &nested_child_selector_block("--tw-space-y-reverse:1"),
             config,
         );
@@ -7096,11 +7120,7 @@ fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
             "--tw-space-x-reverse:0;margin-inline-start:calc({} * var(--tw-space-x-reverse));margin-inline-end:calc({} * calc(1 - var(--tw-space-x-reverse)))",
             value, value
         );
-        return rule(
-            &selector,
-            &nested_child_selector_block(&declarations),
-            config,
-        );
+        return class_rule(class, &nested_child_selector_block(&declarations), config);
     }
 
     if let Some(raw) = raw_class.strip_prefix("space-y-") {
@@ -7109,11 +7129,7 @@ fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
             "--tw-space-y-reverse:0;margin-block-start:calc({} * var(--tw-space-y-reverse));margin-block-end:calc({} * calc(1 - var(--tw-space-y-reverse)))",
             value, value
         );
-        return rule(
-            &selector,
-            &nested_child_selector_block(&declarations),
-            config,
-        );
+        return class_rule(class, &nested_child_selector_block(&declarations), config);
     }
 
     None
@@ -11679,6 +11695,11 @@ fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<
         .collect::<Vec<_>>()
         .join("\n");
     Some(format!("{} {{\n{}\n}}", selector, lines))
+}
+
+fn class_rule(class: &str, declarations: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = format!(".{}", escape_selector(class));
+    rule(&selector, declarations, config)
 }
 
 fn format_declarations(declarations: &str, minify: bool) -> String {
@@ -16888,6 +16909,30 @@ mod tests {
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains(".lg\\:content-auto"));
         assert!(result.css.contains("@media (width >= 64rem)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_sizing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("w-4".to_string(), "width: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["w-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".w-4"));
+        assert!(result.css.contains("width: 999px"));
+        assert!(!result.css.contains("width: calc(var(--spacing) * 4)"));
     }
 
     #[test]
