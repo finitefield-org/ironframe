@@ -330,3 +330,57 @@ Result:
 
 - Selector lazy generation reduces wasted work on mismatch-heavy paths and improves end-to-end build performance.
 - Effect size is workload-dependent: strongest on mixed workloads, smaller but positive on unique-heavy hot paths.
+
+## Follow-up Optimization: `apply_variants` No-Variant Super Early Return (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Added fast path in `generate_rule` to bypass `apply_variants` entirely for the dominant path:
+   - `variants.is_empty() && !important_modifier`
+2. Adjusted `apply_variants` to return immediately before unwrapping/parsing when:
+   - `variants.is_empty() && full_class == base_class`
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks
+
+Full suite comparison (same case set/loops, before-vs-after binaries):
+
+- Before: `bench/results/perf_2026-02-16_07-35-27_before_no_variant_fast_return.tsv`
+- After: `bench/results/perf_2026-02-16_07-35-27_after_no_variant_fast_return.tsv`
+
+| Case | Before avg (s) | After avg (s) | Delta |
+|---|---:|---:|---:|
+| build_large_html | 0.0832 | 0.0830 | -0.2% |
+| build_mixed_all | 0.0293 | 0.0286 | -2.4% |
+| build_mixed_input_css | 0.0324 | 0.0313 | -3.4% |
+| build_mixed_minify | 0.0299 | 0.0283 | -5.4% |
+| build_small_html | 0.0056 | 0.0064 | +14.3% |
+| build_unique_massive | 0.0643 | 0.0622 | -3.3% |
+| build_unique_massive_minify | 0.0437 | 0.0443 | +1.4% |
+
+Targeted rechecks (higher repetition, build-only):
+
+1) Sequential high-repeat sample:
+
+- `build_small_html`: `0.006943s -> 0.006714s` (`-3.30%`)
+- `build_mixed_all`: `0.031383s -> 0.029967s` (`-4.51%`)
+- `build_mixed_minify`: `0.027867s -> 0.029350s` (`+5.32%`)
+- `build_unique_massive`: `0.063017s -> 0.063900s` (`+1.40%`)
+- `build_unique_massive_minify`: `0.046500s -> 0.044900s` (`-3.44%`)
+
+2) Alternating base/curr recheck (drift suppression):
+
+- `build_small_html`: `0.007330s -> 0.007102s` (`-3.11%`)
+- `build_mixed_all`: `0.030536s -> 0.030625s` (`+0.29%`)
+- `build_unique_massive`: `0.064116s -> 0.064197s` (`+0.13%`)
+
+Result:
+
+- Improvement is small and not consistently directional across all build workloads.
+- This optimization appears to be neutral-to-small in practice on the current codebase/host conditions.
+- Decision: reverted from the working tree and deprioritized in favor of more stable optimizations.
