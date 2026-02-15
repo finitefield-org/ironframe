@@ -384,3 +384,79 @@ Result:
 - Improvement is small and not consistently directional across all build workloads.
 - This optimization appears to be neutral-to-small in practice on the current codebase/host conditions.
 - Decision: reverted from the working tree and deprioritized in favor of more stable optimizations.
+
+## Follow-up Optimization Trial: Fallback Family Dispatch (2026-02-16)
+
+### Implemented changes (trial)
+
+File: `src/generator.rs`
+
+- Added `generate_family_dispatch_rule` and invoked it at the start of the large fallback `or_else` chain in `generate_rule`.
+- Dispatch targeted major prefixes (`text-*`, `bg-*`, `grid-*`, transform family, `mask-*`, `backdrop-*`, `fill/stroke`, `accent/caret`, `scroll-*`, `border/outline`, `object-*`) before falling back to the original chain.
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks
+
+Full suite comparison:
+
+- Before: `bench/results/perf_2026-02-16_07-57-28_before_family_dispatch.tsv`
+- After: `bench/results/perf_2026-02-16_07-57-28_after_family_dispatch.tsv`
+
+| Case | Before avg (s) | After avg (s) | Delta |
+|---|---:|---:|---:|
+| build_small_html | 0.0060 | 0.0066 | +10.0% |
+| build_mixed_all | 0.0276 | 0.0295 | +6.9% |
+| build_mixed_minify | 0.0281 | 0.0290 | +3.2% |
+| build_mixed_input_css | 0.0336 | 0.0316 | -6.0% |
+| build_large_html | 0.0855 | 0.0860 | +0.6% |
+| build_unique_massive | 0.0637 | 0.0645 | +1.3% |
+| build_unique_massive_minify | 0.0439 | 0.0452 | +3.0% |
+
+Alternating high-repeat recheck (drift suppression):
+
+- `build_small_html`: `0.006739s -> 0.006548s` (`-2.83%`)
+- `build_mixed_all`: `0.028250s -> 0.028323s` (`+0.26%`)
+- `build_mixed_minify`: `0.028318s -> 0.028526s` (`+0.73%`)
+- `build_unique_massive`: `0.062795s -> 0.063839s` (`+1.66%`)
+- `build_unique_massive_minify`: `0.044420s -> 0.043902s` (`-1.17%`)
+
+Result:
+
+- Effects were inconsistent and skewed toward regression on key build cases in full-suite measurements.
+- Decision: not adopted; reverted from the working tree.
+
+## Follow-up Optimization: Scanner Traversal Cost Reduction (2026-02-16)
+
+### Implemented changes
+
+File: `src/scanner.rs`
+
+1. Removed `seen_paths` dedup in `scan_globs_with_options` (single-pass walker path collection no longer needs path-level dedup).
+2. Added directory-level prune for `node_modules` via `WalkBuilder::filter_entry` when `include_node_modules = false`.
+3. Removed file-level `node_modules` exclusion in `should_skip_file` and centralized that concern in traversal pruning.
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks (alternating before/after runs)
+
+Binary baseline: `/tmp/ironframe_before_scanner_prune`  
+Binary current: `/tmp/ironframe_after_scanner_prune_v2`
+
+| Case | Before avg (s) | After avg (s) | Delta |
+|---|---:|---:|---:|
+| scan_small_html | 0.006635 | 0.006669 | +0.51% |
+| scan_mixed_all | 0.028781 | 0.028306 | -1.65% |
+| scan_large_html | 0.085590 | 0.083229 | -2.76% |
+| scan_unique_massive | 0.023595 | 0.023619 | +0.10% |
+| build_mixed_all | 0.029602 | 0.029602 | +0.00% |
+| build_mixed_minify | 0.030472 | 0.031000 | +1.73% |
+
+Result:
+
+- Scanner-focused cases (`scan_mixed_all`, `scan_large_html`) improved modestly.
+- End-to-end build impact is near-neutral with small case-dependent variance.

@@ -84,7 +84,6 @@ pub fn scan_globs_with_options(
     let ignore_set = build_globset(ignore_patterns)?;
     let mut classes = Vec::new();
     let mut seen_classes = HashSet::new();
-    let mut seen_paths = HashSet::new();
     let mut files_scanned = 0usize;
 
     let mut builder = WalkBuilder::new(&options.base_path);
@@ -93,6 +92,20 @@ pub fn scan_globs_with_options(
         .git_ignore(options.respect_gitignore)
         .git_global(options.respect_gitignore)
         .git_exclude(options.respect_gitignore);
+    if !options.include_node_modules {
+        builder.filter_entry(|entry| {
+            let Some(file_type) = entry.file_type() else {
+                return true;
+            };
+            if !file_type.is_dir() {
+                return true;
+            }
+            !entry
+                .path()
+                .components()
+                .any(|component| component.as_os_str() == "node_modules")
+        });
+    }
     let walker = builder.build();
 
     for entry in walker {
@@ -114,9 +127,7 @@ pub fn scan_globs_with_options(
         if should_skip_file(path, options) {
             continue;
         }
-        if seen_paths.insert(path.to_path_buf()) {
-            scan_file(path, &mut classes, &mut seen_classes, &mut files_scanned);
-        }
+        scan_file(path, &mut classes, &mut seen_classes, &mut files_scanned);
     }
 
     Ok(ScanResult {
@@ -126,14 +137,6 @@ pub fn scan_globs_with_options(
 }
 
 fn should_skip_file(path: &Path, options: &ScanGlobOptions) -> bool {
-    if !options.include_node_modules
-        && path
-            .components()
-            .any(|component| component.as_os_str() == "node_modules")
-    {
-        return true;
-    }
-
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
