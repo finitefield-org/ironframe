@@ -98,3 +98,60 @@ Remaining opportunities:
 1. Reduce scanner false positives in mixed/noisy files.
 2. Introduce broader dispatch indexing for non-sizing families.
 3. Remove duplicate parse/sort string work in rule generation pipeline.
+
+## Follow-up Optimization: Inset Fast Path + Variant Early Return (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Expanded layout fast-path candidate prefixes to include inset-position families:
+   - `inset-*`, `inset-x-*`, `inset-y-*`
+   - `start-*`, `end-*`, `top-*`, `right-*`, `bottom-*`, `left-*`
+   - plus negative forms (`-inset-*`, `-top-*`, etc.)
+2. Added `generate_inset_rule` to `generate_layout_fast_path_rule` dispatch.
+3. Optimized `generate_inset_rule` to use `class_rule(...)` and avoid eager selector allocation before successful parse.
+4. Added early return in `apply_variants` when `variants.is_empty()` and `full_class == base_class` to skip unnecessary selector/header work.
+5. Added regression test:
+   - `custom_utility_keeps_priority_over_inset_utilities`
+
+### Validation
+
+- `cargo test`: **305 passed, 0 failed**
+
+### Benchmarks
+
+Full suite (same benchmark harness):
+
+- Previous: `bench/results/perf_2026-02-16_06-32-42.tsv`
+- Current: `bench/results/perf_2026-02-16_06-42-04.tsv`
+
+Key deltas (avg):
+
+- `build_unique_massive`: `0.1419s -> 0.0742s` (`-47.7%`)
+- `build_unique_massive_minify`: `0.1264s -> 0.0463s` (`-63.4%`)
+
+Note: `build_large_html` has run-to-run variance in the full suite. Controlled A/B below is used for stronger comparison.
+
+### Controlled A/B (baseline worktree vs optimized worktree)
+
+Baseline binary from clean `HEAD` worktree:
+
+- `/tmp/ironframe_baseline_head/target/release/ironframe`
+
+Optimized binary:
+
+- `target/release/ironframe`
+
+Measured with fixed loops and 8 runs:
+
+| Case | Baseline avg (s) | Optimized avg (s) | Delta |
+|---|---:|---:|---:|
+| build_unique | 0.1382 | 0.0650 | -53.0% |
+| build_unique_minify | 0.1204 | 0.0456 | -62.1% |
+| build_large | 0.0845 | 0.0880 | +4.1% |
+
+Interpretation:
+
+- This optimization strongly improves unique-class-heavy builds (the known hot workload).
+- There is a small regression on large HTML build in this controlled sample; further balancing should target dispatch narrowing for non-inset/non-sizing classes to recover this.

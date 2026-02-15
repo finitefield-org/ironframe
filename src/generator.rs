@@ -1713,6 +1713,24 @@ fn is_layout_fast_path_candidate(base: &str) -> bool {
         || base.starts_with("space-y-")
         || base.starts_with("-space-x-")
         || base.starts_with("-space-y-")
+        || base.starts_with("inset-")
+        || base.starts_with("-inset-")
+        || base.starts_with("inset-x-")
+        || base.starts_with("-inset-x-")
+        || base.starts_with("inset-y-")
+        || base.starts_with("-inset-y-")
+        || base.starts_with("start-")
+        || base.starts_with("-start-")
+        || base.starts_with("end-")
+        || base.starts_with("-end-")
+        || base.starts_with("top-")
+        || base.starts_with("-top-")
+        || base.starts_with("right-")
+        || base.starts_with("-right-")
+        || base.starts_with("bottom-")
+        || base.starts_with("-bottom-")
+        || base.starts_with("left-")
+        || base.starts_with("-left-")
 }
 
 fn generate_layout_fast_path_rule(
@@ -1723,6 +1741,7 @@ fn generate_layout_fast_path_rule(
     generate_sizing_rule(class, config, variant_tables)
         .or_else(|| generate_gap_rule(class, config))
         .or_else(|| generate_space_rule(class, config))
+        .or_else(|| generate_inset_rule(class, config))
 }
 
 fn generate_rule(
@@ -8284,7 +8303,6 @@ fn generate_overscroll_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_inset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     let (negative, raw) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -8294,7 +8312,7 @@ fn generate_inset_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
     let (key, token) = parse_inset_key_and_token(raw)?;
     let value = parse_inset_value(token, negative)?;
     let declarations = inset_declarations(key, &value)?;
-    rule(&selector, &declarations, config)
+    class_rule(class, &declarations, config)
 }
 
 fn generate_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
@@ -10398,6 +10416,9 @@ fn apply_variants(
     variant_tables: &VariantTables,
 ) -> Option<String> {
     let rule = rule?;
+    if variants.is_empty() && full_class == base_class {
+        return Some(rule);
+    }
     let expected_base_selector = format!(".{}", escape_selector(base_class));
     let class_selector = format!(".{}", escape_selector(full_class));
     let (header, declarations_block) = split_rule_header_and_block(&rule)?;
@@ -10408,17 +10429,14 @@ fn apply_variants(
     }
 
     if variants.is_empty() {
-        if full_class != base_class {
-            return Some(compose_flat_variant_rule(
-                header,
-                first_selector,
-                &class_selector,
-                &declarations_block,
-                &[],
-                minify,
-            ));
-        }
-        return Some(rule);
+        return Some(compose_flat_variant_rule(
+            header,
+            first_selector,
+            &class_selector,
+            &declarations_block,
+            &[],
+            minify,
+        ));
     }
 
     let mut selector = class_selector.clone();
@@ -16933,6 +16951,30 @@ mod tests {
         assert!(result.css.contains(".w-4"));
         assert!(result.css.contains("width: 999px"));
         assert!(!result.css.contains("width: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_inset_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("top-4".to_string(), "top: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["top-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".top-4"));
+        assert!(result.css.contains("top: 999px"));
+        assert!(!result.css.contains("top: calc(var(--spacing) * 4)"));
     }
 
     #[test]
