@@ -92,6 +92,27 @@ mod tests {
         assert_eq!(config.theme.colors["blue"]["500"], "#3b82f6");
     }
 
+    #[test]
+    fn returns_error_for_missing_config_file() {
+        let path = temp_path("ironframe_config_missing");
+        let err = load(&path).expect_err("missing config should fail");
+        assert!(
+            err.message
+                .starts_with(&format!("failed to read config {}", path.display()))
+        );
+    }
+
+    #[test]
+    fn returns_error_for_invalid_toml() {
+        let path = temp_path("ironframe_config_invalid");
+        let _ = fs::write(&path, "theme = { name = ");
+        let err = load(&path).expect_err("invalid config should fail");
+        assert!(
+            err.message
+                .starts_with(&format!("failed to parse config {}", path.display()))
+        );
+    }
+
     fn temp_path(prefix: &str) -> std::path::PathBuf {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)

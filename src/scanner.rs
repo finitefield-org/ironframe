@@ -1458,6 +1458,13 @@ mod tests {
     }
 
     #[test]
+    fn scan_globs_requires_at_least_one_pattern() {
+        let err = scan_globs_with_options(&[], &[], &ScanGlobOptions::default())
+            .expect_err("empty patterns should fail");
+        assert_eq!(err.message, "scan_globs requires at least one pattern");
+    }
+
+    #[test]
     fn default_glob_scanning_excludes_css_binary_lock_and_node_modules() {
         let base = temp_dir("scanner_default_filters");
         let _ = fs::create_dir_all(base.join("src"));
@@ -1480,6 +1487,44 @@ mod tests {
         assert!(result.classes.contains(&"p-2".to_string()));
         assert!(!result.classes.contains(&"bg-red-500".to_string()));
         assert!(!result.classes.contains(&"text-sm".to_string()));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn glob_options_can_include_css_binary_and_lock_files() {
+        let base = temp_dir("scanner_optional_file_types");
+        let _ = fs::create_dir_all(base.join("src"));
+        let _ = fs::write(
+            base.join("src/index.html"),
+            r#"<div class="from-html"></div>"#,
+        );
+        let _ = fs::write(
+            base.join("src/styles.css"),
+            r#"<div class="from-css"></div>"#,
+        );
+        let _ = fs::write(
+            base.join("src/logo.png"),
+            r#"<div class="from-binary"></div>"#,
+        );
+        let _ = fs::write(
+            base.join("package-lock.json"),
+            r#"<div class="from-lock"></div>"#,
+        );
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            include_css_files: true,
+            include_binary_files: true,
+            include_lock_files: true,
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
+        assert!(result.classes.contains(&"from-html".to_string()));
+        assert!(result.classes.contains(&"from-css".to_string()));
+        assert!(result.classes.contains(&"from-binary".to_string()));
+        assert!(result.classes.contains(&"from-lock".to_string()));
 
         let _ = fs::remove_dir_all(&base);
     }
@@ -1510,6 +1555,33 @@ mod tests {
         assert!(result.classes.contains(&"text-sm".to_string()));
         assert!(result.classes.contains(&"underline".to_string()));
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn glob_ignore_patterns_exclude_matching_files() {
+        let base = temp_dir("scanner_ignore_globs");
+        let _ = fs::create_dir_all(base.join("src"));
+        let _ = fs::create_dir_all(base.join("src/generated"));
+        let _ = fs::write(base.join("src/page.html"), r#"<div class="p-2"></div>"#);
+        let _ = fs::write(
+            base.join("src/generated/page.html"),
+            r#"<div class="hidden"></div>"#,
+        );
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(
+            &["**/*.html".to_string()],
+            &["**/generated/**".to_string()],
+            &options,
+        )
+        .expect("scan_globs_with_options should succeed");
+
+        assert!(result.classes.contains(&"p-2".to_string()));
+        assert!(!result.classes.contains(&"hidden".to_string()));
         let _ = fs::remove_dir_all(&base);
     }
 

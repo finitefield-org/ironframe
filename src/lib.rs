@@ -178,6 +178,11 @@ fn parse_build_args(args: Vec<String>) -> Result<Command, CliError> {
                     message: "--poll is only supported with watch".to_string(),
                 });
             }
+            "--poll-interval" => {
+                return Err(CliError {
+                    message: "--poll-interval is only supported with watch".to_string(),
+                });
+            }
             value => {
                 inputs.push(value.to_string());
             }
@@ -3632,6 +3637,65 @@ mod tests {
     }
 
     #[test]
+    fn parse_watch_supports_poll_interval_and_enables_polling() {
+        let command = parse_args(vec![
+            "watch".to_string(),
+            "--poll-interval".to_string(),
+            "250".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect("watch args should parse");
+
+        assert_eq!(
+            command,
+            Command::Watch {
+                inputs: vec!["src/**/*.html".to_string()],
+                out: None,
+                input_css: None,
+                minify: false,
+                config: None,
+                ignore: vec![],
+                poll: true,
+                poll_interval_ms: 250,
+            }
+        );
+    }
+
+    #[test]
+    fn parse_watch_requires_poll_interval_value() {
+        let err = parse_args(vec!["watch".to_string(), "--poll-interval".to_string()])
+            .expect_err("missing poll interval should fail");
+        assert_eq!(err.message, "watch requires a value for --poll-interval");
+    }
+
+    #[test]
+    fn parse_watch_rejects_invalid_poll_interval_value() {
+        let err = parse_args(vec![
+            "watch".to_string(),
+            "--poll-interval".to_string(),
+            "fast".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect_err("non-numeric poll interval should fail");
+        assert_eq!(
+            err.message,
+            "--poll-interval requires a positive integer, got 'fast'"
+        );
+    }
+
+    #[test]
+    fn parse_build_rejects_poll_interval_flag() {
+        let err = parse_args(vec![
+            "build".to_string(),
+            "--poll-interval".to_string(),
+            "250".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect_err("build should reject watch-only flags");
+        assert_eq!(err.message, "--poll-interval is only supported with watch");
+    }
+
+    #[test]
     fn compare_css_from_second_line_ignores_header_line() {
         let actual = "/*! ironframe */\n.a { color: red; }\n.b { color: blue; }\n";
         let reference = "/*! tailwind */\n.a { color: red; }\n.b { color: blue; }\n";
@@ -3891,6 +3955,29 @@ mod tests {
         assert!(inlined.contains(".nested { color: red; }"));
         assert!(inlined.contains(".imported { color: blue; }"));
         assert!(inlined.contains(".main { color: black; }"));
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn inlines_recursive_css_imports_without_duplicate_cycles() {
+        let base = temp_dir("cli_css_import_cycle");
+        let a = base.join("a.css");
+        let b = base.join("b.css");
+        let _ = fs::create_dir_all(&base);
+        fs::write(
+            &a,
+            "@import \"./b.css\";\n.a { color: red; }\n@import \"./b.css\";\n",
+        )
+        .expect("should write a.css");
+        fs::write(&b, "@import \"./a.css\";\n.b { color: blue; }\n").expect("should write b.css");
+
+        let css = "@import \"tailwindcss\";\n@import \"./a.css\";\n.root { color: black; }\n";
+        let inlined = inline_css_imports(css, &base).expect("should inline recursive imports");
+
+        assert!(inlined.contains("@import \"tailwindcss\";"));
+        assert_eq!(inlined.matches(".a { color: red; }").count(), 1);
+        assert_eq!(inlined.matches(".b { color: blue; }").count(), 1);
+        assert!(inlined.contains(".root { color: black; }"));
         let _ = fs::remove_dir_all(base);
     }
 
