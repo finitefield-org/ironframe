@@ -232,8 +232,14 @@ fn extract_classes_by_extension(text: &str, ext: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
 
     for candidate in candidates {
-        for token in tokenize_class_list(candidate.trim()) {
-            if is_valid_candidate(&token) && seen.insert(token.clone()) {
+        for token in tokenize_class_list(candidate.value.trim()) {
+            if !is_valid_candidate(&token) {
+                continue;
+            }
+            if !candidate.trusted && !is_likely_untrusted_utility_token(&token) {
+                continue;
+            }
+            if seen.insert(token.clone()) {
                 results.push(token);
             }
         }
@@ -251,41 +257,108 @@ enum Extractor {
     Fallback,
 }
 
-fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Candidate {
+    value: String,
+    trusted: bool,
+}
+
+fn append_candidates(out: &mut Vec<Candidate>, values: Vec<String>, trusted: bool) {
+    out.extend(values.into_iter().map(|value| Candidate { value, trusted }));
+}
+
+fn extract_candidates(text: &str, extractor: Extractor) -> Vec<Candidate> {
     match extractor {
         Extractor::Markup => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_class_helpers(text));
-            candidates.extend(extract_dom_class_list_calls(text));
-            candidates.extend(extract_class_like_values(text));
-            candidates.extend(extract_style_declaration_utilities(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, extract_class_attributes(text), true);
+            append_candidates(&mut candidates, extract_class_helpers(text), true);
+            append_candidates(&mut candidates, extract_dom_class_list_calls(text), true);
+            append_candidates(&mut candidates, extract_class_like_values(text), true);
+            append_candidates(
+                &mut candidates,
+                extract_style_declaration_utilities(text),
+                true,
+            );
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Script => {
-            let mut candidates = extract_string_literals(text);
-            candidates.extend(extract_class_helpers(text));
-            candidates.extend(extract_class_attributes(text));
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, extract_string_literals(text), false);
+            append_candidates(&mut candidates, extract_class_helpers(text), true);
+            append_candidates(&mut candidates, extract_class_attributes(text), true);
             candidates
         }
         Extractor::Markdown => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_string_literals(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, extract_class_attributes(text), true);
+            append_candidates(&mut candidates, extract_string_literals(text), false);
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Data => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_class_like_values(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, extract_class_attributes(text), true);
+            append_candidates(&mut candidates, extract_class_like_values(text), true);
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Fallback => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_string_literals(text));
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, extract_class_attributes(text), true);
+            append_candidates(&mut candidates, extract_string_literals(text), false);
             candidates
         }
     }
+}
+
+fn has_structural_utility_signal(token: &str) -> bool {
+    token.starts_with('!') || token.contains(':') || token.contains('-') || token.contains('[')
+}
+
+fn is_known_standalone_utility(token: &str) -> bool {
+    matches!(
+        token,
+        "absolute"
+            | "antialiased"
+            | "auto"
+            | "block"
+            | "collapse"
+            | "container"
+            | "contents"
+            | "fixed"
+            | "flex"
+            | "grid"
+            | "grow"
+            | "hidden"
+            | "inline"
+            | "invisible"
+            | "italic"
+            | "relative"
+            | "resize"
+            | "ring"
+            | "shrink"
+            | "sr-only"
+            | "static"
+            | "sticky"
+            | "subpixel-antialiased"
+            | "table"
+            | "table-caption"
+            | "table-cell"
+            | "table-column"
+            | "table-column-group"
+            | "table-footer-group"
+            | "table-header-group"
+            | "table-row"
+            | "table-row-group"
+            | "underline"
+            | "visible"
+    )
+}
+
+fn is_likely_untrusted_utility_token(token: &str) -> bool {
+    has_structural_utility_signal(token) || is_known_standalone_utility(token)
 }
 
 fn scan_path(
@@ -1416,6 +1489,23 @@ mod tests {
     fn uses_script_extractor_for_ts() {
         let classes = extract_classes_by_extension(r#"const cls = "p-4";"#, Some("ts"));
         assert!(classes.contains(&"p-4".to_string()));
+    }
+
+    #[test]
+    fn script_extractor_filters_plain_language_string_noise() {
+        let classes = extract_classes_by_extension(
+            r#"
+const message = "Please review deployment status now";
+const cls = "flex p-4";
+"#,
+            Some("ts"),
+        );
+        assert!(classes.contains(&"flex".to_string()));
+        assert!(classes.contains(&"p-4".to_string()));
+        assert!(!classes.contains(&"Please".to_string()));
+        assert!(!classes.contains(&"review".to_string()));
+        assert!(!classes.contains(&"deployment".to_string()));
+        assert!(!classes.contains(&"status".to_string()));
     }
 
     #[test]
