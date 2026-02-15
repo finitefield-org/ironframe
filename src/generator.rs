@@ -1783,6 +1783,83 @@ fn generate_spacing_fast_path_rule(
         .or_else(|| generate_spacing_rule(class, config))
 }
 
+fn is_effect_fast_path_candidate(base: &str) -> bool {
+    base == "rounded"
+        || base.starts_with("rounded-")
+        || base == "shadow"
+        || base.starts_with("shadow-")
+        || base == "ring"
+        || base.starts_with("ring-")
+        || base.starts_with("inset-shadow-")
+        || base.starts_with("inset-ring-")
+}
+
+fn generate_effect_fast_path_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    generate_custom_utility_rule(class, config, variant_tables)
+        .or_else(|| generate_border_radius_rule(class, config))
+        .or_else(|| generate_shadow_preset_rule(class, config))
+        .or_else(|| generate_ring_preset_rule(class, config))
+        .or_else(|| generate_shadow_value_rule(class, config))
+        .or_else(|| generate_shadow_color_rule(class, config, variant_tables))
+        .or_else(|| generate_inset_shadow_color_rule(class, config))
+        .or_else(|| generate_ring_color_rule(class, config, variant_tables))
+        .or_else(|| generate_inset_ring_color_rule(class, config))
+}
+
+fn generate_shadow_preset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let declarations = match class {
+        "shadow-sm" | "shadow" => {
+            "--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-md" => {
+            "--tw-shadow:0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-lg" => {
+            "--tw-shadow:0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 4px 6px -4px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-xl" => {
+            "--tw-shadow:0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 8px 10px -6px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-2xl" => {
+            "--tw-shadow:0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-inner" => {
+            "--tw-shadow:inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-none" => {
+            "--tw-shadow:0 0 #0000;box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        _ => return None,
+    };
+    class_rule(class, declarations, config)
+}
+
+fn generate_ring_preset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let declarations = match class {
+        "ring-0" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-1" | "ring" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-2" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-4" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(4px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-8" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        _ => return None,
+    };
+    class_rule(class, declarations, config)
+}
+
 fn generate_rule(
     class: &str,
     config: &GeneratorConfig,
@@ -1801,6 +1878,12 @@ fn generate_rule(
         .or_else(|| {
             if is_spacing_fast_path_candidate(base) {
                 return generate_spacing_fast_path_rule(base, config, variant_tables);
+            }
+            None
+        })
+        .or_else(|| {
+            if is_effect_fast_path_candidate(base) {
+                return generate_effect_fast_path_rule(base, config, variant_tables);
             }
             None
         })
@@ -17019,6 +17102,56 @@ mod tests {
         assert!(result.css.contains(".p-4"));
         assert!(result.css.contains("padding: 999px"));
         assert!(!result.css.contains("padding: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_effect_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![
+                ("shadow-md".to_string(), "box-shadow: none;".to_string()),
+                ("ring-2".to_string(), "outline: 3px solid hotpink;".to_string()),
+                ("rounded-lg".to_string(), "border-radius: 99rem;".to_string()),
+            ],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "shadow-md".to_string(),
+                "ring-2".to_string(),
+                "rounded-lg".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".shadow-md"));
+        assert!(result.css.contains("box-shadow: none"));
+        assert!(
+            !result
+                .css
+                .contains("--tw-shadow: 0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+        );
+        assert!(result.css.contains(".ring-2"));
+        assert!(result.css.contains("outline: 3px solid hotpink"));
+        assert!(
+            !result
+                .css
+                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
+        );
+        assert!(result.css.contains(".rounded-lg"));
+        assert!(result.css.contains("border-radius: 99rem"));
+        assert!(!result.css.contains("border-radius: var(--radius-lg)"));
     }
 
     #[test]

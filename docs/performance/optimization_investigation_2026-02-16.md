@@ -198,3 +198,45 @@ Result:
 
 - The earlier `build_large_html` regression was recovered.
 - Unique-class-heavy workloads remained improved while mixed and small workloads also improved.
+
+## Follow-up Optimization: Effect Utility Fast Path (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Added `is_effect_fast_path_candidate` for effect-heavy families:
+   - `rounded*`
+   - `shadow*` / `inset-shadow*`
+   - `ring*` / `inset-ring*`
+2. Added `generate_effect_fast_path_rule` with precedence preserved:
+   - `generate_custom_utility_rule(...)` first
+   - then effect-family generators
+3. Added preset generators to avoid full fallback-chain traversal for common classes:
+   - `generate_shadow_preset_rule` (`shadow`, `shadow-sm`, `shadow-md`, etc.)
+   - `generate_ring_preset_rule` (`ring`, `ring-0`, `ring-1`, `ring-2`, `ring-4`, `ring-8`)
+4. Added regression test:
+   - `custom_utility_keeps_priority_over_effect_utilities`
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks
+
+Comparison source:
+
+- Previous: `bench/results/perf_2026-02-16_06-54-00.tsv`
+- Current: `bench/results/perf_2026-02-16_06-58-27.tsv`
+
+| Case | Previous avg (s) | Current avg (s) | Delta |
+|---|---:|---:|---:|
+| build_large_html | 0.0853 | 0.0840 | -1.5% |
+| build_unique_massive | 0.0688 | 0.0641 | -6.8% |
+| build_unique_massive_minify | 0.0457 | 0.0457 | +0.0% |
+| build_mixed_all | 0.0298 | 0.0302 | +1.3% |
+
+Result:
+
+- Large and unique-heavy build workloads improved further.
+- Mixed workload is roughly flat with slight run-to-run fluctuation.
