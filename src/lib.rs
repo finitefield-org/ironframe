@@ -1057,9 +1057,15 @@ fn glob_root(pattern: &str) -> PathBuf {
 }
 
 fn parse_u64_arg(value: &str, flag: &str) -> Result<u64, CliError> {
-    value.parse::<u64>().map_err(|_| CliError {
+    let parsed = value.parse::<u64>().map_err(|_| CliError {
         message: format!("{} requires a positive integer, got '{}'", flag, value),
-    })
+    })?;
+    if parsed == 0 {
+        return Err(CliError {
+            message: format!("{} requires a positive integer, got '{}'", flag, value),
+        });
+    }
+    Ok(parsed)
 }
 
 fn expand_build_time_functions(css: &str) -> String {
@@ -3637,6 +3643,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_args_rejects_unknown_command() {
+        let err = parse_args(vec!["ship".to_string()]).expect_err("unknown command should fail");
+        assert_eq!(err.message, "unknown command: ship");
+    }
+
+    #[test]
+    fn parse_scan_requires_ignore_value() {
+        let err = parse_args(vec!["scan".to_string(), "--ignore".to_string()])
+            .expect_err("missing ignore value should fail");
+        assert_eq!(err.message, "scan requires a value for --ignore");
+    }
+
+    #[test]
+    fn parse_scan_requires_at_least_one_path() {
+        let err = parse_args(vec!["scan".to_string()]).expect_err("missing inputs should fail");
+        assert_eq!(
+            err.message,
+            "scan requires at least one path or glob pattern"
+        );
+    }
+
+    #[test]
     fn parse_watch_supports_poll_interval_and_enables_polling() {
         let command = parse_args(vec![
             "watch".to_string(),
@@ -3684,6 +3712,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_watch_rejects_zero_poll_interval_value() {
+        let err = parse_args(vec![
+            "watch".to_string(),
+            "--poll-interval".to_string(),
+            "0".to_string(),
+            "src/**/*.html".to_string(),
+        ])
+        .expect_err("zero poll interval should fail");
+        assert_eq!(
+            err.message,
+            "--poll-interval requires a positive integer, got '0'"
+        );
+    }
+
+    #[test]
     fn parse_build_rejects_poll_interval_flag() {
         let err = parse_args(vec![
             "build".to_string(),
@@ -3709,6 +3752,23 @@ mod tests {
         let err = super::compare_css_from_second_line(actual, reference)
             .expect_err("comparison should fail");
         assert!(err.contains("line 3"));
+    }
+
+    #[test]
+    fn compare_css_from_second_line_treats_header_only_files_as_equal() {
+        let actual = "/*! ironframe */";
+        let reference = "/*! tailwind */";
+        assert!(super::compare_css_from_second_line(actual, reference).is_ok());
+    }
+
+    #[test]
+    fn compare_css_from_second_line_reports_missing_actual_body_line() {
+        let actual = "/*! ironframe */\n";
+        let reference = "/*! tailwind */\n.a { color: red; }\n";
+        let err = super::compare_css_from_second_line(actual, reference)
+            .expect_err("comparison should fail when actual body is shorter");
+        assert!(err.contains("line 2"));
+        assert!(err.contains("expected"));
     }
 
     #[test]
@@ -4480,6 +4540,31 @@ body { margin: 0; }
     }
 
     #[test]
+    fn apply_rejects_variant_utility() {
+        let css = ".x { @apply hover:bg-red-500; }";
+        let config = crate::generator::GeneratorConfig {
+            minify: false,
+            colors: std::collections::BTreeMap::new(),
+        };
+        let err = expand_apply_directives(css, &config, None).expect_err("should fail");
+        assert_eq!(
+            err.message,
+            "@apply does not support variant classes: hover:bg-red-500"
+        );
+    }
+
+    #[test]
+    fn apply_requires_at_least_one_utility() {
+        let css = ".x { @apply ; }";
+        let config = crate::generator::GeneratorConfig {
+            minify: false,
+            colors: std::collections::BTreeMap::new(),
+        };
+        let err = expand_apply_directives(css, &config, None).expect_err("should fail");
+        assert_eq!(err.message, "@apply requires at least one utility class");
+    }
+
+    #[test]
     fn expands_spacing_function_in_css() {
         let css = ".my-element { margin: --spacing(4); }";
         let compiled = expand_build_time_functions(css);
@@ -4494,6 +4579,13 @@ body { margin: 0; }
             compiled
                 .contains("color: color-mix(in oklab, var(--color-lime-300) 50%, transparent);")
         );
+    }
+
+    #[test]
+    fn leaves_invalid_alpha_function_unchanged() {
+        let css = ".my-element { color: --alpha(var(--color-lime-300)); }";
+        let compiled = expand_build_time_functions(css);
+        assert!(compiled.contains("--alpha(var(--color-lime-300))"));
     }
 
     #[test]

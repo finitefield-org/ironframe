@@ -1387,6 +1387,7 @@ mod tests {
     use super::ScanGlobOptions;
     use super::extract_classes;
     use super::extract_classes_by_extension;
+    use super::scan;
     use super::scan_globs_with_options;
     use std::fs;
     use std::path::PathBuf;
@@ -1462,6 +1463,16 @@ mod tests {
         let err = scan_globs_with_options(&[], &[], &ScanGlobOptions::default())
             .expect_err("empty patterns should fail");
         assert_eq!(err.message, "scan_globs requires at least one pattern");
+    }
+
+    #[test]
+    fn scan_reports_missing_path() {
+        let missing = std::env::temp_dir().join("ironframe_missing_scan_target");
+        let err = scan(&[missing.clone()]).expect_err("missing path should fail");
+        assert_eq!(
+            err.message,
+            format!("path not found: {}", missing.display())
+        );
     }
 
     #[test]
@@ -1773,6 +1784,19 @@ notes:
     #[test]
     fn validates_arbitrary_length_token() {
         assert!(super::is_valid_candidate("min-h-[1.5rem]"));
+    }
+
+    #[test]
+    fn validates_boundary_candidate_rules() {
+        assert!(!super::is_valid_candidate(""));
+        assert!(!super::is_valid_candidate(".text-sm"));
+        assert!(!super::is_valid_candidate("/text-sm"));
+        assert!(!super::is_valid_candidate("hover:"));
+        assert!(!super::is_valid_candidate("text-xs\\"));
+        assert!(!super::is_valid_candidate("text!sm"));
+        assert!(!super::is_valid_candidate("before:content-['hello'"));
+        assert!(!super::is_valid_candidate("bg-[url('/x.png')"));
+        assert!(super::is_valid_candidate("[--gutter-width:1rem]"));
     }
 
     fn temp_dir(prefix: &str) -> PathBuf {
