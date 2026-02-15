@@ -2,4 +2,7 @@ target
 
 
 .DS_Store
-
+bench/cases/*
+!bench/cases/.gitkeep
+bench/results/*
+!bench/results/.gitkeep

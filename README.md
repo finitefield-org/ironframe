@@ -108,6 +108,24 @@ ironframe watch --poll --poll-interval 250 "src/**/*.{html,tsx}"
 
 When using `build --input-css`, the CSS file must include `@import "tailwindcss"` or `@import "ironframe"` (including split imports such as `tailwindcss/theme.css`).
 
+## Performance Benchmarking
+
+Reusable benchmark scripts are available under `bench/`.
+
+```bash
+# Generate benchmark cases
+./bench/generate_perf_cases.sh
+
+# Run benchmark suite and save TSV/Markdown results
+./bench/run_perf_benchmarks.sh
+```
+
+Outputs:
+
+- `bench/results/latest.tsv`
+- `bench/results/latest.md`
+- versioned snapshots `bench/results/perf_*.tsv`, `bench/results/perf_*.md`
+
 ## Minimal API (Draft)
 
 - `ironframe::core`
