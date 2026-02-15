@@ -285,3 +285,48 @@ Result:
 
 - This optimization produces a modest but consistent improvement in generator-heavy build cases (about `1-3%` in focused runs).
 - The effect size is smaller than earlier fast-path optimizations, but it reduces repeated parsing work on the generation hot path with no correctness regression.
+
+## Follow-up Optimization: Selector Generation Lazy Across `generate_*` (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Added `LazyClassSelector` (backed by `OnceCell<String>`) and `Deref<Target = str>` so selector escaping/allocation happens on first use, not at function entry.
+2. Replaced eager selector initialization in `generate_*` helpers from:
+   - `let selector = format!(".{}", escape_selector(class));`
+   to:
+   - `let selector = LazyClassSelector::new(class);`
+3. Kept existing rule-generation logic unchanged (`rule(&selector, ...)`, composed helpers, gradient helpers), so behavior is preserved while avoiding selector work on mismatch paths.
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks
+
+Full suite comparison:
+
+- Baseline (clean `HEAD` worktree): `bench/results/perf_2026-02-16_07-26-01_baseline_selector_lazy.tsv`
+- Current (this optimization): `bench/results/perf_2026-02-16_07-27-34.tsv`
+
+| Case | Baseline avg (s) | Current avg (s) | Delta |
+|---|---:|---:|---:|
+| build_small_html | 0.0080 | 0.0064 | -20.0% |
+| build_mixed_all | 0.0320 | 0.0313 | -2.2% |
+| build_mixed_minify | 0.0315 | 0.0288 | -8.6% |
+| build_mixed_input_css | 0.0339 | 0.0293 | -13.6% |
+| build_large_html | 0.0880 | 0.0815 | -7.4% |
+| build_unique_massive | 0.0638 | 0.0617 | -3.3% |
+| build_unique_massive_minify | 0.0454 | 0.0442 | -2.6% |
+
+Targeted recheck (higher repetition, focused build hot paths):
+
+- `build_unique_massive`: `0.061333s -> 0.060875s` (`-0.75%`)
+- `build_unique_massive_minify`: `0.043771s -> 0.042771s` (`-2.28%`)
+- `build_mixed_all`: `0.028675s -> 0.026538s` (`-7.45%`)
+
+Result:
+
+- Selector lazy generation reduces wasted work on mismatch-heavy paths and improves end-to-end build performance.
+- Effect size is workload-dependent: strongest on mixed workloads, smaller but positive on unique-heavy hot paths.
