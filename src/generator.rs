@@ -1744,6 +1744,45 @@ fn generate_layout_fast_path_rule(
         .or_else(|| generate_inset_rule(class, config))
 }
 
+fn is_spacing_fast_path_candidate(base: &str) -> bool {
+    base.starts_with("p-")
+        || base.starts_with("px-")
+        || base.starts_with("py-")
+        || base.starts_with("pt-")
+        || base.starts_with("pr-")
+        || base.starts_with("pb-")
+        || base.starts_with("pl-")
+        || base.starts_with("ps-")
+        || base.starts_with("pe-")
+        || base.starts_with("m-")
+        || base.starts_with("mx-")
+        || base.starts_with("my-")
+        || base.starts_with("mt-")
+        || base.starts_with("mr-")
+        || base.starts_with("mb-")
+        || base.starts_with("ml-")
+        || base.starts_with("ms-")
+        || base.starts_with("me-")
+        || base.starts_with("-m-")
+        || base.starts_with("-mx-")
+        || base.starts_with("-my-")
+        || base.starts_with("-mt-")
+        || base.starts_with("-mr-")
+        || base.starts_with("-mb-")
+        || base.starts_with("-ml-")
+        || base.starts_with("-ms-")
+        || base.starts_with("-me-")
+}
+
+fn generate_spacing_fast_path_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    generate_custom_utility_rule(class, config, variant_tables)
+        .or_else(|| generate_spacing_rule(class, config))
+}
+
 fn generate_rule(
     class: &str,
     config: &GeneratorConfig,
@@ -1756,6 +1795,12 @@ fn generate_rule(
             if is_layout_fast_path_candidate(base) {
                 return generate_custom_utility_rule(base, config, variant_tables)
                     .or_else(|| generate_layout_fast_path_rule(base, config, variant_tables));
+            }
+            None
+        })
+        .or_else(|| {
+            if is_spacing_fast_path_candidate(base) {
+                return generate_spacing_fast_path_rule(base, config, variant_tables);
             }
             None
         })
@@ -6378,7 +6423,6 @@ fn generate_font_weight_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -6399,7 +6443,7 @@ fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if let Some(raw) = class.strip_prefix(prefix) {
             if let Some(value) = parse_spacing_value(raw) {
                 let declarations = format!("{}:{}", property, value);
-                return rule(&selector, &declarations, config);
+                return class_rule(class, &declarations, config);
             }
         }
     }
@@ -6418,7 +6462,7 @@ fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if let Some(raw) = raw_class.strip_prefix(prefix) {
             if let Some(value) = parse_margin_value(raw, negative) {
                 let declarations = format!("{}:{}", property, value);
-                return rule(&selector, &declarations, config);
+                return class_rule(class, &declarations, config);
             }
         }
     }
@@ -16951,6 +16995,30 @@ mod tests {
         assert!(result.css.contains(".w-4"));
         assert!(result.css.contains("width: 999px"));
         assert!(!result.css.contains("width: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_spacing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("p-4".to_string(), "padding: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["p-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".p-4"));
+        assert!(result.css.contains("padding: 999px"));
+        assert!(!result.css.contains("padding: calc(var(--spacing) * 4)"));
     }
 
     #[test]

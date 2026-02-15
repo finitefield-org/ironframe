@@ -155,3 +155,46 @@ Interpretation:
 
 - This optimization strongly improves unique-class-heavy builds (the known hot workload).
 - There is a small regression on large HTML build in this controlled sample; further balancing should target dispatch narrowing for non-inset/non-sizing classes to recover this.
+
+## Follow-up Optimization: Spacing Dispatch Fast Path (2026-02-16)
+
+### Implemented changes
+
+File: `src/generator.rs`
+
+1. Added `is_spacing_fast_path_candidate` for spacing families:
+   - `p-*`, `px-*`, `py-*`, `pt-*`, `pr-*`, `pb-*`, `pl-*`, `ps-*`, `pe-*`
+   - `m-*`, `mx-*`, `my-*`, `mt-*`, `mr-*`, `mb-*`, `ml-*`, `ms-*`, `me-*`
+   - negative margin forms (e.g. `-mt-*`, `-mx-*`)
+2. Added `generate_spacing_fast_path_rule`:
+   - preserves custom utility precedence via `generate_custom_utility_rule(...)` first
+   - then `generate_spacing_rule(...)`
+3. Inserted spacing fast-path branch in `generate_rule` before the large fallback chain.
+4. Optimized `generate_spacing_rule` to use `class_rule(...)` (selector creation only when matched).
+5. Added regression test:
+   - `custom_utility_keeps_priority_over_spacing_utilities`
+
+### Validation
+
+- `cargo test`: **306 passed, 0 failed**
+
+### Benchmarks
+
+Comparison source:
+
+- Previous: `bench/results/perf_2026-02-16_06-42-04.tsv`
+- Current: `bench/results/perf_2026-02-16_06-54-00.tsv`
+
+| Case | Previous avg (s) | Current avg (s) | Delta |
+|---|---:|---:|---:|
+| build_small_html | 0.0079 | 0.0071 | -10.1% |
+| build_mixed_all | 0.0322 | 0.0298 | -7.5% |
+| build_mixed_minify | 0.0307 | 0.0290 | -5.5% |
+| build_large_html | 0.0912 | 0.0853 | -6.5% |
+| build_unique_massive | 0.0742 | 0.0688 | -7.3% |
+| build_unique_massive_minify | 0.0463 | 0.0457 | -1.3% |
+
+Result:
+
+- The earlier `build_large_html` regression was recovered.
+- Unique-class-heavy workloads remained improved while mixed and small workloads also improved.
