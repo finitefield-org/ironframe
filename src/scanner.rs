@@ -82,8 +82,10 @@ pub fn scan_globs_with_options(
 
     let globset = build_globset(patterns)?;
     let ignore_set = build_globset(ignore_patterns)?;
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
+    let mut classes = Vec::new();
+    let mut seen_classes = HashSet::new();
+    let mut seen_paths = HashSet::new();
+    let mut files_scanned = 0usize;
 
     let mut builder = WalkBuilder::new(&options.base_path);
     builder
@@ -112,12 +114,15 @@ pub fn scan_globs_with_options(
         if should_skip_file(path, options) {
             continue;
         }
-        if seen.insert(path.to_path_buf()) {
-            paths.push(path.to_path_buf());
+        if seen_paths.insert(path.to_path_buf()) {
+            scan_file(path, &mut classes, &mut seen_classes, &mut files_scanned);
         }
     }
 
-    scan(&paths)
+    Ok(ScanResult {
+        classes,
+        files_scanned,
+    })
 }
 
 fn should_skip_file(path: &Path, options: &ScanGlobOptions) -> bool {
@@ -388,24 +393,33 @@ fn scan_path(
     }
 
     if path.is_file() {
-        let text = match fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(_) => return Ok(()),
-        };
-        *files_scanned += 1;
-        let ext = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase());
-        let classes_for_file = extract_classes_by_extension(&text, ext.as_deref());
-        for class in classes_for_file {
-            if seen.insert(class.clone()) {
-                classes.push(class);
-            }
-        }
+        scan_file(path, classes, seen, files_scanned);
     }
 
     Ok(())
+}
+
+fn scan_file(
+    path: &Path,
+    classes: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    files_scanned: &mut usize,
+) {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(_) => return,
+    };
+    *files_scanned += 1;
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+    let classes_for_file = extract_classes_by_extension(&text, ext.as_deref());
+    for class in classes_for_file {
+        if seen.insert(class.clone()) {
+            classes.push(class);
+        }
+    }
 }
 
 fn extract_class_attributes(text: &str) -> Vec<String> {
@@ -1545,6 +1559,32 @@ const cls = "flex p-4";
             .expect("scan_globs_with_options should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_globs_reports_file_count_with_unique_class_dedup() {
+        let base = temp_dir("scanner_single_pass_counts");
+        let _ = fs::create_dir_all(base.join("pages"));
+        let _ = fs::write(base.join("pages/a.html"), r#"<div class="p-2"></div>"#);
+        let _ = fs::write(base.join("pages/b.html"), r#"<main class="p-2"></main>"#);
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*.html".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
+
+        assert_eq!(result.files_scanned, 2);
+        assert_eq!(
+            result
+                .classes
+                .iter()
+                .filter(|class| class.as_str() == "p-2")
+                .count(),
+            1
+        );
         let _ = fs::remove_dir_all(&base);
     }
 
