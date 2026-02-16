@@ -126,7 +126,7 @@ Outputs:
 - `bench/results/latest.md`
 - versioned snapshots `bench/results/perf_*.tsv`, `bench/results/perf_*.md`
 
-## Minimal API (Draft)
+## API
 
 - `ironframe::core`
   - `Token` and `TokenKind` for lexer output
