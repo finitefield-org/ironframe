@@ -460,3 +460,37 @@ Result:
 
 - Scanner-focused cases (`scan_mixed_all`, `scan_large_html`) improved modestly.
 - End-to-end build impact is near-neutral with small case-dependent variance.
+
+## Follow-up Optimization: Unified Structural Extraction Scan (2026-02-16)
+
+### Implemented changes
+
+File: `src/scanner.rs`
+
+1. Added `extract_structural_candidates` with `StructuralExtractPlan` to collect `class` attributes / helper calls / `classList.*` calls / string literals in a single pass over input text.
+2. Rewired `extract_candidates` to call the structural scanner once per extractor kind and then append trusted/untrusted candidates in the same category order as before.
+3. Replaced repeated `match_indices`-based structural scans with position-based `try_extract_*_at` helpers (`class` attribute, helper call, `classList` call).
+
+### Validation
+
+- `cargo test`: **307 passed, 0 failed**
+
+### Benchmarks (alternating before/after runs)
+
+Binary baseline: `/tmp/ironframe_before_scanner_tokenizer`  
+Binary current: `/tmp/ironframe_after_scanner_tokenizer`
+Raw comparison TSV: `bench/results/perf_2026-02-16_08-36-21_scanner_tokenizer_compare.tsv`
+
+| Case | Before avg (s) | After avg (s) | Delta |
+|---|---:|---:|---:|
+| scan_small_html | 0.007458 | 0.007570 | +1.50% |
+| scan_mixed_all | 0.028625 | 0.026458 | -7.57% |
+| scan_large_html | 0.085000 | 0.080000 | -5.88% |
+| scan_unique_massive | 0.022750 | 0.022417 | -1.46% |
+| build_mixed_all | 0.030417 | 0.030083 | -1.10% |
+| build_mixed_minify | 0.030375 | 0.028250 | -7.00% |
+
+Result:
+
+- Core scanner workloads (`scan_mixed_all`, `scan_large_html`) improved clearly in this run.
+- Build cases were neutral-to-positive, with notable gain on `build_mixed_minify`.

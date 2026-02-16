@@ -1,6 +1,6 @@
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::cell::OnceCell;
 use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17170,8 +17170,14 @@ mod tests {
             custom_variant_selectors: vec![],
             custom_utilities: vec![
                 ("shadow-md".to_string(), "box-shadow: none;".to_string()),
-                ("ring-2".to_string(), "outline: 3px solid hotpink;".to_string()),
-                ("rounded-lg".to_string(), "border-radius: 99rem;".to_string()),
+                (
+                    "ring-2".to_string(),
+                    "outline: 3px solid hotpink;".to_string(),
+                ),
+                (
+                    "rounded-lg".to_string(),
+                    "border-radius: 99rem;".to_string(),
+                ),
             ],
             theme_variable_values: vec![],
             global_theme_reset: false,
@@ -17197,11 +17203,9 @@ mod tests {
         );
         assert!(result.css.contains(".ring-2"));
         assert!(result.css.contains("outline: 3px solid hotpink"));
-        assert!(
-            !result
-                .css
-                .contains("--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))")
-        );
+        assert!(!result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))"
+        ));
         assert!(result.css.contains(".rounded-lg"));
         assert!(result.css.contains("border-radius: 99rem"));
         assert!(!result.css.contains("border-radius: var(--radius-lg)"));
