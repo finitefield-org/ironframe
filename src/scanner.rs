@@ -82,8 +82,9 @@ pub fn scan_globs_with_options(
 
     let globset = build_globset(patterns)?;
     let ignore_set = build_globset(ignore_patterns)?;
-    let mut paths = Vec::new();
-    let mut seen = HashSet::new();
+    let mut classes = Vec::new();
+    let mut seen_classes = HashSet::new();
+    let mut files_scanned = 0usize;
 
     let mut builder = WalkBuilder::new(&options.base_path);
     builder
@@ -91,6 +92,20 @@ pub fn scan_globs_with_options(
         .git_ignore(options.respect_gitignore)
         .git_global(options.respect_gitignore)
         .git_exclude(options.respect_gitignore);
+    if !options.include_node_modules {
+        builder.filter_entry(|entry| {
+            let Some(file_type) = entry.file_type() else {
+                return true;
+            };
+            if !file_type.is_dir() {
+                return true;
+            }
+            !entry
+                .path()
+                .components()
+                .any(|component| component.as_os_str() == "node_modules")
+        });
+    }
     let walker = builder.build();
 
     for entry in walker {
@@ -112,23 +127,16 @@ pub fn scan_globs_with_options(
         if should_skip_file(path, options) {
             continue;
         }
-        if seen.insert(path.to_path_buf()) {
-            paths.push(path.to_path_buf());
-        }
+        scan_file(path, &mut classes, &mut seen_classes, &mut files_scanned);
     }
 
-    scan(&paths)
+    Ok(ScanResult {
+        classes,
+        files_scanned,
+    })
 }
 
 fn should_skip_file(path: &Path, options: &ScanGlobOptions) -> bool {
-    if !options.include_node_modules
-        && path
-            .components()
-            .any(|component| component.as_os_str() == "node_modules")
-    {
-        return true;
-    }
-
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -232,8 +240,14 @@ fn extract_classes_by_extension(text: &str, ext: Option<&str>) -> Vec<String> {
     let mut seen = HashSet::new();
 
     for candidate in candidates {
-        for token in tokenize_class_list(candidate.trim()) {
-            if is_valid_candidate(&token) && seen.insert(token.clone()) {
+        for token in tokenize_class_list(candidate.value.trim()) {
+            if !is_valid_candidate(&token) {
+                continue;
+            }
+            if !candidate.trusted && !is_likely_untrusted_utility_token(&token) {
+                continue;
+            }
+            if seen.insert(token.clone()) {
                 results.push(token);
             }
         }
@@ -251,41 +265,180 @@ enum Extractor {
     Fallback,
 }
 
-fn extract_candidates(text: &str, extractor: Extractor) -> Vec<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Candidate {
+    value: String,
+    trusted: bool,
+}
+
+const CLASS_ATTR_PATTERNS: [&str; 5] =
+    ["class", "className", "class:list", ":class", "v-bind:class"];
+const CLASS_HELPER_PATTERNS: [&str; 4] = ["clsx", "classnames", "tw", "cva"];
+const DOM_CLASS_LIST_PATTERNS: [&str; 5] = [
+    "classList.add",
+    "classList.remove",
+    "classList.toggle",
+    "classList.replace",
+    "classList.contains",
+];
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StructuralExtractPlan {
+    class_attributes: bool,
+    class_helpers: bool,
+    dom_class_list_calls: bool,
+    string_literals: bool,
+}
+
+#[derive(Debug, Default)]
+struct StructuralExtractResult {
+    class_attributes: Vec<String>,
+    class_helpers: Vec<String>,
+    dom_class_list_calls: Vec<String>,
+    string_literals: Vec<String>,
+}
+
+fn append_candidates(out: &mut Vec<Candidate>, values: Vec<String>, trusted: bool) {
+    out.extend(values.into_iter().map(|value| Candidate { value, trusted }));
+}
+
+fn extract_candidates(text: &str, extractor: Extractor) -> Vec<Candidate> {
     match extractor {
         Extractor::Markup => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_class_helpers(text));
-            candidates.extend(extract_dom_class_list_calls(text));
-            candidates.extend(extract_class_like_values(text));
-            candidates.extend(extract_style_declaration_utilities(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let structural = extract_structural_candidates(
+                text,
+                StructuralExtractPlan {
+                    class_attributes: true,
+                    class_helpers: true,
+                    dom_class_list_calls: true,
+                    string_literals: false,
+                },
+            );
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, structural.class_attributes, true);
+            append_candidates(&mut candidates, structural.class_helpers, true);
+            append_candidates(&mut candidates, structural.dom_class_list_calls, true);
+            append_candidates(&mut candidates, extract_class_like_values(text), true);
+            append_candidates(
+                &mut candidates,
+                extract_style_declaration_utilities(text),
+                true,
+            );
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Script => {
-            let mut candidates = extract_string_literals(text);
-            candidates.extend(extract_class_helpers(text));
-            candidates.extend(extract_class_attributes(text));
+            let structural = extract_structural_candidates(
+                text,
+                StructuralExtractPlan {
+                    class_attributes: true,
+                    class_helpers: true,
+                    dom_class_list_calls: false,
+                    string_literals: true,
+                },
+            );
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, structural.string_literals, false);
+            append_candidates(&mut candidates, structural.class_helpers, true);
+            append_candidates(&mut candidates, structural.class_attributes, true);
             candidates
         }
         Extractor::Markdown => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_string_literals(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let structural = extract_structural_candidates(
+                text,
+                StructuralExtractPlan {
+                    class_attributes: true,
+                    class_helpers: false,
+                    dom_class_list_calls: false,
+                    string_literals: true,
+                },
+            );
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, structural.class_attributes, true);
+            append_candidates(&mut candidates, structural.string_literals, false);
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Data => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_class_like_values(text));
-            candidates.extend(extract_keyword_utilities(text));
+            let structural = extract_structural_candidates(
+                text,
+                StructuralExtractPlan {
+                    class_attributes: true,
+                    class_helpers: false,
+                    dom_class_list_calls: false,
+                    string_literals: false,
+                },
+            );
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, structural.class_attributes, true);
+            append_candidates(&mut candidates, extract_class_like_values(text), true);
+            append_candidates(&mut candidates, extract_keyword_utilities(text), true);
             candidates
         }
         Extractor::Fallback => {
-            let mut candidates = extract_class_attributes(text);
-            candidates.extend(extract_string_literals(text));
+            let structural = extract_structural_candidates(
+                text,
+                StructuralExtractPlan {
+                    class_attributes: true,
+                    class_helpers: false,
+                    dom_class_list_calls: false,
+                    string_literals: true,
+                },
+            );
+            let mut candidates = Vec::new();
+            append_candidates(&mut candidates, structural.class_attributes, true);
+            append_candidates(&mut candidates, structural.string_literals, false);
             candidates
         }
     }
+}
+
+fn has_structural_utility_signal(token: &str) -> bool {
+    token.starts_with('!') || token.contains(':') || token.contains('-') || token.contains('[')
+}
+
+fn is_known_standalone_utility(token: &str) -> bool {
+    matches!(
+        token,
+        "absolute"
+            | "antialiased"
+            | "auto"
+            | "block"
+            | "collapse"
+            | "container"
+            | "contents"
+            | "fixed"
+            | "flex"
+            | "grid"
+            | "grow"
+            | "hidden"
+            | "inline"
+            | "invisible"
+            | "italic"
+            | "relative"
+            | "resize"
+            | "ring"
+            | "shrink"
+            | "sr-only"
+            | "static"
+            | "sticky"
+            | "subpixel-antialiased"
+            | "table"
+            | "table-caption"
+            | "table-cell"
+            | "table-column"
+            | "table-column-group"
+            | "table-footer-group"
+            | "table-header-group"
+            | "table-row"
+            | "table-row-group"
+            | "underline"
+            | "visible"
+    )
+}
+
+fn is_likely_untrusted_utility_token(token: &str) -> bool {
+    has_structural_utility_signal(token) || is_known_standalone_utility(token)
 }
 
 fn scan_path(
@@ -315,112 +468,153 @@ fn scan_path(
     }
 
     if path.is_file() {
-        let text = match fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(_) => return Ok(()),
-        };
-        *files_scanned += 1;
-        let ext = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase());
-        let classes_for_file = extract_classes_by_extension(&text, ext.as_deref());
-        for class in classes_for_file {
-            if seen.insert(class.clone()) {
-                classes.push(class);
-            }
-        }
+        scan_file(path, classes, seen, files_scanned);
     }
 
     Ok(())
 }
 
-fn extract_class_attributes(text: &str) -> Vec<String> {
-    const ATTRS: [&str; 5] = ["class", "className", "class:list", ":class", "v-bind:class"];
-    let mut out = Vec::new();
-
-    for attr in ATTRS {
-        for (idx, _) in text.match_indices(attr) {
-            if !is_attr_boundary(text, idx, attr.len()) {
-                continue;
-            }
-            let mut pos = idx + attr.len();
-            pos = skip_whitespace(text, pos);
-            if !text[pos..].starts_with('=') {
-                continue;
-            }
-            pos += 1;
-            pos = skip_whitespace(text, pos);
-            if pos >= text.len() {
-                continue;
-            }
-            let (values, _) = parse_attribute_value(text, pos);
-            out.extend(values);
+fn scan_file(
+    path: &Path,
+    classes: &mut Vec<String>,
+    seen: &mut HashSet<String>,
+    files_scanned: &mut usize,
+) {
+    let text = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(_) => return,
+    };
+    *files_scanned += 1;
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase());
+    let classes_for_file = extract_classes_by_extension(&text, ext.as_deref());
+    for class in classes_for_file {
+        if seen.insert(class.clone()) {
+            classes.push(class);
         }
+    }
+}
+
+fn extract_structural_candidates(
+    text: &str,
+    plan: StructuralExtractPlan,
+) -> StructuralExtractResult {
+    let mut out = StructuralExtractResult::default();
+    let mut idx = 0usize;
+
+    while idx < text.len() {
+        let Some((ch, size)) = next_char(text, idx) else {
+            break;
+        };
+
+        if plan.class_attributes && matches!(ch, 'c' | ':' | 'v') {
+            if let Some((values, end)) = try_extract_class_attribute_at(text, idx) {
+                out.class_attributes.extend(values);
+                idx = end.max(idx + size);
+                continue;
+            }
+        }
+
+        if plan.class_helpers && matches!(ch, 'c' | 't') {
+            if let Some((values, end)) = try_extract_class_helper_at(text, idx) {
+                out.class_helpers.extend(values);
+                idx = end.max(idx + size);
+                continue;
+            }
+        }
+
+        if plan.dom_class_list_calls && ch == 'c' {
+            if let Some((values, end)) = try_extract_dom_class_list_call_at(text, idx) {
+                out.dom_class_list_calls.extend(values);
+                idx = end.max(idx + size);
+                continue;
+            }
+        }
+
+        if plan.string_literals {
+            match ch {
+                '"' | '\'' => {
+                    let (value, new_idx) = parse_string_literal(text, idx + size, ch);
+                    if !value.is_empty() {
+                        out.string_literals.push(value);
+                    }
+                    idx = new_idx.max(idx + size);
+                    continue;
+                }
+                '`' => {
+                    let (values, new_idx) = parse_template_literal(text, idx + size);
+                    out.string_literals.extend(values);
+                    idx = new_idx.max(idx + size);
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        idx += size;
     }
 
     out
 }
 
-fn extract_class_helpers(text: &str) -> Vec<String> {
-    const HELPERS: [&str; 4] = ["clsx", "classnames", "tw", "cva"];
-    let mut out = Vec::new();
-
-    for helper in HELPERS {
-        for (idx, _) in text.match_indices(helper) {
-            if !is_identifier_boundary(text, idx, helper.len()) {
-                continue;
-            }
-            let mut pos = idx + helper.len();
-            pos = skip_whitespace(text, pos);
-            if pos >= text.len() || !text[pos..].starts_with('(') {
-                continue;
-            }
-            let (args, end) = extract_parenthesized(text, pos);
-            if !args.is_empty() {
-                out.extend(extract_string_literals(args));
-                out.extend(extract_object_keys(args));
-            }
-            if end <= pos {
-                break;
-            }
+fn try_extract_class_attribute_at(text: &str, idx: usize) -> Option<(Vec<String>, usize)> {
+    for attr in CLASS_ATTR_PATTERNS {
+        if !text[idx..].starts_with(attr) || !is_attr_boundary(text, idx, attr.len()) {
+            continue;
         }
+        let mut pos = skip_whitespace(text, idx + attr.len());
+        if pos >= text.len() || !text[pos..].starts_with('=') {
+            continue;
+        }
+        pos += 1;
+        pos = skip_whitespace(text, pos);
+        if pos >= text.len() {
+            continue;
+        }
+        let (values, end) = parse_attribute_value(text, pos);
+        return Some((values, end));
     }
-
-    out
+    None
 }
 
-fn extract_dom_class_list_calls(text: &str) -> Vec<String> {
-    const METHODS: [&str; 5] = [
-        "classList.add",
-        "classList.remove",
-        "classList.toggle",
-        "classList.replace",
-        "classList.contains",
-    ];
-    let mut out = Vec::new();
-
-    for method in METHODS {
-        for (idx, _) in text.match_indices(method) {
-            if !is_identifier_boundary(text, idx, method.len()) {
-                continue;
-            }
-            let mut pos = idx + method.len();
-            pos = skip_whitespace(text, pos);
-            if pos >= text.len() || !text[pos..].starts_with('(') {
-                continue;
-            }
-            let (args, end) = extract_parenthesized(text, pos);
-            if !args.is_empty() {
-                out.extend(extract_string_literals(args));
-            }
-            if end <= pos {
-                break;
-            }
+fn try_extract_class_helper_at(text: &str, idx: usize) -> Option<(Vec<String>, usize)> {
+    for helper in CLASS_HELPER_PATTERNS {
+        if !text[idx..].starts_with(helper) || !is_identifier_boundary(text, idx, helper.len()) {
+            continue;
         }
+        let pos = skip_whitespace(text, idx + helper.len());
+        if pos >= text.len() || !text[pos..].starts_with('(') {
+            continue;
+        }
+        let (args, end) = extract_parenthesized(text, pos);
+        let mut values = Vec::new();
+        if !args.is_empty() {
+            values.extend(extract_string_literals(args));
+            values.extend(extract_object_keys(args));
+        }
+        return Some((values, end));
     }
+    None
+}
 
-    out
+fn try_extract_dom_class_list_call_at(text: &str, idx: usize) -> Option<(Vec<String>, usize)> {
+    for method in DOM_CLASS_LIST_PATTERNS {
+        if !text[idx..].starts_with(method) || !is_identifier_boundary(text, idx, method.len()) {
+            continue;
+        }
+        let pos = skip_whitespace(text, idx + method.len());
+        if pos >= text.len() || !text[pos..].starts_with('(') {
+            continue;
+        }
+        let (args, end) = extract_parenthesized(text, pos);
+        if args.is_empty() {
+            return Some((Vec::new(), end));
+        }
+        return Some((extract_string_literals(args), end));
+    }
+    None
 }
 
 fn extract_class_like_values(text: &str) -> Vec<String> {
@@ -1419,6 +1613,23 @@ mod tests {
     }
 
     #[test]
+    fn script_extractor_filters_plain_language_string_noise() {
+        let classes = extract_classes_by_extension(
+            r#"
+const message = "Please review deployment status now";
+const cls = "flex p-4";
+"#,
+            Some("ts"),
+        );
+        assert!(classes.contains(&"flex".to_string()));
+        assert!(classes.contains(&"p-4".to_string()));
+        assert!(!classes.contains(&"Please".to_string()));
+        assert!(!classes.contains(&"review".to_string()));
+        assert!(!classes.contains(&"deployment".to_string()));
+        assert!(!classes.contains(&"status".to_string()));
+    }
+
+    #[test]
     fn uses_markup_extractor_for_html() {
         let classes = extract_classes_by_extension(r#"<div class="p-2"></div>"#, Some("html"));
         assert!(classes.contains(&"p-2".to_string()));
@@ -1455,6 +1666,32 @@ mod tests {
             .expect("scan_globs_with_options should succeed");
 
         assert!(result.classes.contains(&"p-2".to_string()));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn scan_globs_reports_file_count_with_unique_class_dedup() {
+        let base = temp_dir("scanner_single_pass_counts");
+        let _ = fs::create_dir_all(base.join("pages"));
+        let _ = fs::write(base.join("pages/a.html"), r#"<div class="p-2"></div>"#);
+        let _ = fs::write(base.join("pages/b.html"), r#"<main class="p-2"></main>"#);
+
+        let options = ScanGlobOptions {
+            base_path: base.clone(),
+            ..ScanGlobOptions::default()
+        };
+        let result = scan_globs_with_options(&["**/*.html".to_string()], &[], &options)
+            .expect("scan_globs_with_options should succeed");
+
+        assert_eq!(result.files_scanned, 2);
+        assert_eq!(
+            result
+                .classes
+                .iter()
+                .filter(|class| class.as_str() == "p-2")
+                .count(),
+            1
+        );
         let _ = fs::remove_dir_all(&base);
     }
 

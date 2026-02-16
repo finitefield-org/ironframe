@@ -1,5 +1,7 @@
+use std::cell::OnceCell;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::ops::Deref;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GeneratorConfig {
@@ -55,8 +57,16 @@ pub fn generate_with_overrides(
     let variant_tables = build_variant_tables(overrides);
 
     for class in _classes {
-        if let Some(rule) = generate_rule(class, _config, &variant_tables) {
-            let sort_key = build_rule_sort_key(class, &rule);
+        let (variants, base_with_modifier) = parse_variants(class);
+        if let Some((rule, property_rank)) = generate_rule(
+            class,
+            &variants,
+            base_with_modifier,
+            _config,
+            &variant_tables,
+        ) {
+            let sort_key =
+                build_rule_sort_key(class, &variants, base_with_modifier, property_rank, &rule);
             rules.push((sort_key, rule));
             count += 1;
         }
@@ -217,17 +227,20 @@ pub fn emit_css(result: &GenerationResult) -> String {
     result.css.clone()
 }
 
-fn build_rule_sort_key(class_name: &str, rule: &str) -> RuleSortKey {
-    let (variants, base) = parse_variants(class_name);
+fn build_rule_sort_key(
+    class_name: &str,
+    variants: &[&str],
+    base: &str,
+    property_rank: u16,
+    rule: &str,
+) -> RuleSortKey {
     RuleSortKey {
         variant_bucket: if variants.is_empty() { 0 } else { 1 },
         variant_rank: variant_sort_rank(&variants),
         variant_chain_key: variant_chain_sort_key(&variants),
         wrapper_bucket: rule_wrapper_bucket(rule),
         family_rank: utility_family_rank(base),
-        property_rank: extract_primary_declaration_property(rule)
-            .map(|property| property_order_rank(&property))
-            .unwrap_or(65535),
+        property_rank,
         subfamily_rank: utility_subfamily_rank(base),
         value_rank: utility_value_rank(base),
         class_sort_key: natural_class_sort_key(class_name),
@@ -1700,14 +1713,195 @@ fn property_order_rank(property: &str) -> u16 {
     }
 }
 
-fn generate_rule(
+fn is_layout_fast_path_candidate(base: &str) -> bool {
+    base.starts_with("w-")
+        || base.starts_with("h-")
+        || base.starts_with("max-w-")
+        || base.starts_with("min-w-")
+        || base.starts_with("max-h-")
+        || base.starts_with("min-h-")
+        || base.starts_with("size-")
+        || base.starts_with("gap-")
+        || base.starts_with("space-x-")
+        || base.starts_with("space-y-")
+        || base.starts_with("-space-x-")
+        || base.starts_with("-space-y-")
+        || base.starts_with("inset-")
+        || base.starts_with("-inset-")
+        || base.starts_with("inset-x-")
+        || base.starts_with("-inset-x-")
+        || base.starts_with("inset-y-")
+        || base.starts_with("-inset-y-")
+        || base.starts_with("start-")
+        || base.starts_with("-start-")
+        || base.starts_with("end-")
+        || base.starts_with("-end-")
+        || base.starts_with("top-")
+        || base.starts_with("-top-")
+        || base.starts_with("right-")
+        || base.starts_with("-right-")
+        || base.starts_with("bottom-")
+        || base.starts_with("-bottom-")
+        || base.starts_with("left-")
+        || base.starts_with("-left-")
+}
+
+fn generate_layout_fast_path_rule(
     class: &str,
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let (variants, base_with_modifier) = parse_variants(class);
+    generate_sizing_rule(class, config, variant_tables)
+        .or_else(|| generate_gap_rule(class, config))
+        .or_else(|| generate_space_rule(class, config))
+        .or_else(|| generate_inset_rule(class, config))
+}
+
+fn is_spacing_fast_path_candidate(base: &str) -> bool {
+    base.starts_with("p-")
+        || base.starts_with("px-")
+        || base.starts_with("py-")
+        || base.starts_with("pt-")
+        || base.starts_with("pr-")
+        || base.starts_with("pb-")
+        || base.starts_with("pl-")
+        || base.starts_with("ps-")
+        || base.starts_with("pe-")
+        || base.starts_with("m-")
+        || base.starts_with("mx-")
+        || base.starts_with("my-")
+        || base.starts_with("mt-")
+        || base.starts_with("mr-")
+        || base.starts_with("mb-")
+        || base.starts_with("ml-")
+        || base.starts_with("ms-")
+        || base.starts_with("me-")
+        || base.starts_with("-m-")
+        || base.starts_with("-mx-")
+        || base.starts_with("-my-")
+        || base.starts_with("-mt-")
+        || base.starts_with("-mr-")
+        || base.starts_with("-mb-")
+        || base.starts_with("-ml-")
+        || base.starts_with("-ms-")
+        || base.starts_with("-me-")
+}
+
+fn generate_spacing_fast_path_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    generate_custom_utility_rule(class, config, variant_tables)
+        .or_else(|| generate_spacing_rule(class, config))
+}
+
+fn is_effect_fast_path_candidate(base: &str) -> bool {
+    base == "rounded"
+        || base.starts_with("rounded-")
+        || base == "shadow"
+        || base.starts_with("shadow-")
+        || base == "ring"
+        || base.starts_with("ring-")
+        || base.starts_with("inset-shadow-")
+        || base.starts_with("inset-ring-")
+}
+
+fn generate_effect_fast_path_rule(
+    class: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<String> {
+    generate_custom_utility_rule(class, config, variant_tables)
+        .or_else(|| generate_border_radius_rule(class, config))
+        .or_else(|| generate_shadow_preset_rule(class, config))
+        .or_else(|| generate_ring_preset_rule(class, config))
+        .or_else(|| generate_shadow_value_rule(class, config))
+        .or_else(|| generate_shadow_color_rule(class, config, variant_tables))
+        .or_else(|| generate_inset_shadow_color_rule(class, config))
+        .or_else(|| generate_ring_color_rule(class, config, variant_tables))
+        .or_else(|| generate_inset_ring_color_rule(class, config))
+}
+
+fn generate_shadow_preset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let declarations = match class {
+        "shadow-sm" | "shadow" => {
+            "--tw-shadow:0 1px 3px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 1px 2px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-md" => {
+            "--tw-shadow:0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 2px 4px -2px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-lg" => {
+            "--tw-shadow:0 10px 15px -3px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 4px 6px -4px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-xl" => {
+            "--tw-shadow:0 20px 25px -5px var(--tw-shadow-color,rgb(0 0 0 / 0.1)),0 8px 10px -6px var(--tw-shadow-color,rgb(0 0 0 / 0.1));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-2xl" => {
+            "--tw-shadow:0 25px 50px -12px var(--tw-shadow-color,rgb(0 0 0 / 0.25));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-inner" => {
+            "--tw-shadow:inset 0 2px 4px 0 var(--tw-shadow-color,rgb(0 0 0 / 0.05));box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "shadow-none" => {
+            "--tw-shadow:0 0 #0000;box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        _ => return None,
+    };
+    class_rule(class, declarations, config)
+}
+
+fn generate_ring_preset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
+    let declarations = match class {
+        "ring-0" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(0px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-1" | "ring" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-2" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-4" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(4px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        "ring-8" => {
+            "--tw-ring-shadow:var(--tw-ring-inset,) 0 0 0 calc(8px + var(--tw-ring-offset-width)) var(--tw-ring-color,currentcolor);box-shadow:var(--tw-inset-shadow),var(--tw-inset-ring-shadow),var(--tw-ring-offset-shadow),var(--tw-ring-shadow),var(--tw-shadow)"
+        }
+        _ => return None,
+    };
+    class_rule(class, declarations, config)
+}
+
+fn generate_rule(
+    class: &str,
+    variants: &[&str],
+    base_with_modifier: &str,
+    config: &GeneratorConfig,
+    variant_tables: &VariantTables,
+) -> Option<(String, u16)> {
     let (base, important_modifier) = strip_important_modifier(base_with_modifier);
-    let rule = generate_color_rule(base, config).or_else(|| match base {
+    let rule = generate_color_rule(base, config)
+        .or_else(|| {
+            if is_layout_fast_path_candidate(base) {
+                return generate_custom_utility_rule(base, config, variant_tables)
+                    .or_else(|| generate_layout_fast_path_rule(base, config, variant_tables));
+            }
+            None
+        })
+        .or_else(|| {
+            if is_spacing_fast_path_candidate(base) {
+                return generate_spacing_fast_path_rule(base, config, variant_tables);
+            }
+            None
+        })
+        .or_else(|| {
+            if is_effect_fast_path_candidate(base) {
+                return generate_effect_fast_path_rule(base, config, variant_tables);
+            }
+            None
+        })
+        .or_else(|| match base {
         "font-thin" => rule(
             ".font-thin",
             "--tw-font-weight:var(--font-weight-thin);font-weight:var(--font-weight-thin)",
@@ -2143,23 +2337,31 @@ fn generate_rule(
             .or_else(|| generate_grid_auto_rows_rule(base, config))
             .or_else(|| generate_grid_column_rule(base, config))
             .or_else(|| generate_grid_row_rule(base, config))
-            .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
-            .or_else(|| generate_opacity_rule(base, config))
-            .or_else(|| generate_layout_rule(base, config, variant_tables)),
-    });
+                .or_else(|| generate_custom_utility_rule(base, config, variant_tables))
+                .or_else(|| generate_opacity_rule(base, config))
+                .or_else(|| generate_layout_rule(base, config, variant_tables)),
+        });
 
+    let property_rank = if variant_injects_generated_content(variants) {
+        property_order_rank("content")
+    } else {
+        rule.as_deref()
+            .and_then(extract_primary_declaration_property)
+            .map(|property| property_order_rank(&property))
+            .unwrap_or(65535)
+    };
     let generated = apply_variants(&variants, class, base, rule, config.minify, variant_tables)?;
     if important_modifier {
         let important = add_important_to_rule(&generated, config.minify)?;
         if !rule_allowed_by_theme(base, &important, variant_tables) {
             return None;
         }
-        return Some(important);
+        return Some((important, property_rank));
     }
     if !rule_allowed_by_theme(base, &generated, variant_tables) {
         return None;
     }
-    Some(generated)
+    Some((generated, property_rank))
 }
 
 fn generate_custom_utility_rule(
@@ -2174,7 +2376,7 @@ fn generate_custom_utility_rule(
         let (value_token, modifier_token) = parse_functional_utility_tokens(token.as_deref());
         let resolved_body =
             resolve_custom_utility_body(body, value_token, modifier_token, variant_tables)?;
-        let selector = format!(".{}", escape_selector(class));
+        let selector = LazyClassSelector::new(class);
         return rule(&selector, resolved_body.trim(), config);
     }
     None
@@ -2678,7 +2880,7 @@ fn extract_color_utility_token(base_class: &str) -> Option<&str> {
 }
 
 fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("text-(")
@@ -2710,7 +2912,7 @@ fn generate_text_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
 }
 
 fn generate_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "filter" {
         return rule(&selector, composed_filter_property(), config);
@@ -2751,7 +2953,7 @@ fn generate_arbitrary_property_rule(class: &str, config: &GeneratorConfig) -> Op
     if property.is_empty() || value.is_empty() {
         return None;
     }
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     rule(&selector, &format!("{}:{}", property, value), config)
 }
 
@@ -2795,7 +2997,7 @@ fn composed_backdrop_filter_rule(
 }
 
 fn generate_transition_property_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let default_timing_duration = "transition-timing-function:var(--tw-ease,var(--default-transition-timing-function));transition-duration:var(--tw-duration,var(--default-transition-duration))";
 
     match class {
@@ -2891,7 +3093,7 @@ fn generate_transition_property_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_animation_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     match class {
         "animate-spin" => return rule(&selector, "animation:var(--animate-spin)", config),
@@ -2937,7 +3139,7 @@ fn generate_animation_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_transition_behavior_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "transition-normal" => rule(&selector, "transition-behavior:normal", config),
         "transition-discrete" => rule(&selector, "transition-behavior:allow-discrete", config),
@@ -2946,7 +3148,7 @@ fn generate_transition_behavior_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "duration-initial" {
         return rule(&selector, "transition-duration:initial", config);
@@ -3001,7 +3203,7 @@ fn generate_transition_duration_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_transition_delay_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(value) = class
         .strip_prefix("delay-(")
@@ -3040,7 +3242,7 @@ fn generate_transition_timing_function_rule(
     class: &str,
     config: &GeneratorConfig,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     match class {
         "ease-linear" => {
@@ -3130,7 +3332,7 @@ fn generate_transition_timing_function_rule(
 }
 
 fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "blur" {
         return composed_filter_rule(&selector, "--tw-blur:blur(8px)", None, config);
@@ -3178,7 +3380,7 @@ fn generate_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
 }
 
 fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "drop-shadow-none" {
         return composed_filter_rule(
@@ -3306,7 +3508,7 @@ fn generate_drop_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "backdrop-blur" {
         return composed_backdrop_filter_rule(&selector, "--tw-backdrop-blur:blur(8px)", config);
@@ -3356,7 +3558,7 @@ fn generate_backdrop_blur_rule(class: &str, config: &GeneratorConfig) -> Option<
 }
 
 fn generate_backdrop_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("backdrop-brightness-[")
@@ -3398,7 +3600,7 @@ fn generate_backdrop_brightness_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_backdrop_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("backdrop-contrast-[")
@@ -3440,7 +3642,7 @@ fn generate_backdrop_contrast_rule(class: &str, config: &GeneratorConfig) -> Opt
 }
 
 fn generate_backdrop_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "backdrop-grayscale" {
         return rule(&selector, "backdrop-filter:grayscale(100%)", config);
@@ -3486,7 +3688,7 @@ fn generate_backdrop_grayscale_rule(class: &str, config: &GeneratorConfig) -> Op
 }
 
 fn generate_backdrop_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("backdrop-hue-rotate-[")
@@ -3542,7 +3744,7 @@ fn generate_backdrop_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_backdrop_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "backdrop-invert" {
         return rule(&selector, "backdrop-filter:invert(100%)", config);
@@ -3588,7 +3790,7 @@ fn generate_backdrop_invert_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("opacity-[")
@@ -3618,7 +3820,7 @@ fn generate_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String
 }
 
 fn generate_backdrop_opacity_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("backdrop-opacity-[")
@@ -3660,7 +3862,7 @@ fn generate_backdrop_opacity_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_backdrop_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("backdrop-saturate-[")
@@ -3702,7 +3904,7 @@ fn generate_backdrop_saturate_rule(class: &str, config: &GeneratorConfig) -> Opt
 }
 
 fn generate_backdrop_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "backdrop-sepia" {
         return rule(&selector, "backdrop-filter:sepia(100%)", config);
@@ -3748,7 +3950,7 @@ fn generate_backdrop_sepia_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("brightness-[")
@@ -3793,7 +3995,7 @@ fn generate_brightness_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("contrast-[")
@@ -3838,7 +4040,7 @@ fn generate_contrast_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
 }
 
 fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "grayscale" {
         return composed_filter_rule(
@@ -3892,7 +4094,7 @@ fn generate_grayscale_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("hue-rotate-[")
@@ -3952,7 +4154,7 @@ fn generate_hue_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "invert" {
         return composed_filter_rule(
@@ -4006,7 +4208,7 @@ fn generate_invert_rule(class: &str, config: &GeneratorConfig) -> Option<String>
 }
 
 fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("saturate-[")
@@ -4051,7 +4253,7 @@ fn generate_saturate_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
 }
 
 fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "sepia" {
         return composed_filter_rule(
@@ -4105,7 +4307,7 @@ fn generate_sepia_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "backdrop-filter" {
         return rule(&selector, composed_backdrop_filter_property(), config);
@@ -4139,7 +4341,7 @@ fn generate_backdrop_filter_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_content_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "content-none" {
         return rule(
             &selector,
@@ -4182,7 +4384,7 @@ fn generate_background_arbitrary_color_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class.strip_prefix("bg-(").and_then(|v| v.strip_suffix(')')) {
         if raw.starts_with("image:") {
@@ -4219,7 +4421,7 @@ fn generate_background_palette_color_rule(
     if class.starts_with("bg-blend-") {
         return None;
     }
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("bg-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -4264,7 +4466,7 @@ fn generate_background_palette_color_rule(
 }
 
 fn generate_fill_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("fill-(")
@@ -4288,7 +4490,7 @@ fn generate_fill_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> 
 }
 
 fn generate_fill_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("fill-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -4324,7 +4526,7 @@ fn generate_fill_palette_color_rule(class: &str, config: &GeneratorConfig) -> Op
 }
 
 fn generate_stroke_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("stroke-(")
@@ -4348,7 +4550,7 @@ fn generate_stroke_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -
 }
 
 fn generate_stroke_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("stroke-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -4412,14 +4614,14 @@ fn parse_stroke_width_value(raw: &str) -> Option<String> {
 }
 
 fn generate_stroke_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("stroke-")?;
     let value = parse_stroke_width_value(raw)?;
     rule(&selector, &format!("stroke-width:{}", value), config)
 }
 
 fn generate_background_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if let Some(raw) = class
         .strip_prefix("bg-position-(")
         .and_then(|v| v.strip_suffix(')'))
@@ -4446,7 +4648,7 @@ fn generate_background_position_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_background_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if let Some(raw) = class
         .strip_prefix("bg-size-(")
         .and_then(|v| v.strip_suffix(')'))
@@ -4473,7 +4675,7 @@ fn generate_background_image_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "bg-none" {
         return rule(&selector, "background-image:none", config);
@@ -4937,7 +5139,7 @@ fn generate_decoration_arbitrary_color_rule(
     class: &str,
     config: &GeneratorConfig,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("decoration-(")
@@ -4969,7 +5171,7 @@ fn generate_decoration_arbitrary_color_rule(
 }
 
 fn generate_decoration_thickness_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("decoration-")?;
     if raw.is_empty() {
         return None;
@@ -5008,7 +5210,7 @@ fn generate_decoration_thickness_rule(class: &str, config: &GeneratorConfig) -> 
 }
 
 fn generate_underline_offset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "underline-offset-auto" {
         return rule(&selector, "text-underline-offset:auto", config);
     }
@@ -5054,7 +5256,7 @@ fn generate_underline_offset_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_text_indent_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if let Some(raw) = class.strip_prefix("indent-") {
         if raw == "px" {
             return rule(&selector, "text-indent:1px", config);
@@ -5095,7 +5297,7 @@ fn generate_text_indent_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_vertical_align_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "align-baseline" => return rule(&selector, "vertical-align:baseline", config),
         "align-top" => return rule(&selector, "vertical-align:top", config),
@@ -5129,7 +5331,7 @@ fn generate_vertical_align_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("decoration-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -5165,7 +5367,7 @@ fn generate_decoration_palette_color_rule(class: &str, config: &GeneratorConfig)
 }
 
 fn generate_accent_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("accent-(")
@@ -5189,7 +5391,7 @@ fn generate_accent_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -
 }
 
 fn generate_accent_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("accent-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -5218,7 +5420,7 @@ fn generate_accent_palette_color_rule(class: &str, config: &GeneratorConfig) -> 
 }
 
 fn generate_caret_arbitrary_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("caret-(")
@@ -5242,7 +5444,7 @@ fn generate_caret_arbitrary_color_rule(class: &str, config: &GeneratorConfig) ->
 }
 
 fn generate_caret_palette_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("caret-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -5318,7 +5520,7 @@ fn parse_text_shadow_color_value(raw: &str) -> Option<String> {
 }
 
 fn generate_text_shadow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "text-shadow-none" {
         return rule(&selector, "text-shadow:none", config);
@@ -5415,7 +5617,7 @@ fn generate_text_palette_color_rule(
     if class.starts_with("text-shadow-") {
         return None;
     }
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("text-")?;
     if raw.starts_with('[') || raw.starts_with('(') {
         return None;
@@ -5665,7 +5867,7 @@ fn shadow_color_declaration_with_optional_opacity(
 }
 
 fn generate_shadow_value_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class
         .strip_prefix("shadow-[")
@@ -5806,7 +6008,7 @@ fn generate_shadow_color_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("shadow-")?;
     if matches!(raw, "none" | "sm" | "md" | "lg" | "xl" | "2xl") {
         return None;
@@ -5843,7 +6045,7 @@ fn generate_shadow_color_rule(
 }
 
 fn generate_inset_shadow_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("inset-shadow-")?;
     if raw == "none" {
         return None;
@@ -5894,7 +6096,7 @@ fn generate_ring_color_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("ring-")?;
     if matches!(raw, "0" | "1" | "2" | "4" | "8" | "inset") {
         return None;
@@ -5927,7 +6129,7 @@ fn generate_ring_color_rule(
 }
 
 fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("inset-ring-")?;
     if raw.chars().all(|ch| ch.is_ascii_digit()) {
         return None;
@@ -5961,7 +6163,7 @@ fn generate_inset_ring_color_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_list_style_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "list-disc" => return rule(&selector, "list-style-type:disc", config),
         "list-decimal" => return rule(&selector, "list-style-type:decimal", config),
@@ -5986,7 +6188,7 @@ fn generate_list_style_type_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_list_style_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "list-image-none" {
         return rule(&selector, "list-style-image:none", config);
     }
@@ -6008,7 +6210,7 @@ fn generate_list_style_image_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_line_clamp_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "line-clamp-none" {
         return rule(
             &selector,
@@ -6052,7 +6254,7 @@ fn generate_line_clamp_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class.strip_prefix("text-[") {
         if let Some(value) = raw.strip_suffix(']') {
@@ -6120,7 +6322,7 @@ fn generate_text_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_leading_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("leading-")?;
     if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
         let value = format!("calc(var(--spacing) * {})", raw);
@@ -6149,7 +6351,7 @@ fn generate_leading_rule(class: &str, config: &GeneratorConfig) -> Option<String
 }
 
 fn generate_font_family_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class.starts_with("font-stretch-") {
         return None;
     }
@@ -6199,7 +6401,7 @@ fn generate_font_family_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -6251,7 +6453,7 @@ fn generate_tracking_rule(class: &str, config: &GeneratorConfig) -> Option<Strin
 }
 
 fn generate_font_stretch_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("font-stretch-")?;
 
     let value = match raw {
@@ -6286,7 +6488,7 @@ fn generate_font_stretch_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_font_weight_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class.strip_prefix("font-[") {
         if let Some(value) = raw.strip_suffix(']') {
@@ -6326,7 +6528,6 @@ fn generate_font_weight_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -6347,7 +6548,7 @@ fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if let Some(raw) = class.strip_prefix(prefix) {
             if let Some(value) = parse_spacing_value(raw) {
                 let declarations = format!("{}:{}", property, value);
-                return rule(&selector, &declarations, config);
+                return class_rule(class, &declarations, config);
             }
         }
     }
@@ -6366,7 +6567,7 @@ fn generate_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String
         if let Some(raw) = raw_class.strip_prefix(prefix) {
             if let Some(value) = parse_margin_value(raw, negative) {
                 let declarations = format!("{}:{}", property, value);
-                return rule(&selector, &declarations, config);
+                return class_rule(class, &declarations, config);
             }
         }
     }
@@ -6491,7 +6692,7 @@ fn parse_scroll_margin_value(raw: &str, negative: bool) -> Option<String> {
 }
 
 fn generate_scroll_margin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -6554,7 +6755,7 @@ fn parse_scroll_padding_value(raw: &str, negative: bool) -> Option<String> {
 }
 
 fn generate_scroll_padding_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let (negative, raw_class) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -6586,7 +6787,7 @@ fn generate_layout_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "@container" {
         return rule(&selector, "container-type:inline-size", config);
@@ -6759,8 +6960,6 @@ fn generate_sizing_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
-
     if class == "container" {
         let mut breakpoints = variant_tables.responsive_breakpoints.clone();
         sort_breakpoints_by_length(&mut breakpoints);
@@ -6819,7 +7018,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("min-w-") {
@@ -6855,7 +7054,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("min-h-") {
@@ -6890,7 +7089,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("max-h-") {
@@ -6925,7 +7124,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("w-") {
@@ -6961,7 +7160,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("h-") {
@@ -6996,7 +7195,7 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(&selector, &declarations, config);
+        return class_rule(class, &declarations, config);
     }
 
     if let Some(raw) = class.strip_prefix("size-") {
@@ -7029,34 +7228,28 @@ fn generate_sizing_rule(
                 }
             }
         };
-        return rule(
-            &selector,
-            &format!("width:{};height:{}", value, value),
-            config,
-        );
+        return class_rule(class, &format!("width:{};height:{}", value, value), config);
     }
 
     None
 }
 
 fn generate_gap_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
-
     if let Some(raw) = class.strip_prefix("gap-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("gap:{}", value), config);
+            return class_rule(class, &format!("gap:{}", value), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-x-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("column-gap:{}", value), config);
+            return class_rule(class, &format!("column-gap:{}", value), config);
         }
     }
 
     if let Some(raw) = class.strip_prefix("gap-y-") {
         if let Some(value) = parse_spacing_value(raw) {
-            return rule(&selector, &format!("row-gap:{}", value), config);
+            return class_rule(class, &format!("row-gap:{}", value), config);
         }
     }
 
@@ -7068,17 +7261,16 @@ fn nested_child_selector_block(declarations: &str) -> String {
 }
 
 fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     if class == "space-x-reverse" {
-        return rule(
-            &selector,
+        return class_rule(
+            class,
             &nested_child_selector_block("--tw-space-x-reverse:1"),
             config,
         );
     }
     if class == "space-y-reverse" {
-        return rule(
-            &selector,
+        return class_rule(
+            class,
             &nested_child_selector_block("--tw-space-y-reverse:1"),
             config,
         );
@@ -7096,11 +7288,7 @@ fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
             "--tw-space-x-reverse:0;margin-inline-start:calc({} * var(--tw-space-x-reverse));margin-inline-end:calc({} * calc(1 - var(--tw-space-x-reverse)))",
             value, value
         );
-        return rule(
-            &selector,
-            &nested_child_selector_block(&declarations),
-            config,
-        );
+        return class_rule(class, &nested_child_selector_block(&declarations), config);
     }
 
     if let Some(raw) = raw_class.strip_prefix("space-y-") {
@@ -7109,18 +7297,14 @@ fn generate_space_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
             "--tw-space-y-reverse:0;margin-block-start:calc({} * var(--tw-space-y-reverse));margin-block-end:calc({} * calc(1 - var(--tw-space-y-reverse)))",
             value, value
         );
-        return rule(
-            &selector,
-            &nested_child_selector_block(&declarations),
-            config,
-        );
+        return class_rule(class, &nested_child_selector_block(&declarations), config);
     }
 
     None
 }
 
 fn generate_aspect_ratio_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "aspect-square" => rule(&selector, "aspect-ratio:1 / 1", config),
         "aspect-video" => rule(&selector, "aspect-ratio:var(--aspect-video)", config),
@@ -7149,7 +7333,7 @@ fn generate_aspect_ratio_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if let Some(value) = class
         .strip_prefix("columns-[")
         .and_then(|raw| raw.strip_suffix(']'))
@@ -7178,7 +7362,7 @@ fn generate_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String
 }
 
 fn generate_break_after_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "break-after-auto" => rule(&selector, "break-after:auto", config),
         "break-after-avoid" => rule(&selector, "break-after:avoid", config),
@@ -7193,7 +7377,7 @@ fn generate_break_after_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_break_before_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "break-before-auto" => rule(&selector, "break-before:auto", config),
         "break-before-avoid" => rule(&selector, "break-before:avoid", config),
@@ -7208,7 +7392,7 @@ fn generate_break_before_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_break_inside_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "break-inside-auto" => rule(&selector, "break-inside:auto", config),
         "break-inside-avoid" => rule(&selector, "break-inside:avoid", config),
@@ -7219,7 +7403,7 @@ fn generate_break_inside_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_box_decoration_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "box-decoration-clone" => rule(&selector, "box-decoration-break:clone", config),
         "box-decoration-slice" => rule(&selector, "box-decoration-break:slice", config),
@@ -7228,7 +7412,7 @@ fn generate_box_decoration_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_box_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "box-border" => rule(&selector, "box-sizing:border-box", config),
         "box-content" => rule(&selector, "box-sizing:content-box", config),
@@ -7237,7 +7421,7 @@ fn generate_box_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_float_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "float-right" => rule(&selector, "float:right", config),
         "float-left" => rule(&selector, "float:left", config),
@@ -7249,7 +7433,7 @@ fn generate_float_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn generate_clear_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "clear-left" => rule(&selector, "clear:left", config),
         "clear-right" => rule(&selector, "clear:right", config),
@@ -7262,7 +7446,7 @@ fn generate_clear_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn generate_isolation_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "isolate" => rule(&selector, "isolation:isolate", config),
         "isolation-auto" => rule(&selector, "isolation:auto", config),
@@ -7271,7 +7455,7 @@ fn generate_isolation_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_appearance_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "appearance-none" => rule(&selector, "appearance:none", config),
         "appearance-auto" => rule(&selector, "appearance:auto", config),
@@ -7280,7 +7464,7 @@ fn generate_appearance_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_forced_color_adjust_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "forced-color-adjust-auto" => rule(&selector, "forced-color-adjust:auto", config),
         "forced-color-adjust-none" => rule(&selector, "forced-color-adjust:none", config),
@@ -7289,7 +7473,7 @@ fn generate_forced_color_adjust_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_color_scheme_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "scheme-normal" => "normal",
         "scheme-dark" => "dark",
@@ -7303,7 +7487,7 @@ fn generate_color_scheme_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_cursor_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "cursor-auto" => Some("auto"),
         "cursor-default" => Some("default"),
@@ -7371,7 +7555,7 @@ fn generate_cursor_rule(class: &str, config: &GeneratorConfig) -> Option<String>
 }
 
 fn generate_field_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "field-sizing-fixed" => rule(&selector, "field-sizing:fixed", config),
         "field-sizing-content" => rule(&selector, "field-sizing:content", config),
@@ -7380,7 +7564,7 @@ fn generate_field_sizing_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_pointer_events_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "pointer-events-auto" => rule(&selector, "pointer-events:auto", config),
         "pointer-events-none" => rule(&selector, "pointer-events:none", config),
@@ -7389,7 +7573,7 @@ fn generate_pointer_events_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_resize_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "resize-none" => rule(&selector, "resize:none", config),
         "resize" => rule(&selector, "resize:both", config),
@@ -7400,7 +7584,7 @@ fn generate_resize_rule(class: &str, config: &GeneratorConfig) -> Option<String>
 }
 
 fn generate_scroll_behavior_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "scroll-auto" => rule(&selector, "scroll-behavior:auto", config),
         "scroll-smooth" => rule(&selector, "scroll-behavior:smooth", config),
@@ -7409,7 +7593,7 @@ fn generate_scroll_behavior_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_scroll_snap_align_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "snap-start" => rule(&selector, "scroll-snap-align:start", config),
         "snap-end" => rule(&selector, "scroll-snap-align:end", config),
@@ -7420,7 +7604,7 @@ fn generate_scroll_snap_align_rule(class: &str, config: &GeneratorConfig) -> Opt
 }
 
 fn generate_scroll_snap_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "snap-none" => rule(&selector, "scroll-snap-type:none", config),
         "snap-x" => rule(
@@ -7445,7 +7629,7 @@ fn generate_scroll_snap_type_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_scroll_snap_stop_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "snap-normal" => rule(&selector, "scroll-snap-stop:normal", config),
         "snap-always" => rule(&selector, "scroll-snap-stop:always", config),
@@ -7454,7 +7638,7 @@ fn generate_scroll_snap_stop_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_touch_action_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "touch-auto" => "auto",
         "touch-none" => "none",
@@ -7472,7 +7656,7 @@ fn generate_touch_action_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_user_select_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "select-none" => "none",
         "select-text" => "text",
@@ -7488,7 +7672,7 @@ fn generate_user_select_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_will_change_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "will-change-auto" => return rule(&selector, "will-change:auto", config),
         "will-change-scroll" => {
@@ -7523,7 +7707,7 @@ fn generate_will_change_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_mix_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mix-blend-normal" => "normal",
         "mix-blend-multiply" => "multiply",
@@ -7549,7 +7733,7 @@ fn generate_mix_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_background_blend_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "bg-blend-normal" => "normal",
         "bg-blend-multiply" => "multiply",
@@ -7757,7 +7941,7 @@ fn parse_mask_angle(raw: &str) -> Option<String> {
 }
 
 fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "mask-none" {
         return rule(&selector, "mask-image:none", config);
@@ -8066,7 +8250,7 @@ fn generate_mask_image_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_mask_mode_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-alpha" => "alpha",
         "mask-luminance" => "luminance",
@@ -8077,7 +8261,7 @@ fn generate_mask_mode_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_mask_type_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-type-alpha" => "alpha",
         "mask-type-luminance" => "luminance",
@@ -8087,7 +8271,7 @@ fn generate_mask_type_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_mask_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-origin-border" => "border-box",
         "mask-origin-padding" => "padding-box",
@@ -8101,7 +8285,7 @@ fn generate_mask_origin_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_mask_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "mask-top-left" => return rule(&selector, "mask-position:top left", config),
         "mask-top" => return rule(&selector, "mask-position:top", config),
@@ -8136,7 +8320,7 @@ fn generate_mask_position_rule(class: &str, config: &GeneratorConfig) -> Option<
 }
 
 fn generate_mask_repeat_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-repeat" => "repeat",
         "mask-no-repeat" => "no-repeat",
@@ -8150,7 +8334,7 @@ fn generate_mask_repeat_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_mask_size_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "mask-auto" => return rule(&selector, "mask-size:auto", config),
         "mask-cover" => return rule(&selector, "mask-size:cover", config),
@@ -8179,7 +8363,7 @@ fn generate_mask_size_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_mask_clip_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-clip-border" => "border-box",
         "mask-clip-padding" => "padding-box",
@@ -8194,7 +8378,7 @@ fn generate_mask_clip_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_mask_composite_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let value = match class {
         "mask-add" => "add",
         "mask-subtract" => "subtract",
@@ -8206,7 +8390,7 @@ fn generate_mask_composite_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_object_fit_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "object-contain" => rule(&selector, "object-fit:contain", config),
         "object-cover" => rule(&selector, "object-fit:cover", config),
@@ -8218,7 +8402,7 @@ fn generate_object_fit_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_object_position_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "object-top-left" => rule(&selector, "object-position:top left", config),
         "object-top" => rule(&selector, "object-position:top", config),
@@ -8252,7 +8436,7 @@ fn generate_object_position_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_overscroll_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "overscroll-auto" => rule(&selector, "overscroll-behavior:auto", config),
         "overscroll-contain" => rule(&selector, "overscroll-behavior:contain", config),
@@ -8268,7 +8452,6 @@ fn generate_overscroll_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_inset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
     let (negative, raw) = if let Some(rest) = class.strip_prefix('-') {
         (true, rest)
     } else {
@@ -8278,11 +8461,11 @@ fn generate_inset_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
     let (key, token) = parse_inset_key_and_token(raw)?;
     let value = parse_inset_value(token, negative)?;
     let declarations = inset_declarations(key, &value)?;
-    rule(&selector, &declarations, config)
+    class_rule(class, &declarations, config)
 }
 
 fn generate_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "visible" => rule(&selector, "visibility:visible", config),
         "invisible" => rule(&selector, "visibility:hidden", config),
@@ -8292,7 +8475,7 @@ fn generate_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_backface_visibility_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "backface-hidden" => rule(&selector, "backface-visibility:hidden", config),
         "backface-visible" => rule(&selector, "backface-visibility:visible", config),
@@ -8301,7 +8484,7 @@ fn generate_backface_visibility_rule(class: &str, config: &GeneratorConfig) -> O
 }
 
 fn generate_perspective_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "perspective-dramatic" => {
             rule(&selector, "perspective:var(--perspective-dramatic)", config)
@@ -8345,7 +8528,7 @@ fn generate_perspective_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_perspective_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "perspective-origin-center" => rule(&selector, "perspective-origin:center", config),
         "perspective-origin-top" => rule(&selector, "perspective-origin:top", config),
@@ -8387,7 +8570,7 @@ fn generate_perspective_origin_rule(class: &str, config: &GeneratorConfig) -> Op
 }
 
 fn generate_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(number) = class.strip_prefix("rotate-x-") {
         if number.chars().all(|c| c.is_ascii_digit()) && !number.is_empty() {
@@ -8568,7 +8751,7 @@ fn generate_rotate_rule(class: &str, config: &GeneratorConfig) -> Option<String>
 }
 
 fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "scale-3d" {
         return rule(
@@ -8765,7 +8948,7 @@ fn generate_scale_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let transform_chain = "var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,)";
 
     if let Some(number) = class.strip_prefix("skew-x-") {
@@ -8931,7 +9114,7 @@ fn generate_skew_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
 }
 
 fn generate_transform_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "transform" => rule(
             &selector,
@@ -8972,7 +9155,7 @@ fn generate_transform_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_transform_style_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "transform-3d" => rule(&selector, "transform-style:preserve-3d", config),
         "transform-flat" => rule(&selector, "transform-style:flat", config),
@@ -8981,7 +9164,7 @@ fn generate_transform_style_rule(class: &str, config: &GeneratorConfig) -> Optio
 }
 
 fn generate_transform_origin_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "origin-center" => rule(&selector, "transform-origin:center", config),
         "origin-top" => rule(&selector, "transform-origin:top", config),
@@ -9015,7 +9198,7 @@ fn generate_transform_origin_rule(class: &str, config: &GeneratorConfig) -> Opti
 }
 
 fn generate_translate_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "translate-none" {
         return rule(&selector, "translate:none", config);
@@ -9220,7 +9403,7 @@ fn parse_translate_value(
 }
 
 fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "z-auto" {
         return rule(&selector, "z-index:auto", config);
     }
@@ -9244,7 +9427,7 @@ fn generate_z_index_rule(class: &str, config: &GeneratorConfig) -> Option<String
 }
 
 fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("basis-")?;
 
     if raw == "auto" {
@@ -9285,7 +9468,7 @@ fn generate_flex_basis_rule(class: &str, config: &GeneratorConfig) -> Option<Str
 }
 
 fn generate_flex_shorthand_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("flex-")?;
 
     if matches!(
@@ -9319,7 +9502,7 @@ fn generate_flex_shorthand_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "grow" || class == "flex-grow" {
         return rule(&selector, "flex-grow:1", config);
     }
@@ -9339,7 +9522,7 @@ fn generate_flex_grow_rule(class: &str, config: &GeneratorConfig) -> Option<Stri
 }
 
 fn generate_flex_shrink_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "shrink" || class == "flex-shrink" {
         return rule(&selector, "flex-shrink:1", config);
     }
@@ -9359,7 +9542,7 @@ fn generate_flex_shrink_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_order_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "order-first" => return rule(&selector, "order:-9999", config),
         "order-last" => return rule(&selector, "order:9999", config),
@@ -9389,7 +9572,7 @@ fn generate_order_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
 }
 
 fn generate_grid_template_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "grid-cols-none" {
         return rule(&selector, "grid-template-columns:none", config);
     }
@@ -9424,7 +9607,7 @@ fn generate_grid_template_columns_rule(class: &str, config: &GeneratorConfig) ->
 }
 
 fn generate_grid_auto_flow_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "grid-flow-row" => rule(&selector, "grid-auto-flow:row", config),
         "grid-flow-col" => rule(&selector, "grid-auto-flow:column", config),
@@ -9436,7 +9619,7 @@ fn generate_grid_auto_flow_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_grid_auto_columns_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "auto-cols-auto" => rule(&selector, "grid-auto-columns:auto", config),
         "auto-cols-min" => rule(&selector, "grid-auto-columns:min-content", config),
@@ -9465,7 +9648,7 @@ fn generate_grid_auto_columns_rule(class: &str, config: &GeneratorConfig) -> Opt
 }
 
 fn generate_grid_auto_rows_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     match class {
         "auto-rows-auto" => rule(&selector, "grid-auto-rows:auto", config),
         "auto-rows-min" => rule(&selector, "grid-auto-rows:min-content", config),
@@ -9547,7 +9730,7 @@ fn parse_border_spacing_value(raw: &str) -> Option<String> {
 }
 
 fn generate_border_spacing_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class.strip_prefix("border-spacing-x-") {
         let value = parse_border_spacing_value(raw)?;
@@ -9576,7 +9759,7 @@ fn generate_border_spacing_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "border" {
         return rule(
@@ -9653,7 +9836,7 @@ fn generate_border_width_rule(class: &str, config: &GeneratorConfig) -> Option<S
 }
 
 fn generate_divide_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "divide-x-reverse" {
         return rule(
@@ -9729,7 +9912,7 @@ fn generate_border_style_rule(class: &str, config: &GeneratorConfig) -> Option<S
         _ => return None,
     };
 
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class.starts_with("divide-") {
         let declarations = format!("--tw-border-style:{};border-style:{}", value, value);
         return rule(
@@ -9783,7 +9966,7 @@ fn generate_border_color_rule(
     config: &GeneratorConfig,
     variant_tables: &VariantTables,
 ) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     for (prefix, property, child_only) in [
         ("border-x-", "border-inline-color", false),
@@ -9896,7 +10079,7 @@ fn parse_outline_color_value(raw: &str) -> Option<String> {
 }
 
 fn generate_outline_offset_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if let Some(raw) = class.strip_prefix("outline-offset-") {
         if raw.chars().all(|c| c.is_ascii_digit()) && !raw.is_empty() {
@@ -9936,7 +10119,7 @@ fn generate_outline_offset_rule(class: &str, config: &GeneratorConfig) -> Option
 }
 
 fn generate_outline_style_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let declarations = match class {
         "outline-solid" => "outline-style:solid",
         "outline-dashed" => "outline-style:dashed",
@@ -9950,14 +10133,14 @@ fn generate_outline_style_rule(class: &str, config: &GeneratorConfig) -> Option<
 }
 
 fn generate_outline_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let raw = class.strip_prefix("outline-")?;
     let value = parse_outline_color_value(raw)?;
     rule(&selector, &format!("outline-color:{}", value), config)
 }
 
 fn generate_outline_width_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "outline" {
         return rule(
             &selector,
@@ -9978,7 +10161,7 @@ fn generate_outline_width_rule(class: &str, config: &GeneratorConfig) -> Option<
 }
 
 fn generate_border_radius_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     if class == "rounded" {
         return rule(&selector, "border-radius:0.25rem", config);
     }
@@ -10056,7 +10239,7 @@ fn radius_target_properties(target: &str) -> Option<&'static [&'static str]> {
 }
 
 fn generate_grid_column_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "col-span-full" {
         return rule(&selector, "grid-column:1 / -1", config);
@@ -10127,7 +10310,7 @@ fn generate_grid_column_rule(class: &str, config: &GeneratorConfig) -> Option<St
 }
 
 fn generate_grid_row_rule(class: &str, config: &GeneratorConfig) -> Option<String> {
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
 
     if class == "row-span-full" {
         return rule(&selector, "grid-row:1 / -1", config);
@@ -10321,7 +10504,7 @@ fn generate_color_rule(class: &str, config: &GeneratorConfig) -> Option<String> 
     let (prefix, color, shade) = split_color_class(class)?;
     let map = config.colors.get(color)?;
     let value = map.get(shade)?;
-    let selector = format!(".{}", escape_selector(class));
+    let selector = LazyClassSelector::new(class);
     let declarations = match prefix {
         "text" => format!("color:{}", value),
         "bg" => format!("background-color:{}", value),
@@ -10373,6 +10556,12 @@ fn parse_variants(class: &str) -> (Vec<&str>, &str) {
     (variants, &class[start..])
 }
 
+fn variant_injects_generated_content(variants: &[&str]) -> bool {
+    variants
+        .iter()
+        .any(|variant| matches!(*variant, "before" | "after"))
+}
+
 fn apply_variants(
     variants: &[&str],
     full_class: &str,
@@ -10382,6 +10571,9 @@ fn apply_variants(
     variant_tables: &VariantTables,
 ) -> Option<String> {
     let rule = rule?;
+    if variants.is_empty() && full_class == base_class {
+        return Some(rule);
+    }
     let expected_base_selector = format!(".{}", escape_selector(base_class));
     let class_selector = format!(".{}", escape_selector(full_class));
     let (header, declarations_block) = split_rule_header_and_block(&rule)?;
@@ -10392,17 +10584,14 @@ fn apply_variants(
     }
 
     if variants.is_empty() {
-        if full_class != base_class {
-            return Some(compose_flat_variant_rule(
-                header,
-                first_selector,
-                &class_selector,
-                &declarations_block,
-                &[],
-                minify,
-            ));
-        }
-        return Some(rule);
+        return Some(compose_flat_variant_rule(
+            header,
+            first_selector,
+            &class_selector,
+            &declarations_block,
+            &[],
+            minify,
+        ));
     }
 
     let mut selector = class_selector.clone();
@@ -11656,6 +11845,31 @@ fn is_spacing_multiplier(token: &str) -> bool {
     true
 }
 
+#[derive(Debug, Clone)]
+struct LazyClassSelector<'a> {
+    class: &'a str,
+    value: OnceCell<String>,
+}
+
+impl<'a> LazyClassSelector<'a> {
+    fn new(class: &'a str) -> Self {
+        Self {
+            class,
+            value: OnceCell::new(),
+        }
+    }
+}
+
+impl Deref for LazyClassSelector<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
+            .get_or_init(|| format!(".{}", escape_selector(self.class)))
+            .as_str()
+    }
+}
+
 fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<String> {
     let formatted = format_declarations(declarations, config.minify);
     if formatted.is_empty() {
@@ -11679,6 +11893,11 @@ fn rule(selector: &str, declarations: &str, config: &GeneratorConfig) -> Option<
         .collect::<Vec<_>>()
         .join("\n");
     Some(format!("{} {{\n{}\n}}", selector, lines))
+}
+
+fn class_rule(class: &str, declarations: &str, config: &GeneratorConfig) -> Option<String> {
+    let selector = LazyClassSelector::new(class);
+    rule(&selector, declarations, config)
 }
 
 fn format_declarations(declarations: &str, minify: bool) -> String {
@@ -16888,6 +17107,132 @@ mod tests {
         assert!(result.css.contains("@media (hover: hover)"));
         assert!(result.css.contains(".lg\\:content-auto"));
         assert!(result.css.contains("@media (width >= 64rem)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_sizing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("w-4".to_string(), "width: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["w-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".w-4"));
+        assert!(result.css.contains("width: 999px"));
+        assert!(!result.css.contains("width: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_spacing_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("p-4".to_string(), "padding: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["p-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".p-4"));
+        assert!(result.css.contains("padding: 999px"));
+        assert!(!result.css.contains("padding: calc(var(--spacing) * 4)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_effect_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![
+                ("shadow-md".to_string(), "box-shadow: none;".to_string()),
+                (
+                    "ring-2".to_string(),
+                    "outline: 3px solid hotpink;".to_string(),
+                ),
+                (
+                    "rounded-lg".to_string(),
+                    "border-radius: 99rem;".to_string(),
+                ),
+            ],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(
+            &[
+                "shadow-md".to_string(),
+                "ring-2".to_string(),
+                "rounded-lg".to_string(),
+            ],
+            &config,
+            Some(&overrides),
+        );
+        assert!(result.css.contains(".shadow-md"));
+        assert!(result.css.contains("box-shadow: none"));
+        assert!(
+            !result
+                .css
+                .contains("--tw-shadow: 0 4px 6px -1px var(--tw-shadow-color,rgb(0 0 0 / 0.1))")
+        );
+        assert!(result.css.contains(".ring-2"));
+        assert!(result.css.contains("outline: 3px solid hotpink"));
+        assert!(!result.css.contains(
+            "--tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width))"
+        ));
+        assert!(result.css.contains(".rounded-lg"));
+        assert!(result.css.contains("border-radius: 99rem"));
+        assert!(!result.css.contains("border-radius: var(--radius-lg)"));
+    }
+
+    #[test]
+    fn custom_utility_keeps_priority_over_inset_utilities() {
+        let config = GeneratorConfig {
+            minify: false,
+            colors: BTreeMap::new(),
+        };
+        let overrides = VariantOverrides {
+            responsive_breakpoints: vec![],
+            container_breakpoints: vec![],
+            dark_variant_selector: None,
+            custom_variant_selectors: vec![],
+            custom_utilities: vec![("top-4".to_string(), "top: 999px;".to_string())],
+            theme_variable_values: vec![],
+            global_theme_reset: false,
+            disabled_namespaces: vec![],
+            disabled_color_families: vec![],
+            declared_theme_vars: vec![],
+        };
+        let result = generate_with_overrides(&["top-4".to_string()], &config, Some(&overrides));
+        assert!(result.css.contains(".top-4"));
+        assert!(result.css.contains("top: 999px"));
+        assert!(!result.css.contains("top: calc(var(--spacing) * 4)"));
     }
 
     #[test]
